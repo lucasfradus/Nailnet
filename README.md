@@ -11,6 +11,10 @@ Estado al 10 de septiembre: monorepo con backoffice Next.js, portal React/Vite, 
 
 ## Desarrollo local
 
+Con Docker Desktop iniciado, ejecutar `docker compose up -d --build --wait`. Levanta PostgreSQL, aplica migraciones y seed de demo, y arranca backoffice en http://localhost:3000, portal en http://localhost:5173 y worker en http://localhost:3001/health. No requiere instalar Node en el host ni crear un .env. `docker compose down` detiene el entorno conservando los datos. Ver [guía Docker](docs/07-docker-local.md).
+
+### Alternativa con Node en el host
+
 Requiere Node.js 24 y npm 11. Ejecutar `npm ci` y `npm run db:generate` en la raíz. En terminales independientes:
 
 - `npm run dev:backoffice`: administración en http://localhost:3000.

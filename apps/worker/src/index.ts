@@ -7,5 +7,5 @@ const server = createServer((request, response) => {
   response.writeHead(200, { "Content-Type": "application/json" });
   response.end(JSON.stringify({ status: "ok", service: "worker" } satisfies HealthResponse));
 });
-server.listen(port, "127.0.0.1", () => { console.info("Worker base iniciado. Procesamiento durable pendiente."); });
+server.listen(port, process.env.HOST ?? "127.0.0.1", () => { console.info("Worker base iniciado. Procesamiento durable pendiente."); });
 for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => { server.close(); server.closeAllConnections(); });

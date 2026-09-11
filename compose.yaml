@@ -1,4 +1,12 @@
 name: nailnet-local
+
+x-app: &app
+  image: nailnet-local-dev
+  build:
+    context: .
+    dockerfile: Dockerfile.dev
+  init: true
+
 services:
   postgres:
     image: postgres:18
@@ -15,5 +23,69 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  setup:
+    <<: *app
+    environment:
+      DATABASE_URL: postgresql://nailnet:nailnet_local_only@postgres:5432/nailnet
+      ALLOW_DEMO_SEED: "true"
+    command: ["sh", "-c", "npm run db:migrate && npm run db:seed"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backoffice:
+    <<: *app
+    environment:
+      DATABASE_URL: postgresql://nailnet:nailnet_local_only@postgres:5432/nailnet
+      WATCHPACK_POLLING: "true"
+    command: ["npm", "run", "dev", "-w", "@nailnet/backoffice", "--", "--hostname", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./apps/backoffice/src:/app/apps/backoffice/src
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 10s
+      start_period: 60s
+      retries: 6
+
+  booking:
+    <<: *app
+    command: ["npm", "run", "dev", "-w", "@nailnet/booking", "--", "--host", "0.0.0.0"]
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./apps/booking/src:/app/apps/booking/src
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5173').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+  worker:
+    <<: *app
+    environment:
+      DATABASE_URL: postgresql://nailnet:nailnet_local_only@postgres:5432/nailnet
+      HOST: "0.0.0.0"
+    command: ["npm", "run", "dev:worker"]
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - ./apps/worker/src:/app/apps/worker/src
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
 volumes:
   nailnet_postgres:

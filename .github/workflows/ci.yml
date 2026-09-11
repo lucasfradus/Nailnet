@@ -10,5 +10,8 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run db:generate
       - run: npm run check
+      - run: npm run test:domain
+      - run: npm run test:database
       - run: node scripts/smoke.mjs

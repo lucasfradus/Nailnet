@@ -1,5 +1,7 @@
 # Avance · 10 de septiembre de 2026
 
+Este documento conserva el primer scaffold. El avance posterior de persistencia y permisos está en [06-fundacion.md](06-fundacion.md); reemplaza los pendientes de base de datos indicados abajo.
+
 ## Alcance realizado
 
 Inicio de F01, usando NailNet como nombre provisional. Workspaces npm, configuración TypeScript estricta, lint, contrato público de liveness, builds independientes y workflow de CI. Backoffice y portal tienen pantallas de inicio que indican que todavía no hay operación. El worker arranca un servidor local de liveness y admite apagado por señales; no representa una implementación de outbox.

@@ -2,6 +2,7 @@ node_modules/
 .next/
 dist/
 coverage/
+packages/database/generated/
 *.tsbuildinfo
 .env*
 !.env.example

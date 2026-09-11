@@ -1,0 +1,19 @@
+name: nailnet-local
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: nailnet
+      POSTGRES_PASSWORD: nailnet_local_only
+      POSTGRES_DB: nailnet
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - nailnet_postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nailnet -d nailnet"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  nailnet_postgres:

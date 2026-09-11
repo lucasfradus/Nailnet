@@ -1,0 +1,140 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Rol {
+  MASTER_FRANQUICIADOR
+  FRANQUICIADO
+  ADMIN_SEDE
+  RECEPCIONISTA
+  PROFESIONAL
+}
+
+enum Alcance {
+  ORGANIZACION
+  FRANQUICIADO
+  SEDE
+  PROPIO
+}
+
+enum Ambiente {
+  PRUEBA
+  PRODUCCION
+}
+
+model Organizacion {
+  id            String                  @id @default(uuid()) @db.Uuid
+  nombre        String
+  activo        Boolean                 @default(true)
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+  franquiciados Franquiciado[]
+  membresias    MembresiaOrganizacion[]
+  emisores      EmisorFiscal[]
+}
+
+model Franquiciado {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizacionId String          @db.Uuid
+  nombre         String
+  activo         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  organizacion   Organizacion    @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sedes          Sede[]
+  asignaciones   AsignacionRol[]
+
+  @@unique([organizacionId, id])
+}
+
+model Sede {
+  id                      String                    @id @default(uuid()) @db.Uuid
+  organizacionId          String                    @db.Uuid
+  franquiciadoId          String                    @db.Uuid
+  nombre                  String
+  timezone                String                    @default("America/Argentina/Buenos_Aires")
+  activo                  Boolean                   @default(true)
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
+  franquiciado            Franquiciado              @relation(fields: [organizacionId, franquiciadoId], references: [organizacionId, id], onDelete: Restrict)
+  asignaciones            AsignacionRol[]
+  configuracionesFiscales ConfiguracionFiscalSede[]
+
+  @@unique([organizacionId, id])
+  @@index([organizacionId, franquiciadoId])
+}
+
+model Usuario {
+  id           String                  @id @default(uuid()) @db.Uuid
+  email        String                  @unique
+  nombre       String
+  passwordHash String?
+  activo       Boolean                 @default(true)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  membresias   MembresiaOrganizacion[]
+}
+
+model MembresiaOrganizacion {
+  organizacionId String          @db.Uuid
+  usuarioId      String          @db.Uuid
+  activo         Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  organizacion   Organizacion    @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  usuario        Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+  asignaciones   AsignacionRol[]
+
+  @@id([organizacionId, usuarioId])
+}
+
+model AsignacionRol {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizacionId String                @db.Uuid
+  usuarioId      String                @db.Uuid
+  rol            Rol
+  alcance        Alcance
+  franquiciadoId String?               @db.Uuid
+  sedeId         String?               @db.Uuid
+  createdAt      DateTime              @default(now())
+  membresia      MembresiaOrganizacion @relation(fields: [organizacionId, usuarioId], references: [organizacionId, usuarioId], onDelete: Restrict)
+  franquiciado   Franquiciado?         @relation(fields: [organizacionId, franquiciadoId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede?                 @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([organizacionId, usuarioId])
+}
+
+model EmisorFiscal {
+  id              String                    @id @default(uuid()) @db.Uuid
+  organizacionId  String                    @db.Uuid
+  cuit            String                    @db.VarChar(11)
+  razonSocial     String
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  organizacion    Organizacion              @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  configuraciones ConfiguracionFiscalSede[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, cuit])
+}
+
+model ConfiguracionFiscalSede {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  sedeId         String       @db.Uuid
+  emisorFiscalId String       @db.Uuid
+  ambiente       Ambiente
+  puntoVenta     Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  sede           Sede         @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  emisorFiscal   EmisorFiscal @relation(fields: [organizacionId, emisorFiscalId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([organizacionId, sedeId, ambiente])
+  @@unique([emisorFiscalId, ambiente, puntoVenta])
+}

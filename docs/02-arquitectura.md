@@ -1,6 +1,6 @@
 # Arquitectura y dominio propuestos
 
-Estado: propuesta técnica para revisión, sujeta a las decisiones de `04-decisiones.md`. No se generará el esquema Prisma definitivo hasta cerrar propiedad de datos, cobro, políticas y reglas de liquidación.
+Estado: propuesta técnica sujeta a las decisiones de `04-decisiones.md`. Se implementó un esquema inicial acotado a organización, identidad, sedes y configuración fiscal, autorizado por el usuario el 2026-09-10. El esquema definitivo de clientes, cobros y liquidaciones sigue pendiente de las políticas restantes. Ver `06-fundacion.md` para el alcance implementado.
 
 ## Organización técnica
 

@@ -1,0 +1,2 @@
+import tseslint from "typescript-eslint";
+export default tseslint.config({ ignores: ["**/node_modules/**", "**/.next/**", "**/dist/**", "**/next-env.d.ts"] }, ...tseslint.configs.recommended, { files: ["apps/booking/**/*.{ts,tsx}"], rules: { "no-restricted-imports": ["error", { patterns: [{ group: ["@nailnet/database", "@nailnet/database/*", "@nailnet/integrations", "@nailnet/integrations/*", "@nailnet/domain", "@nailnet/domain/*"], message: "El portal solo puede importar contratos públicos." }] }] } });

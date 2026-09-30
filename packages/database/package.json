@@ -8,7 +8,8 @@
     "./access": "./src/access.ts",
     "./auth": "./src/auth.ts",
     "./usuarios": "./src/usuarios.ts",
-    "./configuracion": "./src/configuracion.ts"
+    "./configuracion": "./src/configuracion.ts",
+    "./clientes": "./src/clientes.ts"
   },
   "scripts": {
     "generate": "prisma generate",

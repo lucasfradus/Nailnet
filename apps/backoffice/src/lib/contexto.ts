@@ -33,12 +33,15 @@ export const contextoPanel = cache(async () => {
     administrarFranquiciados: actor.some(a => tienePermiso(a, "franquiciado:administrar")),
     verUsuarios: actor.some(a => tienePermiso(a, "usuario:leer")),
     administrarUsuarios: actor.some(a => tienePermiso(a, "usuario:administrar")),
+    verClientes: actor.some(a => tienePermiso(a, "cliente:leer")),
+    editarClientes: actor.some(a => tienePermiso(a, "cliente:editar")),
+    administrarConsentimientos: actor.some(a => tienePermiso(a, "consentimiento:administrar")),
     crearSedeEn: (franquiciadoId: string) => puedeCrearSede(actor, franquiciadoId),
   };
   return { sesion, organizaciones: membresias.map(m => m.organizacion), organizacion, sedes, sede, puede, asignaciones: membresias.find(m => m.organizacion.id === organizacion.id)?.asignaciones ?? [] };
 });
 
-const sinPermisos = { verSedes: false, editarSedes: false, crearSedes: false, administrarFranquiciados: false, verUsuarios: false, administrarUsuarios: false, crearSedeEn: () => false };
+const sinPermisos = { verSedes: false, editarSedes: false, crearSedes: false, administrarFranquiciados: false, verUsuarios: false, administrarUsuarios: false, verClientes: false, editarClientes: false, administrarConsentimientos: false, crearSedeEn: () => false };
 
 export async function requerirOrganizacion() {
   const ctx = await contextoPanel();

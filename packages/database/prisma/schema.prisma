@@ -32,22 +32,54 @@ enum Proveedor {
   FACTURANTE
 }
 
+enum Sexo {
+  FEMENINO
+  MASCULINO
+  OTRO
+  NO_INFORMA
+}
+
+enum TipoDocumento {
+  DNI
+  CUIT
+  CUIL
+  PASAPORTE
+}
+
+enum TipoConsentimiento {
+  PRACTICA
+  TERMINOS
+  MARKETING
+}
+
+enum AccionConsentimiento {
+  ACEPTA
+  REVOCA
+}
+
+enum CanalConsentimiento {
+  RECEPCION
+  PORTAL
+}
+
 enum Ambiente {
   PRUEBA
   PRODUCCION
 }
 
 model Organizacion {
-  id            String                     @id @default(uuid()) @db.Uuid
-  nombre        String
-  activo        Boolean                    @default(true)
-  createdAt     DateTime                   @default(now())
-  updatedAt     DateTime                   @updatedAt
-  franquiciados Franquiciado[]
-  membresias    MembresiaOrganizacion[]
-  emisores      EmisorFiscal[]
-  auditoria     AuditLog[]
-  configuracion ConfiguracionOrganizacion?
+  id              String                     @id @default(uuid()) @db.Uuid
+  nombre          String
+  activo          Boolean                    @default(true)
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  franquiciados   Franquiciado[]
+  membresias      MembresiaOrganizacion[]
+  emisores        EmisorFiscal[]
+  auditoria       AuditLog[]
+  configuracion   ConfiguracionOrganizacion?
+  clientes        Cliente[]
+  consentimientos ConsentimientoVersion[]
 }
 
 model Franquiciado {
@@ -78,6 +110,8 @@ model Sede {
   configuracionesFiscales ConfiguracionFiscalSede[]
   configuracion           ConfiguracionSede?
   credenciales            CredencialProveedor[]
+  clientes                ClienteSede[]
+  consentimientos         ClienteConsentimiento[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -251,4 +285,81 @@ model CredencialProveedor {
   @@unique([sedeId, proveedor, ambiente])
   @@unique([proveedor, ambiente, cuentaExterna])
   @@index([organizacionId])
+}
+
+// Identidad compartida en la organización (D13). Sin datos de salud ni fotos.
+model Cliente {
+  id              String                  @id @default(uuid()) @db.Uuid
+  organizacionId  String                  @db.Uuid
+  nombre          String
+  apellido        String?
+  email           String?
+  telefono        String?
+  sexo            Sexo?
+  tipoDocumento   TipoDocumento?
+  documento       String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  organizacion    Organizacion            @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sedes           ClienteSede[]
+  consentimientos ClienteConsentimiento[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, email])
+  @@unique([organizacionId, tipoDocumento, documento])
+  @@index([organizacionId, telefono])
+}
+
+// Relación del cliente con cada sede; las observaciones son locales y solo las ve quien alcanza la sede.
+model ClienteSede {
+  organizacionId String   @db.Uuid
+  clienteId      String   @db.Uuid
+  sedeId         String   @db.Uuid
+  observaciones  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  cliente        Cliente  @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([clienteId, sedeId])
+  @@index([organizacionId, sedeId])
+}
+
+// Texto versionado e inmutable. Cambiar el texto es crear otra versión.
+model ConsentimientoVersion {
+  id             String                  @id @default(uuid()) @db.Uuid
+  organizacionId String                  @db.Uuid
+  tipo           TipoConsentimiento
+  clave          String
+  version        Int
+  titulo         String
+  texto          String
+  creadoPor      String?                 @db.Uuid
+  createdAt      DateTime                @default(now())
+  organizacion   Organizacion            @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  registros      ClienteConsentimiento[]
+
+  @@unique([organizacionId, clave, version])
+  @@unique([organizacionId, id])
+}
+
+// Registro inmutable de aceptación o revocación: el estado surge del último registro.
+model ClienteConsentimiento {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizacionId String                @db.Uuid
+  clienteId      String                @db.Uuid
+  versionId      String                @db.Uuid
+  sedeId         String?               @db.Uuid
+  accion         AccionConsentimiento
+  canal          CanalConsentimiento
+  registradoPor  String?               @db.Uuid
+  evidencia      Json?
+  // Desempata registros del mismo milisegundo: el estado lo define el último insertado.
+  orden          Int                   @default(autoincrement())
+  createdAt      DateTime              @default(now())
+  cliente        Cliente               @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
+  version        ConsentimientoVersion @relation(fields: [organizacionId, versionId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede?                 @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([organizacionId, clienteId, createdAt])
 }

@@ -1,11 +1,14 @@
 "use server";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { AccesoDenegado, type Asignacion } from "@nailnet/domain";
 import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes } from "@nailnet/database/access";
 import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol } from "@nailnet/database/usuarios";
 import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, eliminarCredencial, guardarCredencial } from "@nailnet/database/configuracion";
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
+import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
+import { actualizarCliente, actualizarObservaciones, crearCliente, publicarConsentimiento, registrarConsentimiento, vincularCliente } from "@nailnet/database/clientes";
 import { db } from "@/lib/db";
 import { COOKIE_ORGANIZACION, COOKIE_SEDE, requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
@@ -120,4 +123,41 @@ export async function accionGuardarCredencial(_: Estado, form: FormData) {
 export async function accionEliminarCredencial(_: Estado, form: FormData) {
   const sedeId = texto(form, "sedeId");
   return ejecutar(`/sedes/${sedeId}`, (actor, org) => eliminarCredencial(db(), actor, org, sedeId, texto(form, "proveedor"), texto(form, "ambiente")), "Credencial eliminada");
+}
+
+// Clientes y consentimientos (C01).
+const datosCliente = (f: FormData) => ({
+  nombre: texto(f, "nombre"), apellido: texto(f, "apellido"), email: texto(f, "email"), telefono: texto(f, "telefono"),
+  sexo: (texto(f, "sexo") || null) as DatosCliente["sexo"], tipoDocumento: (texto(f, "tipoDocumento") || null) as DatosCliente["tipoDocumento"], documento: texto(f, "documento"),
+});
+export async function accionCrearCliente(_: Estado, form: FormData) {
+  let id = "";
+  const r = await ejecutar("/clientes", async (actor, org) => { id = (await crearCliente(db(), actor, org, texto(form, "sedeId"), datosCliente(form))).id; }, "Cliente creado");
+  if (r?.ok && id) redirect(`/clientes/${id}`);
+  return r;
+}
+export async function accionVincularCliente(_: Estado, form: FormData) {
+  const clienteId = texto(form, "clienteId");
+  const r = await ejecutar("/clientes", (actor, org) => vincularCliente(db(), actor, org, clienteId, texto(form, "sedeId")), "Cliente vinculado a la sede");
+  if (r?.ok) redirect(`/clientes/${clienteId}`);
+  return r;
+}
+export async function accionActualizarCliente(_: Estado, form: FormData) {
+  const clienteId = texto(form, "clienteId");
+  return ejecutar(`/clientes/${clienteId}`, (actor, org) => actualizarCliente(db(), actor, org, clienteId, datosCliente(form)), "Datos actualizados");
+}
+export async function accionObservaciones(_: Estado, form: FormData) {
+  const clienteId = texto(form, "clienteId");
+  return ejecutar(`/clientes/${clienteId}`, (actor, org) => actualizarObservaciones(db(), actor, org, clienteId, texto(form, "sedeId"), texto(form, "observaciones")), "Observaciones guardadas");
+}
+export async function accionConsentimiento(_: Estado, form: FormData) {
+  const clienteId = texto(form, "clienteId");
+  const accion = texto(form, "accion") === "REVOCA" ? "REVOCA" : "ACEPTA";
+  return ejecutar(`/clientes/${clienteId}`, (actor, org) => registrarConsentimiento(db(), actor, org, { clienteId, versionId: texto(form, "versionId"), sedeId: texto(form, "sedeId"), accion }), accion === "ACEPTA" ? "Aceptación registrada" : "Revocación registrada");
+}
+export async function accionPublicarConsentimiento(_: Estado, form: FormData) {
+  return ejecutar("/consentimientos", async (actor, org) => {
+    const v = await publicarConsentimiento(db(), actor, org, { tipo: texto(form, "tipo") as TipoConsentimiento, clave: texto(form, "clave").trim(), titulo: texto(form, "titulo"), texto: texto(form, "texto") });
+    return `Publicada la versión ${v.version}`;
+  }, "");
 }

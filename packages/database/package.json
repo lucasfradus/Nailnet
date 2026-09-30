@@ -9,7 +9,8 @@
     "./auth": "./src/auth.ts",
     "./usuarios": "./src/usuarios.ts",
     "./configuracion": "./src/configuracion.ts",
-    "./clientes": "./src/clientes.ts"
+    "./clientes": "./src/clientes.ts",
+    "./catalogo": "./src/catalogo.ts"
   },
   "scripts": {
     "generate": "prisma generate",

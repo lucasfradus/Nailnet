@@ -62,6 +62,12 @@ enum CanalConsentimiento {
   PORTAL
 }
 
+enum TipoSena {
+  NINGUNA
+  FIJA
+  PORCENTAJE
+}
+
 enum Ambiente {
   PRUEBA
   PRODUCCION
@@ -80,6 +86,10 @@ model Organizacion {
   configuracion   ConfiguracionOrganizacion?
   clientes        Cliente[]
   consentimientos ConsentimientoVersion[]
+  categorias      CategoriaServicio[]
+  servicios       Servicio[]
+  skills          Skill[]
+  tiposRecurso    TipoRecurso[]
 }
 
 model Franquiciado {
@@ -112,6 +122,7 @@ model Sede {
   credenciales            CredencialProveedor[]
   clientes                ClienteSede[]
   consentimientos         ClienteConsentimiento[]
+  servicios               ServicioSede[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -362,4 +373,117 @@ model ClienteConsentimiento {
   sede           Sede?                 @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
 
   @@index([organizacionId, clienteId, createdAt])
+}
+
+// Catálogo global de la organización (propuesta D12); precio y habilitación son por sede.
+model CategoriaServicio {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  nombre         String
+  orden          Int          @default(0)
+  activo         Boolean      @default(true)
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  servicios      Servicio[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+}
+
+model Servicio {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  organizacionId       String                     @db.Uuid
+  categoriaId          String                     @db.Uuid
+  nombre               String
+  descripcion          String?
+  duracionMinutos      Int
+  bufferAntesMinutos   Int                        @default(0)
+  bufferDespuesMinutos Int                        @default(0)
+  // Seña por defecto del servicio. null = sin definir (D3 pendiente): no se ofrece online.
+  senaTipo             TipoSena?
+  senaValor            Decimal?                   @db.Decimal(12, 2)
+  activo               Boolean                    @default(true)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  organizacion         Organizacion               @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  categoria            CategoriaServicio          @relation(fields: [organizacionId, categoriaId], references: [organizacionId, id], onDelete: Restrict)
+  skills               ServicioSkill[]
+  recursos             ServicioRequisitoRecurso[]
+  consentimientos      ServicioConsentimiento[]
+  sedes                ServicioSede[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+}
+
+model Skill {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizacionId String          @db.Uuid
+  nombre         String
+  organizacion   Organizacion    @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  servicios      ServicioSkill[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+}
+
+// El profesional debe tener TODAS las skills requeridas por el servicio.
+model ServicioSkill {
+  organizacionId String   @db.Uuid
+  servicioId     String   @db.Uuid
+  skillId        String   @db.Uuid
+  servicio       Servicio @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Cascade)
+  skill          Skill    @relation(fields: [organizacionId, skillId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([servicioId, skillId])
+}
+
+model TipoRecurso {
+  id             String                     @id @default(uuid()) @db.Uuid
+  organizacionId String                     @db.Uuid
+  nombre         String
+  organizacion   Organizacion               @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  requisitos     ServicioRequisitoRecurso[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+}
+
+// Cantidad de unidades distintas de un tipo que el servicio ocupa durante todo el intervalo.
+model ServicioRequisitoRecurso {
+  organizacionId String      @db.Uuid
+  servicioId     String      @db.Uuid
+  tipoRecursoId  String      @db.Uuid
+  cantidad       Int
+  servicio       Servicio    @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Cascade)
+  tipoRecurso    TipoRecurso @relation(fields: [organizacionId, tipoRecursoId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([servicioId, tipoRecursoId])
+}
+
+// Consentimiento exigido por el servicio, por clave: siempre rige la versión vigente.
+model ServicioConsentimiento {
+  organizacionId String   @db.Uuid
+  servicioId     String   @db.Uuid
+  clave          String
+  servicio       Servicio @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Cascade)
+
+  @@id([servicioId, clave])
+}
+
+model ServicioSede {
+  organizacionId   String    @db.Uuid
+  servicioId       String    @db.Uuid
+  sedeId           String    @db.Uuid
+  habilitado       Boolean   @default(false)
+  precio           Decimal?  @db.Decimal(12, 2)
+  duracionMinutos  Int?
+  senaTipo         TipoSena?
+  senaValor        Decimal?  @db.Decimal(12, 2)
+  reservableOnline Boolean   @default(true)
+  updatedAt        DateTime  @updatedAt
+  servicio         Servicio  @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
+  sede             Sede      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([servicioId, sedeId])
+  @@index([organizacionId, sedeId])
 }

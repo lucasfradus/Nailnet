@@ -8,7 +8,8 @@
     "./credenciales": "./src/credenciales.ts",
     "./secretos": "./src/secretos.ts",
     "./configuracion": "./src/configuracion.ts",
-    "./clientes": "./src/clientes.ts"
+    "./clientes": "./src/clientes.ts",
+    "./catalogo": "./src/catalogo.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

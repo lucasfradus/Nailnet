@@ -11,8 +11,9 @@ Documentación preparada el 9 de septiembre de 2026 a partir del pedido y de la 
 - [Administración de sedes y usuarios](docs/10-administracion.md).
 - [Configuración y secretos por sede](docs/11-configuracion-secretos.md).
 - [Clientes y consentimientos](docs/12-clientes-consentimientos.md).
+- [Catálogo y precios por sede](docs/13-catalogo.md).
 
-Estado al 10 de septiembre: monorepo con backoffice Next.js, portal React/Vite, worker y primera migración Prisma/PostgreSQL de organización, sedes, identidad y configuración fiscal. Incluye repositorios con permisos por sede y pruebas de integración. Desde el 30 de septiembre el backoffice tiene login, logout y recuperación de contraseña con sesiones revocables en PostgreSQL; también administra sedes, franquiciados y usuarios con roles por alcance y selector de sede. Incluye clientes compartidos con observaciones por sede y consentimientos versionados. Todavía no hay catálogo, agenda ni cobros. Repositorio: [lucasfradus/Nailnet](https://github.com/lucasfradus/Nailnet). Las políticas comerciales restantes siguen pendientes.
+Estado al 10 de septiembre: monorepo con backoffice Next.js, portal React/Vite, worker y primera migración Prisma/PostgreSQL de organización, sedes, identidad y configuración fiscal. Incluye repositorios con permisos por sede y pruebas de integración. Desde el 30 de septiembre el backoffice tiene login, logout y recuperación de contraseña con sesiones revocables en PostgreSQL; también administra sedes, franquiciados y usuarios con roles por alcance y selector de sede. Incluye clientes compartidos con observaciones por sede y consentimientos versionados. También catálogo global con precio y seña configurables por sede. Todavía no hay profesionales, agenda ni cobros. Repositorio: [lucasfradus/Nailnet](https://github.com/lucasfradus/Nailnet). Las políticas comerciales restantes siguen pendientes.
 
 ## Desarrollo local
 

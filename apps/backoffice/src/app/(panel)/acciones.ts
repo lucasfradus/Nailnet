@@ -9,6 +9,8 @@ import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, elimi
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
 import { actualizarCliente, actualizarObservaciones, crearCliente, publicarConsentimiento, registrarConsentimiento, vincularCliente } from "@nailnet/database/clientes";
+import type { Sena, TipoSena } from "@nailnet/domain/catalogo";
+import { crearCategoria, crearSkill, crearTipoRecurso, guardarServicio, guardarServicioSede } from "@nailnet/database/catalogo";
 import { db } from "@/lib/db";
 import { COOKIE_ORGANIZACION, COOKIE_SEDE, requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
@@ -160,4 +162,41 @@ export async function accionPublicarConsentimiento(_: Estado, form: FormData) {
     const v = await publicarConsentimiento(db(), actor, org, { tipo: texto(form, "tipo") as TipoConsentimiento, clave: texto(form, "clave").trim(), titulo: texto(form, "titulo"), texto: texto(form, "texto") });
     return `Publicada la versión ${v.version}`;
   }, "");
+}
+
+// Catálogo (C02).
+const marcado = (f: FormData, k: string) => f.get(k) === "on";
+const entero = (f: FormData, k: string) => { const v = texto(f, k).trim(); return v === "" ? NaN : Number(v); };
+function senaForm(f: FormData, prefijo = ""): Sena {
+  const tipo = texto(f, `${prefijo}senaTipo`);
+  if (!tipo) return null;
+  return { tipo: tipo as TipoSena, valor: tipo === "NINGUNA" ? null : texto(f, `${prefijo}senaValor`).trim() || null };
+}
+export async function accionCrearCategoria(_: Estado, form: FormData) {
+  return ejecutar("/catalogo", async (actor, org) => { await crearCategoria(db(), actor, org, texto(form, "nombre"), entero(form, "orden") || 0); }, "Categoría creada");
+}
+export async function accionCrearSkill(_: Estado, form: FormData) {
+  return ejecutar("/catalogo", async (actor, org) => { await crearSkill(db(), actor, org, texto(form, "nombre")); }, "Habilidad creada");
+}
+export async function accionCrearTipoRecurso(_: Estado, form: FormData) {
+  return ejecutar("/catalogo", async (actor, org) => { await crearTipoRecurso(db(), actor, org, texto(form, "nombre")); }, "Tipo de recurso creado");
+}
+export async function accionGuardarServicio(_: Estado, form: FormData) {
+  const servicioId = texto(form, "servicioId") || undefined;
+  const recursos = form.getAll("tipoRecursoId").map(String).map(id => ({ tipoRecursoId: id, cantidad: entero(form, `cantidad_${id}`) })).filter(r => r.cantidad > 0);
+  return ejecutar("/catalogo", async (actor, org) => {
+    await guardarServicio(db(), actor, org, {
+      categoriaId: texto(form, "categoriaId"), nombre: texto(form, "nombre"), descripcion: texto(form, "descripcion"),
+      duracionMinutos: entero(form, "duracionMinutos"), bufferAntesMinutos: entero(form, "bufferAntesMinutos") || 0, bufferDespuesMinutos: entero(form, "bufferDespuesMinutos") || 0,
+      sena: senaForm(form), activo: servicioId ? marcado(form, "activo") : true,
+      skillIds: form.getAll("skillId").map(String), recursos, consentimientos: form.getAll("consentimiento").map(String),
+    }, servicioId);
+  }, servicioId ? "Servicio actualizado" : "Servicio creado");
+}
+export async function accionServicioSede(_: Estado, form: FormData) {
+  const duracion = entero(form, "duracionMinutos");
+  return ejecutar("/catalogo", (actor, org) => guardarServicioSede(db(), actor, org, texto(form, "sedeId"), texto(form, "servicioId"), {
+    habilitado: marcado(form, "habilitado"), precio: texto(form, "precio") || null, duracionMinutos: Number.isNaN(duracion) ? null : duracion,
+    sena: senaForm(form), reservableOnline: marcado(form, "reservableOnline"),
+  }), "Condiciones de la sede guardadas");
 }

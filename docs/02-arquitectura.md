@@ -155,7 +155,7 @@ Outbox/Job en PostgreSQL con estado, próximo intento, intentos, lease con venci
 
 Propuesta Railway: servicios backoffice, booking, worker y PostgreSQL, ambientes staging/production con credenciales separadas. Un build/start por aplicación y watch paths que incluyan sus paquetes compartidos permiten deploys independientes en el [monorepo de Railway](https://docs.railway.com/deployments/monorepo).
 
-Solo backend/worker acceden a DATABASE_URL. Variables server-only: sesión, cifrado versionado, OAuth/secret de webhook MP, Facturante por ambiente y Resend. Portal: URL pública de API. Datos de cuentas por sede cifrados en DB, claves fuera de DB. No se provisionó ningún servicio en esta etapa.
+Solo backend/worker acceden a DATABASE_URL. Variables server-only: sesión, cifrado versionado (`NAILNET_CLAVES_CIFRADO`, `NAILNET_CLAVE_ACTIVA`, ver 11-configuracion-secretos.md), OAuth/secret de webhook MP, Facturante por ambiente y Resend. Portal: URL pública de API. Datos de cuentas por sede cifrados en DB, claves fuera de DB. No se provisionó ningún servicio en esta etapa.
 
 Migraciones ejecutadas una vez por release, compatibles con despliegue gradual de API/worker/portal. Backups y restauración ensayada antes del piloto; health checks, alertas por jobs vencidos, pagos sin imputación y comprobantes ambiguos. Logs con correlation ID y datos personales reducidos. Rollback de aplicación debe ser compatible con esquema vigente; evitar rollback destructivo automático de migraciones.
 

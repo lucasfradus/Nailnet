@@ -1,4 +1,5 @@
 import { AccesoDenegado, puedeCrearSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type Permiso } from "@nailnet/domain";
+import { redactar } from "@nailnet/domain/secretos";
 import type { Database } from "./client.ts";
 import type { Prisma } from "../generated/client/client.ts";
 
@@ -39,7 +40,8 @@ export async function bloquearOrganizacion(tx: Prisma.TransactionClient, organiz
 }
 
 export async function auditar(tx: Prisma.TransactionClient, organizacionId: string, actorId: string, accion: string, entidad: string, entidadId: string, datos?: Prisma.InputJsonValue) {
-  await tx.auditLog.create({ data: { organizacionId, actorId, accion, entidad, entidadId, datos } });
+  // Redacción defensiva: aunque alguien pase un secreto por error, no queda en la auditoría.
+  await tx.auditLog.create({ data: { organizacionId, actorId, accion, entidad, entidadId, datos: datos === undefined ? undefined : redactar(datos) } });
 }
 
 // usuarioId debe provenir de una sesión validada en servidor, nunca del body del navegador.

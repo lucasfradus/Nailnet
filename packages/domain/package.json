@@ -5,7 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/access.ts",
-    "./credenciales": "./src/credenciales.ts"
+    "./credenciales": "./src/credenciales.ts",
+    "./secretos": "./src/secretos.ts",
+    "./configuracion": "./src/configuracion.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

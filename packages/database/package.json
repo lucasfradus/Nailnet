@@ -7,7 +7,8 @@
     ".": "./src/client.ts",
     "./access": "./src/access.ts",
     "./auth": "./src/auth.ts",
-    "./usuarios": "./src/usuarios.ts"
+    "./usuarios": "./src/usuarios.ts",
+    "./configuracion": "./src/configuracion.ts"
   },
   "scripts": {
     "generate": "prisma generate",
@@ -16,7 +17,8 @@
     "seed": "tsx prisma/seed.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "usuario:password": "tsx prisma/establecer-password.ts"
+    "usuario:password": "tsx prisma/establecer-password.ts",
+    "secretos:recifrar": "tsx prisma/recifrar-secretos.ts"
   },
   "devDependencies": {
     "prisma": "7.10.0",

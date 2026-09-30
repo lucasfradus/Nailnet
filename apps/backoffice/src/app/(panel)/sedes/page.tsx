@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { listarFranquiciados, listarSedes } from "@nailnet/database/access";
 import { Formulario } from "@/components/formulario";
@@ -27,7 +28,7 @@ export default async function Sedes() {
     <p className="eyebrow">ORGANIZACIÓN</p><h1>Sedes</h1>
     <div className="tabla">
       {sedes.map(s => <article key={s.id} className={s.activo ? "fila" : "fila inactiva"}>
-        <div className="fila-cabecera"><h2>{s.nombre}</h2><span className="tag">{s.activo ? "Activa" : "Inactiva"}</span></div>
+        <div className="fila-cabecera"><h2><Link href={`/sedes/${s.id}`}>{s.nombre}</Link></h2><span className="tag">{s.activo ? "Activa" : "Inactiva"}</span></div>
         <p>{s.franquiciado.nombre} · {s.timezone.replace(/_/g, " ")}</p>
         {puede.editarSedes && s.activo && <Formulario accion={accionActualizarSede} boton="Guardar" className="en-linea">
           <input type="hidden" name="sedeId" value={s.id} />

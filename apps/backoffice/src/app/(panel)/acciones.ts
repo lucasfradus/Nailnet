@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { AccesoDenegado, type Asignacion } from "@nailnet/domain";
 import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes } from "@nailnet/database/access";
 import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol } from "@nailnet/database/usuarios";
+import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, eliminarCredencial, guardarCredencial } from "@nailnet/database/configuracion";
+import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
 import { db } from "@/lib/db";
 import { COOKIE_ORGANIZACION, COOKIE_SEDE, requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
@@ -92,4 +94,30 @@ export async function accionInvitar(_: Estado, form: FormData) {
     // Se muestra una sola vez a quien lo generó; no se guarda ni se registra.
     return `Enlace de activación (vence ${expiraEn.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}): ${base}/restablecer#${token}`;
   }, "");
+}
+
+// Configuración (A03). Vacío = heredar de la organización.
+const numero = (f: FormData, k: string) => { const v = texto(f, k).trim(); return v === "" ? null : Number(v); };
+const parametros = (f: FormData) => ({ horizonteReservaDias: numero(f, "horizonteReservaDias"), anticipacionMinimaMinutos: numero(f, "anticipacionMinimaMinutos") });
+
+export async function accionConfiguracionSede(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => actualizarConfiguracionSede(db(), actor, org, sedeId, parametros(form)), "Configuración de la sede guardada");
+}
+export async function accionConfiguracionOrganizacion(_: Estado, form: FormData) {
+  return ejecutar("/sedes", (actor, org) => actualizarConfiguracionOrganizacion(db(), actor, org, parametros(form)), "Valores de la organización guardados");
+}
+export async function accionGuardarCredencial(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  const campos = Object.fromEntries([...form.entries()].filter(([k, v]) => k.startsWith("c_") && typeof v === "string").map(([k, v]) => [k.slice(2), v as string]));
+  try {
+    return await ejecutar(`/sedes/${sedeId}`, (actor, org) => guardarCredencial(db(), actor, org, sedeId, texto(form, "proveedor"), texto(form, "ambiente"), campos), "Credencial guardada");
+  } catch (e) {
+    if (e instanceof CifradoNoConfigurado) return { error: e.message };
+    throw e;
+  }
+}
+export async function accionEliminarCredencial(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => eliminarCredencial(db(), actor, org, sedeId, texto(form, "proveedor"), texto(form, "ambiente")), "Credencial eliminada");
 }

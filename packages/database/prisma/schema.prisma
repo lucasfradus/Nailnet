@@ -27,21 +27,27 @@ enum TipoIntentoAcceso {
   RECUPERACION
 }
 
+enum Proveedor {
+  MERCADO_PAGO
+  FACTURANTE
+}
+
 enum Ambiente {
   PRUEBA
   PRODUCCION
 }
 
 model Organizacion {
-  id            String                  @id @default(uuid()) @db.Uuid
+  id            String                     @id @default(uuid()) @db.Uuid
   nombre        String
-  activo        Boolean                 @default(true)
-  createdAt     DateTime                @default(now())
-  updatedAt     DateTime                @updatedAt
+  activo        Boolean                    @default(true)
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
   franquiciados Franquiciado[]
   membresias    MembresiaOrganizacion[]
   emisores      EmisorFiscal[]
   auditoria     AuditLog[]
+  configuracion ConfiguracionOrganizacion?
 }
 
 model Franquiciado {
@@ -70,6 +76,8 @@ model Sede {
   franquiciado            Franquiciado              @relation(fields: [organizacionId, franquiciadoId], references: [organizacionId, id], onDelete: Restrict)
   asignaciones            AsignacionRol[]
   configuracionesFiscales ConfiguracionFiscalSede[]
+  configuracion           ConfiguracionSede?
+  credenciales            CredencialProveedor[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -201,4 +209,46 @@ model AuditLog {
 
   @@index([organizacionId, createdAt])
   @@index([entidad, entidadId])
+}
+
+// Parámetros operativos con herencia organización → sede. null = heredar / sin definir.
+model ConfiguracionOrganizacion {
+  organizacionId            String       @id @db.Uuid
+  horizonteReservaDias      Int?
+  anticipacionMinimaMinutos Int?
+  updatedAt                 DateTime     @updatedAt
+  organizacion              Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+}
+
+model ConfiguracionSede {
+  organizacionId            String   @db.Uuid
+  sedeId                    String   @id @db.Uuid
+  horizonteReservaDias      Int?
+  anticipacionMinimaMinutos Int?
+  updatedAt                 DateTime @updatedAt
+  sede                      Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([organizacionId, sedeId])
+}
+
+// Credenciales de proveedor por sede y ambiente (D8). Los secretos se guardan cifrados con versión de
+// clave; las claves viven fuera de la base. cuentaExterna impide compartir una cuenta receptora entre sedes.
+model CredencialProveedor {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizacionId String    @db.Uuid
+  sedeId         String    @db.Uuid
+  proveedor      Proveedor
+  ambiente       Ambiente
+  cuentaExterna  String?
+  publicos       Json
+  secretoCifrado String
+  pista          String
+  actualizadoPor String?   @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  sede           Sede      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([sedeId, proveedor, ambiente])
+  @@unique([proveedor, ambiente, cuentaExterna])
+  @@index([organizacionId])
 }

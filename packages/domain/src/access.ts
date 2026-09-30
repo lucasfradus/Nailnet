@@ -1,5 +1,5 @@
 export type Rol = "MASTER_FRANQUICIADOR" | "FRANQUICIADO" | "ADMIN_SEDE" | "RECEPCIONISTA" | "PROFESIONAL";
-export type Permiso = "sede:leer" | "sede:administrar" | "sede:crear" | "franquiciado:administrar" | "usuario:leer" | "usuario:administrar";
+export type Permiso = "sede:leer" | "sede:administrar" | "sede:crear" | "sede:credenciales" | "franquiciado:administrar" | "organizacion:configurar" | "usuario:leer" | "usuario:administrar";
 export type Asignacion = {
   rol: Rol;
   alcance: "ORGANIZACION" | "FRANQUICIADO" | "SEDE" | "PROPIO";
@@ -7,8 +7,9 @@ export type Asignacion = {
   sedeId: string | null;
 };
 const permisos: Record<Rol, readonly Permiso[]> = {
-  MASTER_FRANQUICIADOR: ["sede:leer", "sede:administrar", "sede:crear", "franquiciado:administrar", "usuario:leer", "usuario:administrar"],
-  FRANQUICIADO: ["sede:leer", "sede:administrar", "sede:crear", "usuario:leer", "usuario:administrar"],
+  MASTER_FRANQUICIADOR: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "franquiciado:administrar", "organizacion:configurar", "usuario:leer", "usuario:administrar"],
+  // Credenciales de proveedores: solo quien es dueño comercial de la sede (o el master), no la operación diaria.
+  FRANQUICIADO: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "usuario:leer", "usuario:administrar"],
   ADMIN_SEDE: ["sede:leer", "sede:administrar", "usuario:leer"],
   RECEPCIONISTA: ["sede:leer"],
   PROFESIONAL: [],

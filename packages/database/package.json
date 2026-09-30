@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/client.ts",
     "./access": "./src/access.ts",
-    "./auth": "./src/auth.ts"
+    "./auth": "./src/auth.ts",
+    "./usuarios": "./src/usuarios.ts"
   },
   "scripts": {
     "generate": "prisma generate",

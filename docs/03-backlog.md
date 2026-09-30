@@ -27,7 +27,7 @@ Dependencias: D01–D03. Si falla el acceso a proveedores, completar base local 
 | ID | Entrega | Criterio de aceptación |
 |---|---|---|
 | A01 | Roles y alcances | Master/franquiciado/admin/recepción/profesional; pruebas de acceso cruzado por ID en lectura y escritura |
-| A02 | CRUD sede, usuarios y selector | Recepción con varias sedes; selector no amplía alcance; franquiciado ve consolidado de sus sedes |
+| A02 | CRUD sede, usuarios y selector · hecho 2026-10-01, ver 10-administracion.md | Recepción con varias sedes; selector no amplía alcance; franquiciado ve consolidado de sus sedes |
 | A03 | Configuración y secretos por sede | Herencia/excepciones según D01; cifrado y secretos redactados en logs/respuestas |
 
 ## Fase 3 · días 11–16 · catálogo y disponibilidad

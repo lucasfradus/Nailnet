@@ -41,6 +41,7 @@ model Organizacion {
   franquiciados Franquiciado[]
   membresias    MembresiaOrganizacion[]
   emisores      EmisorFiscal[]
+  auditoria     AuditLog[]
 }
 
 model Franquiciado {
@@ -184,4 +185,20 @@ model ConfiguracionFiscalSede {
 
   @@unique([organizacionId, sedeId, ambiente])
   @@unique([emisorFiscalId, ambiente, puntoVenta])
+}
+
+// Trazabilidad mínima de cambios de estructura y permisos. Nunca guarda secretos, tokens ni contraseñas.
+model AuditLog {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  actorId        String?      @db.Uuid
+  accion         String
+  entidad        String
+  entidadId      String
+  datos          Json?
+  createdAt      DateTime     @default(now())
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+
+  @@index([organizacionId, createdAt])
+  @@index([entidad, entidadId])
 }

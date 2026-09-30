@@ -8,8 +8,9 @@ Documentación preparada el 9 de septiembre de 2026 a partir del pedido y de la 
 - [Decisiones pendientes](docs/04-decisiones.md).
 - [Análisis de la competencia (Sicurella)](docs/08-competencia-sicurella.md).
 - [Autenticación del backoffice](docs/09-autenticacion.md).
+- [Administración de sedes y usuarios](docs/10-administracion.md).
 
-Estado al 10 de septiembre: monorepo con backoffice Next.js, portal React/Vite, worker y primera migración Prisma/PostgreSQL de organización, sedes, identidad y configuración fiscal. Incluye repositorios con permisos por sede y pruebas de integración. Desde el 30 de septiembre el backoffice tiene login, logout y recuperación de contraseña con sesiones revocables en PostgreSQL; todavía no hay operaciones de negocio accesibles desde la UI. Repositorio: [lucasfradus/Nailnet](https://github.com/lucasfradus/Nailnet). Las políticas comerciales restantes siguen pendientes.
+Estado al 10 de septiembre: monorepo con backoffice Next.js, portal React/Vite, worker y primera migración Prisma/PostgreSQL de organización, sedes, identidad y configuración fiscal. Incluye repositorios con permisos por sede y pruebas de integración. Desde el 30 de septiembre el backoffice tiene login, logout y recuperación de contraseña con sesiones revocables en PostgreSQL; también administra sedes, franquiciados y usuarios con roles por alcance y selector de sede. Todavía no hay catálogo, agenda ni cobros. Repositorio: [lucasfradus/Nailnet](https://github.com/lucasfradus/Nailnet). Las políticas comerciales restantes siguen pendientes.
 
 ## Desarrollo local
 

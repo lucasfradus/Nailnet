@@ -7,6 +7,7 @@ export const POLITICA_ACCESO = {
   sesionMaximaMs: 12 * 60 * MINUTO,
   sesionInactividadMs: 2 * 60 * MINUTO,
   recuperacionMs: 30 * MINUTO,
+  invitacionMs: 72 * 60 * MINUTO,
   ventanaIntentosMs: 15 * MINUTO,
   maxFallosPorEmail: 5,
   maxFallosPorIp: 30,
@@ -111,13 +112,18 @@ export async function solicitarRecuperacion(db: Database, entrada: { email: stri
     const usuario = await tx.usuario.findFirst({ where: { email, ...habilitado }, select: { id: true, email: true, nombre: true } });
     await tx.intentoAcceso.create({ data: { tipo: "RECUPERACION", email, ip, exitoso: !!usuario } });
     if (!usuario) return null;
-    // Solo el último enlace emitido es utilizable; los anteriores quedan consumidos.
-    await tx.tokenRecuperacion.updateMany({ where: { usuarioId: usuario.id, usadoEn: null }, data: { usadoEn: ahora } });
-    const { token, hash } = generarToken();
-    const expiraEn = new Date(ahora.getTime() + POLITICA_ACCESO.recuperacionMs);
-    await tx.tokenRecuperacion.create({ data: { usuarioId: usuario.id, tokenHash: hash, createdAt: ahora, expiraEn } });
+    const { token, expiraEn } = await emitirTokenAcceso(tx, usuario.id, POLITICA_ACCESO.recuperacionMs, ahora);
     return { token, expiraEn, email: usuario.email, nombre: usuario.nombre };
   });
+}
+
+/** Emite un enlace para elegir contraseña. Solo el último emitido es utilizable; los anteriores quedan consumidos. */
+export async function emitirTokenAcceso(tx: Prisma.TransactionClient, usuarioId: string, duracionMs: number, ahora = new Date()) {
+  await tx.tokenRecuperacion.updateMany({ where: { usuarioId, usadoEn: null }, data: { usadoEn: ahora } });
+  const { token, hash } = generarToken();
+  const expiraEn = new Date(ahora.getTime() + duracionMs);
+  await tx.tokenRecuperacion.create({ data: { usuarioId, tokenHash: hash, createdAt: ahora, expiraEn } });
+  return { token, expiraEn };
 }
 
 export async function restablecerPassword(db: Database, token: string, password: string): Promise<void> {

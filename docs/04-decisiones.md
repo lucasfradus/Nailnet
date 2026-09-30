@@ -18,6 +18,10 @@ Las propuestas siguen pendientes salvo donde se registra una confirmación expl�
 | D12 | Global versus sede | Propuesta: catálogo/skills/consentimientos globales, precio/horario/recurso locales, reglas comerciales con excepciones permitidas; sin aprobaciones corporativas | Configuración y permisos |
 | D13 | Clientes compartidos | Confirmado el 2026-09-10: por ahora los clientes serán compartidos entre franquiciados de la misma organización. El alcance del historial no fue confirmado; se conserva la propuesta de limitarlo a sedes autorizadas | Identidad compartida resuelta; visibilidad del historial pendiente |
 | D14 | Capacidad y calendario | ¿50 días corridos/hábiles? ¿Equipo disponible? ¿Sedes/profesionales y volumen del piloto? | Viabilidad, carga y alcance de lanzamiento |
+| D15 | Reserva con varios servicios | Confirmado el 2026-09-30: el esquema de reservas admite varios servicios consecutivos, cada uno con su profesional e intervalo. La UI del portal lo habilita en una etapa posterior | Resuelto; modelo Reserva 1:N ítems |
+| D16 | Elección de profesional | Confirmado el 2026-09-30: opcional; «cualquiera» por defecto con asignación balanceada dentro del motor | Resuelto; portal y motor |
+| D17 | Grilla de inicio de turnos | Pendiente. La competencia usa paso fijo de 60 min; se busca una definición prolija (configurable por sede y/o derivada de duración y buffers) | Motor de disponibilidad (C04) |
+| D18 | Horizonte y anticipación | Confirmado el 2026-09-30: horizonte máximo y anticipación mínima configurables por sede. Valores iniciales pendientes (referencia de la competencia: ~14 días) | Resuelto el criterio; valores con D12 |
 
 ## Escenarios a cerrar con las respuestas
 

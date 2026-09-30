@@ -17,12 +17,17 @@ try {
     assert.ok(response?.ok, `${service} debe responder`);
     assert.deepEqual(await response.json(), { status: "ok", service });
   }
-  const home = await fetch("http://127.0.0.1:3300");
-  assert.equal(home.status, 200);
-  assert.match(await home.text(), /NailNet/);
+  // Sin sesión, el inicio redirige al ingreso sin consultar la base.
+  const home = await fetch("http://127.0.0.1:3300", { redirect: "manual" });
+  assert.equal(home.status, 307);
+  assert.equal(new URL(home.headers.get("location"), "http://127.0.0.1:3300").pathname, "/login");
+  const login = await fetch("http://127.0.0.1:3300/login");
+  assert.equal(login.status, 200);
+  assert.equal(login.headers.get("x-frame-options"), "DENY");
+  assert.match(await login.text(), /Ingresar/);
   const missing = await fetch("http://127.0.0.1:3301/inexistente");
   assert.equal(missing.status, 404);
-  console.info("Smoke OK: inicio del backoffice y liveness de ambos procesos.");
+  console.info("Smoke OK: redirección al ingreso, pantalla de login y liveness de ambos procesos.");
 } finally {
   for (const child of processes) child.kill();
 }

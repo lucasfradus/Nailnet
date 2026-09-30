@@ -17,7 +17,7 @@ Los puertos publicados escuchan solo en localhost. Las aplicaciones dentro de Do
 
 ## Qué se puede probar
 
-Pantallas iniciales, controles HTTP, base persistente y datos sintéticos: dos franquiciados, tres sedes, seis usuarios sin contraseña y dos puntos de venta del mismo emisor. Todavía no hay login ni CRUD visual. Los permisos se prueban con la suite de integración, no desde las pantallas actuales.
+Pantallas iniciales, controles HTTP, base persistente y datos sintéticos: dos franquiciados, tres sedes, seis usuarios sin contraseña y dos puntos de venta del mismo emisor. El login funciona después de asignar una contraseña a un usuario demo (ver [autenticación](09-autenticacion.md)); todavía no hay CRUD visual. Los permisos se prueban con la suite de integración, no desde las pantallas actuales.
 
 Para ejecutar esa suite contra este PostgreSQL con fixtures adicionales aisladas por organización:
 

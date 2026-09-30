@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/client.ts",
-    "./access": "./src/access.ts"
+    "./access": "./src/access.ts",
+    "./auth": "./src/auth.ts"
   },
   "scripts": {
     "generate": "prisma generate",
@@ -13,7 +14,8 @@
     "migrate": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "usuario:password": "tsx prisma/establecer-password.ts"
   },
   "devDependencies": {
     "prisma": "7.10.0",

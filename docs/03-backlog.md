@@ -16,7 +16,7 @@ Calendario relativo, pendiente de confirmar días corridos/hábiles, equipo y ta
 |---|---|---|
 | F01 | Monorepo, Next, Vite, TypeScript, Prisma/PostgreSQL | Builds independientes, lint/typecheck y CI; dependencias fijadas; no secretos en bundle |
 | F02 | Organización, franquiciado, sede, usuarios | Migración reproducible y seed sintético; relaciones entre organizaciones inválidas rechazadas |
-| F03 | Login, logout y recuperación | Hash de contraseña, token de un uso, límites de intentos, usuario inactivo rechazado; sin rol implícito |
+| F03 | Login, logout y recuperación · hecho 2026-09-30, ver 09-autenticacion.md | Hash de contraseña, token de un uso, límites de intentos, usuario inactivo rechazado; sin rol implícito |
 | F04 | Staging, worker y outbox base | Job persiste/reanuda tras reinicio; health checks y documentación de variables |
 | F05 | Prueba temprana MP/Facturante | Contratos y credenciales de prueba funcionan; documentar deduplicación/consulta de resultados ambiguos |
 
@@ -37,7 +37,7 @@ Dependencias: D01–D03. Si falla el acceso a proveedores, completar base local 
 | C01 | Clientes y consentimientos versionados | Sin datos médicos/fotos; contacto invitado; alcance e historial según política; aceptación por práctica |
 | C02 | Servicios y precios por sede | Duración, skills, recursos y seña validados; precio independiente del profesional |
 | C03 | Profesionales y recursos | Multi-sede, habilidades, habilitaciones, jornadas, pausas y bloqueos |
-| C04 | Motor de disponibilidad | Intervalo completo con todos los recursos; bloqueos entre sedes; feriados y buffers; «cualquiera» compatible |
+| C04 | Motor de disponibilidad | Intervalo completo con todos los recursos; bloqueos entre sedes; feriados y buffers; «cualquiera» por defecto; horizonte y anticipación por sede; varios ítems consecutivos atómicos |
 | C05 | Prueba de exclusión PostgreSQL | Dos conexiones intentan mismo profesional o recurso: solo una retención gana; intervalos contiguos válidos |
 
 Dependencias: A01–A03. C05 es una puerta de salida de fase, no una prueba diferida al día 47.

@@ -56,7 +56,7 @@ Todas las entidades de negocio pertenecen a una organización. Usar IDs opacos, 
 | Profesional | Profesional, ProfesionalSede, Skill, ProfesionalSkill, ProfesionalServicio | Usuario opcional; habilitación expresa del servicio además de skills y sede |
 | Calendario | HorarioSede, HorarioProfesional, ExcepcionHorario, Feriado, BloqueoAgenda | Reglas semanales locales, vigencia, pausas y excepciones por fecha; bloqueos de profesional globales entre sedes |
 | Recursos | TipoRecurso, Recurso, ServicioRequisitoRecurso | Cabina/sala/máquina/espacio como unidades individuales. Cada requisito pide cantidad por tipo o unidad específica |
-| Reserva | Reserva, ReservaRecurso, OcupacionAgenda, ReservaEvento | Un servicio y un profesional por turno MVP; inicio/fin, canal, cliente, sede, expiresAt, snapshots de precio/duración/políticas |
+| Reserva | Reserva, ReservaItem, ReservaRecurso, OcupacionAgenda, ReservaEvento | Reserva 1:N ReservaItem (D15): cada ítem con servicio, profesional, inicio/fin y snapshots de precio/duración; la reserva agrupa canal, cliente, sede, expiresAt, seña y políticas. Ítems consecutivos en la misma sede |
 | Cobros | Pago, IntentoPago, PagoMercadoPago, AplicacionPago, Reembolso | Pago independiente de suscripciones; intentos rechazados no cambian otros pagos aprobados. Aplicación vincula venta y anticipo de reserva |
 | Operación MP | CuentaMercadoPago, EventoProveedor | Cuenta propia de cada sede, sin asignación compartida entre sedes; configuración por ambiente; ID externo único por proveedor/cuenta/ambiente; secretos cifrados |
 | Venta | Venta, VentaItem | Ítem SERVICIO o PRODUCTO con FK correspondiente y snapshot; profesional/reserva para servicio. Múltiples medios de pago vía Pago |
@@ -91,13 +91,13 @@ Confirmado el 2026-09-10 (D13): por ahora Cliente se comparte entre franquiciado
 ## Disponibilidad y exclusión concurrente
 
 1. Resolver ServicioSede habilitado y sus snapshots de duración, precio, buffers y requisitos.
-2. Intersectar apertura de sede, jornada del profesional en esa sede, excepciones/feriados y anticipación permitida.
+2. Intersectar apertura de sede, jornada del profesional en esa sede, excepciones/feriados, anticipación mínima y horizonte máximo configurados por sede (D18). El paso de la grilla de inicio queda pendiente (D17).
 3. Filtrar profesionales activos por todas las skills, habilitación del servicio, asignación y ausencia de bloqueos.
 4. Descontar ocupaciones activas y retenciones vigentes del profesional en TODAS las sedes, más buffers configurados.
 5. Encontrar un conjunto simultáneo de recursos distintos que satisfaga todos los requisitos durante el intervalo completo. Un recurso no puede cubrir dos requisitos simultáneos por accidente.
-6. Para «cualquiera», ordenar candidatos de forma determinista, por ejemplo menor carga del día y luego ID. Asignar uno concreto dentro de la transacción y devolverlo al cliente.
+6. «Cualquiera» es la opción por defecto (D16). Ordenar candidatos de forma determinista, por ejemplo menor carga del día y luego ID. Asignar uno concreto dentro de la transacción y devolverlo al cliente.
 
-Persistir timestamps UTC y timezone IANA `America/Argentina/Buenos_Aires` por sede. Generar horarios desde calendario local. Intervalos semiabiertos `[inicio, fin)`: turnos contiguos son válidos si sus buffers lo permiten. Una reserva MVP no combina múltiples servicios ni profesionales.
+Persistir timestamps UTC y timezone IANA `America/Argentina/Buenos_Aires` por sede. Generar horarios desde calendario local. Intervalos semiabiertos `[inicio, fin)`: turnos contiguos son válidos si sus buffers lo permiten. Una reserva puede encadenar varios servicios consecutivos con profesionales distintos (D15): el motor busca la combinación completa y ocupa todos los ítems en la misma transacción, o ninguno. El portal inicial puede limitarse a un ítem sin cambiar el esquema.
 
 Estrategia inicial sin extensiones: filas de bloqueo persistentes por profesional y recurso, bloqueadas `FOR UPDATE` en orden estable. Bajo esos locks, expirar retenciones vencidas, releer configuración/calendario y verificar solapamientos antes de insertar reserva y ocupaciones en una sola transacción. Todas las vías de escritura, incluidas ausencias, reprogramaciones y vencimientos, usan el mismo protocolo. No basta con bloquear reservas existentes: puede no existir ninguna fila en el horario disputado.
 

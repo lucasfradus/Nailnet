@@ -22,6 +22,11 @@ enum Alcance {
   PROPIO
 }
 
+enum TipoIntentoAcceso {
+  LOGIN
+  RECUPERACION
+}
+
 enum Ambiente {
   PRUEBA
   PRODUCCION
@@ -70,14 +75,56 @@ model Sede {
 }
 
 model Usuario {
-  id           String                  @id @default(uuid()) @db.Uuid
-  email        String                  @unique
-  nombre       String
-  passwordHash String?
-  activo       Boolean                 @default(true)
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
-  membresias   MembresiaOrganizacion[]
+  id                    String                  @id @default(uuid()) @db.Uuid
+  email                 String                  @unique
+  nombre                String
+  passwordHash          String?
+  passwordActualizadaEn DateTime?
+  activo                Boolean                 @default(true)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  membresias            MembresiaOrganizacion[]
+  sesiones              Sesion[]
+  tokensRecuperacion    TokenRecuperacion[]
+}
+
+// Solo se persiste el hash SHA-256 del token; el valor viaja una vez al navegador o al email.
+model Sesion {
+  id         String    @id @default(uuid()) @db.Uuid
+  usuarioId  String    @db.Uuid
+  tokenHash  String    @unique @db.Char(64)
+  createdAt  DateTime  @default(now())
+  ultimoUso  DateTime  @default(now())
+  expiraEn   DateTime
+  revocadaEn DateTime?
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([usuarioId])
+}
+
+model TokenRecuperacion {
+  id        String    @id @default(uuid()) @db.Uuid
+  usuarioId String    @db.Uuid
+  tokenHash String    @unique @db.Char(64)
+  createdAt DateTime  @default(now())
+  expiraEn  DateTime
+  usadoEn   DateTime?
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([usuarioId])
+}
+
+// Registro durable para limitar intentos por email e IP; no guarda contraseñas.
+model IntentoAcceso {
+  id        String            @id @default(uuid()) @db.Uuid
+  tipo      TipoIntentoAcceso
+  email     String
+  ip        String?
+  exitoso   Boolean
+  createdAt DateTime          @default(now())
+
+  @@index([tipo, email, createdAt])
+  @@index([tipo, ip, createdAt])
 }
 
 model MembresiaOrganizacion {

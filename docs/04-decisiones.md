@@ -6,10 +6,10 @@ Las propuestas siguen pendientes salvo donde se registra una confirmación expl�
 |---|---|---|---|
 | D1 | Nombre del repositorio | Confirmado: repositorio creado por el usuario en https://github.com/lucasfradus/Nailnet; nombre del proyecto NailNet | Resuelto |
 | D2 | Cuenta del cliente | Invitado con enlace seguro por email; cuenta posterior opcional | Identidad y portal |
-| D3 | Tipo e importe de seña | Fija/porcentual por servicio, excepción por sede; indicar monto o porcentaje inicial | Checkout, snapshots y configuración |
-| D4 | Retención | 15 minutos desde intención; sin extensión por reintento; revisión sujeta al mismo vencimiento | Agenda, worker y pagos tardíos |
-| D5 | Cancelación/reprogramación | Indicar horas de anticipación, devolución total/parcial/nula, ausencias y cancelación por la sede | Políticas, UI y reembolsos |
-| D6 | Reservas de recepción | Confirmar si también exigen MP o hay excepción autorizada y cómo se cobra | Estados y canales |
+| D3 | Tipo e importe de seña | Confirmado el 2026-10-01: porcentaje por servicio, definido por el master; la sede puede usar otro valor (o monto fijo como excepción). Sin porcentaje general: un servicio sin seña definida no se ofrece online | Resuelto el mecanismo; valores por servicio a cargar |
+| D4 | Retención | Confirmado el 2026-10-01: 15 minutos por defecto, sin extensión por reintento; configurable por organización/sede (`retencionMinutos`) | Resuelto |
+| D5 | Cancelación/reprogramación | Pendiente (2026-10-01: «lo definimos después»). Se implementan cancelar y reprogramar sin reembolso automático; devoluciones manuales hasta definir horas y porcentaje | Reembolsos automáticos |
+| D6 | Reservas de recepción | Confirmado el 2026-10-01: configurable por sede, por defecto confirma directo sin seña; la sede puede exigir seña por Mercado Pago | Resuelto |
 | D7 | Reembolsos | Propuesta: aprobación manual por rol autorizado, ejecución por sistema y seguimiento; definir pago tardío | Circuito financiero |
 | D8 | Cuenta receptora y emisor | Confirmado: cada sede tiene sus propias cuentas de proveedores. Varias sedes pueden usar el mismo CUIT, con puntos de venta diferentes | Resuelto; credenciales pendientes |
 | D9 | Facturación | ¿Cada cobro, venta completada, manual o posterior? Definir tratamiento de anticipo/saldo con responsable contable | ComprobanteAplicacion y disparador |
@@ -18,6 +18,10 @@ Las propuestas siguen pendientes salvo donde se registra una confirmación expl�
 | D12 | Global versus sede | Propuesta: catálogo/skills/consentimientos globales, precio/horario/recurso locales, reglas comerciales con excepciones permitidas; sin aprobaciones corporativas | Configuración y permisos |
 | D13 | Clientes compartidos | Confirmado el 2026-09-10: por ahora los clientes serán compartidos entre franquiciados de la misma organización. El alcance del historial no fue confirmado; se conserva la propuesta de limitarlo a sedes autorizadas | Identidad compartida resuelta; visibilidad del historial pendiente |
 | D14 | Capacidad y calendario | ¿50 días corridos/hábiles? ¿Equipo disponible? ¿Sedes/profesionales y volumen del piloto? | Viabilidad, carga y alcance de lanzamiento |
+| D15 | Reserva con varios servicios | Confirmado el 2026-09-30: el esquema de reservas admite varios servicios consecutivos, cada uno con su profesional e intervalo. La UI del portal lo habilita en una etapa posterior | Resuelto; modelo Reserva 1:N ítems |
+| D16 | Elección de profesional | Confirmado el 2026-09-30: opcional; «cualquiera» por defecto con asignación balanceada dentro del motor | Resuelto; portal y motor |
+| D17 | Grilla de inicio de turnos | Pendiente. Modelado el 2026-10-01 como parámetro heredable `pasoGrillaMinutos` sin valor por defecto: sin definirlo la sede no genera turnos (ver 15-disponibilidad.md). La competencia usa paso fijo de 60 min; se busca una definición prolija (configurable por sede y/o derivada de duración y buffers) | Motor de disponibilidad (C04) |
+| D18 | Horizonte y anticipación | Confirmado el 2026-09-30: horizonte máximo y anticipación mínima configurables por sede. Valores iniciales pendientes (referencia de la competencia: ~14 días) | Resuelto el criterio; valores con D12 |
 
 ## Escenarios a cerrar con las respuestas
 

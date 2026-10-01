@@ -4,7 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/access.ts"
+    ".": "./src/access.ts",
+    "./credenciales": "./src/credenciales.ts",
+    "./secretos": "./src/secretos.ts",
+    "./configuracion": "./src/configuracion.ts",
+    "./clientes": "./src/clientes.ts",
+    "./catalogo": "./src/catalogo.ts",
+    "./agenda": "./src/agenda.ts",
+    "./disponibilidad": "./src/disponibilidad.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

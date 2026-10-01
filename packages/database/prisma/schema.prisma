@@ -22,20 +22,103 @@ enum Alcance {
   PROPIO
 }
 
+enum TipoIntentoAcceso {
+  LOGIN
+  RECUPERACION
+}
+
+enum Proveedor {
+  MERCADO_PAGO
+  FACTURANTE
+}
+
+enum Sexo {
+  FEMENINO
+  MASCULINO
+  OTRO
+  NO_INFORMA
+}
+
+enum TipoDocumento {
+  DNI
+  CUIT
+  CUIL
+  PASAPORTE
+}
+
+enum TipoConsentimiento {
+  PRACTICA
+  TERMINOS
+  MARKETING
+}
+
+enum AccionConsentimiento {
+  ACEPTA
+  REVOCA
+}
+
+enum CanalConsentimiento {
+  RECEPCION
+  PORTAL
+}
+
+enum TipoSena {
+  NINGUNA
+  FIJA
+  PORCENTAJE
+}
+
+enum CanalReserva {
+  ONLINE
+  RECEPCION
+}
+
+enum EstadoReserva {
+  PENDIENTE_PAGO
+  PAGO_EN_REVISION
+  CONFIRMADA
+  ATENDIDA
+  AUSENTE
+  CANCELADA
+  EXPIRADA
+}
+
+enum TipoEventoReserva {
+  CREADA
+  CONFIRMADA
+  EXPIRADA
+  CANCELADA
+  REPROGRAMADA
+  ATENDIDA
+  AUSENTE
+}
+
 enum Ambiente {
   PRUEBA
   PRODUCCION
 }
 
 model Organizacion {
-  id            String                  @id @default(uuid()) @db.Uuid
-  nombre        String
-  activo        Boolean                 @default(true)
-  createdAt     DateTime                @default(now())
-  updatedAt     DateTime                @updatedAt
-  franquiciados Franquiciado[]
-  membresias    MembresiaOrganizacion[]
-  emisores      EmisorFiscal[]
+  id              String                     @id @default(uuid()) @db.Uuid
+  nombre          String
+  // Identificador público para el portal (URL). Opcional hasta publicar la organización.
+  slug            String?                    @unique
+  activo          Boolean                    @default(true)
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+  franquiciados   Franquiciado[]
+  membresias      MembresiaOrganizacion[]
+  emisores        EmisorFiscal[]
+  auditoria       AuditLog[]
+  configuracion   ConfiguracionOrganizacion?
+  clientes        Cliente[]
+  consentimientos ConsentimientoVersion[]
+  categorias      CategoriaServicio[]
+  servicios       Servicio[]
+  skills          Skill[]
+  tiposRecurso    TipoRecurso[]
+  profesionales   Profesional[]
+  excepciones     ExcepcionHorario[]
 }
 
 model Franquiciado {
@@ -64,20 +147,73 @@ model Sede {
   franquiciado            Franquiciado              @relation(fields: [organizacionId, franquiciadoId], references: [organizacionId, id], onDelete: Restrict)
   asignaciones            AsignacionRol[]
   configuracionesFiscales ConfiguracionFiscalSede[]
+  configuracion           ConfiguracionSede?
+  credenciales            CredencialProveedor[]
+  clientes                ClienteSede[]
+  consentimientos         ClienteConsentimiento[]
+  servicios               ServicioSede[]
+  profesionales           ProfesionalSede[]
+  horarios                HorarioSede[]
+  horariosProfesionales   HorarioProfesional[]
+  excepciones             ExcepcionHorario[]
+  recursos                Recurso[]
+  reservas                Reserva[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
 }
 
 model Usuario {
-  id           String                  @id @default(uuid()) @db.Uuid
-  email        String                  @unique
-  nombre       String
-  passwordHash String?
-  activo       Boolean                 @default(true)
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
-  membresias   MembresiaOrganizacion[]
+  id                    String                  @id @default(uuid()) @db.Uuid
+  email                 String                  @unique
+  nombre                String
+  passwordHash          String?
+  passwordActualizadaEn DateTime?
+  activo                Boolean                 @default(true)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  membresias            MembresiaOrganizacion[]
+  sesiones              Sesion[]
+  tokensRecuperacion    TokenRecuperacion[]
+}
+
+// Solo se persiste el hash SHA-256 del token; el valor viaja una vez al navegador o al email.
+model Sesion {
+  id         String    @id @default(uuid()) @db.Uuid
+  usuarioId  String    @db.Uuid
+  tokenHash  String    @unique @db.Char(64)
+  createdAt  DateTime  @default(now())
+  ultimoUso  DateTime  @default(now())
+  expiraEn   DateTime
+  revocadaEn DateTime?
+  usuario    Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([usuarioId])
+}
+
+model TokenRecuperacion {
+  id        String    @id @default(uuid()) @db.Uuid
+  usuarioId String    @db.Uuid
+  tokenHash String    @unique @db.Char(64)
+  createdAt DateTime  @default(now())
+  expiraEn  DateTime
+  usadoEn   DateTime?
+  usuario   Usuario   @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  @@index([usuarioId])
+}
+
+// Registro durable para limitar intentos por email e IP; no guarda contraseñas.
+model IntentoAcceso {
+  id        String            @id @default(uuid()) @db.Uuid
+  tipo      TipoIntentoAcceso
+  email     String
+  ip        String?
+  exitoso   Boolean
+  createdAt DateTime          @default(now())
+
+  @@index([tipo, email, createdAt])
+  @@index([tipo, ip, createdAt])
 }
 
 model MembresiaOrganizacion {
@@ -137,4 +273,541 @@ model ConfiguracionFiscalSede {
 
   @@unique([organizacionId, sedeId, ambiente])
   @@unique([emisorFiscalId, ambiente, puntoVenta])
+}
+
+// Trazabilidad mínima de cambios de estructura y permisos. Nunca guarda secretos, tokens ni contraseñas.
+model AuditLog {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  actorId        String?      @db.Uuid
+  accion         String
+  entidad        String
+  entidadId      String
+  datos          Json?
+  createdAt      DateTime     @default(now())
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+
+  @@index([organizacionId, createdAt])
+  @@index([entidad, entidadId])
+}
+
+// Parámetros operativos con herencia organización → sede. null = heredar / sin definir.
+model ConfiguracionOrganizacion {
+  organizacionId            String       @id @db.Uuid
+  horizonteReservaDias      Int?
+  anticipacionMinimaMinutos Int?
+  pasoGrillaMinutos         Int?
+  retencionMinutos          Int?
+  // D6: si recepción exige seña por Mercado Pago. null = heredar; sin valor en ningún nivel = no exige.
+  recepcionExigeSena        Boolean?
+  updatedAt                 DateTime     @updatedAt
+  organizacion              Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+}
+
+model ConfiguracionSede {
+  organizacionId            String   @db.Uuid
+  sedeId                    String   @id @db.Uuid
+  horizonteReservaDias      Int?
+  anticipacionMinimaMinutos Int?
+  pasoGrillaMinutos         Int?
+  retencionMinutos          Int?
+  // D6: si recepción exige seña por Mercado Pago. null = heredar; sin valor en ningún nivel = no exige.
+  recepcionExigeSena        Boolean?
+  updatedAt                 DateTime @updatedAt
+  sede                      Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([organizacionId, sedeId])
+}
+
+// Credenciales de proveedor por sede y ambiente (D8). Los secretos se guardan cifrados con versión de
+// clave; las claves viven fuera de la base. cuentaExterna impide compartir una cuenta receptora entre sedes.
+model CredencialProveedor {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizacionId String    @db.Uuid
+  sedeId         String    @db.Uuid
+  proveedor      Proveedor
+  ambiente       Ambiente
+  cuentaExterna  String?
+  publicos       Json
+  secretoCifrado String
+  pista          String
+  actualizadoPor String?   @db.Uuid
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  sede           Sede      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([sedeId, proveedor, ambiente])
+  @@unique([proveedor, ambiente, cuentaExterna])
+  @@index([organizacionId])
+}
+
+// Identidad compartida en la organización (D13). Sin datos de salud ni fotos.
+model Cliente {
+  id              String                  @id @default(uuid()) @db.Uuid
+  organizacionId  String                  @db.Uuid
+  nombre          String
+  apellido        String?
+  email           String?
+  telefono        String?
+  sexo            Sexo?
+  tipoDocumento   TipoDocumento?
+  documento       String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  organizacion    Organizacion            @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sedes           ClienteSede[]
+  consentimientos ClienteConsentimiento[]
+  reservas        Reserva[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, email])
+  @@unique([organizacionId, tipoDocumento, documento])
+  @@index([organizacionId, telefono])
+}
+
+// Relación del cliente con cada sede; las observaciones son locales y solo las ve quien alcanza la sede.
+model ClienteSede {
+  organizacionId String   @db.Uuid
+  clienteId      String   @db.Uuid
+  sedeId         String   @db.Uuid
+  observaciones  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  cliente        Cliente  @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([clienteId, sedeId])
+  @@index([organizacionId, sedeId])
+}
+
+// Texto versionado e inmutable. Cambiar el texto es crear otra versión.
+model ConsentimientoVersion {
+  id             String                  @id @default(uuid()) @db.Uuid
+  organizacionId String                  @db.Uuid
+  tipo           TipoConsentimiento
+  clave          String
+  version        Int
+  titulo         String
+  texto          String
+  creadoPor      String?                 @db.Uuid
+  createdAt      DateTime                @default(now())
+  organizacion   Organizacion            @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  registros      ClienteConsentimiento[]
+
+  @@unique([organizacionId, clave, version])
+  @@unique([organizacionId, id])
+}
+
+// Registro inmutable de aceptación o revocación: el estado surge del último registro.
+model ClienteConsentimiento {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizacionId String                @db.Uuid
+  clienteId      String                @db.Uuid
+  versionId      String                @db.Uuid
+  sedeId         String?               @db.Uuid
+  accion         AccionConsentimiento
+  canal          CanalConsentimiento
+  registradoPor  String?               @db.Uuid
+  evidencia      Json?
+  // Desempata registros del mismo milisegundo: el estado lo define el último insertado.
+  orden          Int                   @default(autoincrement())
+  createdAt      DateTime              @default(now())
+  cliente        Cliente               @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
+  version        ConsentimientoVersion @relation(fields: [organizacionId, versionId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede?                 @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([organizacionId, clienteId, createdAt])
+}
+
+// Catálogo global de la organización (propuesta D12); precio y habilitación son por sede.
+model CategoriaServicio {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  nombre         String
+  orden          Int          @default(0)
+  activo         Boolean      @default(true)
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  servicios      Servicio[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+}
+
+model Servicio {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  organizacionId       String                     @db.Uuid
+  categoriaId          String                     @db.Uuid
+  nombre               String
+  descripcion          String?
+  duracionMinutos      Int
+  bufferAntesMinutos   Int                        @default(0)
+  bufferDespuesMinutos Int                        @default(0)
+  // Seña por defecto del servicio. null = sin definir (D3 pendiente): no se ofrece online.
+  senaTipo             TipoSena?
+  senaValor            Decimal?                   @db.Decimal(12, 2)
+  activo               Boolean                    @default(true)
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  organizacion         Organizacion               @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  categoria            CategoriaServicio          @relation(fields: [organizacionId, categoriaId], references: [organizacionId, id], onDelete: Restrict)
+  skills               ServicioSkill[]
+  recursos             ServicioRequisitoRecurso[]
+  consentimientos      ServicioConsentimiento[]
+  sedes                ServicioSede[]
+  profesionales        ProfesionalServicio[]
+  reservaItems         ReservaItem[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+}
+
+model Skill {
+  id             String             @id @default(uuid()) @db.Uuid
+  organizacionId String             @db.Uuid
+  nombre         String
+  organizacion   Organizacion       @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  servicios      ServicioSkill[]
+  profesionales  ProfesionalSkill[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+}
+
+// El profesional debe tener TODAS las skills requeridas por el servicio.
+model ServicioSkill {
+  organizacionId String   @db.Uuid
+  servicioId     String   @db.Uuid
+  skillId        String   @db.Uuid
+  servicio       Servicio @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Cascade)
+  skill          Skill    @relation(fields: [organizacionId, skillId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([servicioId, skillId])
+}
+
+model TipoRecurso {
+  id             String                     @id @default(uuid()) @db.Uuid
+  organizacionId String                     @db.Uuid
+  nombre         String
+  organizacion   Organizacion               @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  requisitos     ServicioRequisitoRecurso[]
+  recursos       Recurso[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+}
+
+// Cantidad de unidades distintas de un tipo que el servicio ocupa durante todo el intervalo.
+model ServicioRequisitoRecurso {
+  organizacionId String      @db.Uuid
+  servicioId     String      @db.Uuid
+  tipoRecursoId  String      @db.Uuid
+  cantidad       Int
+  servicio       Servicio    @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Cascade)
+  tipoRecurso    TipoRecurso @relation(fields: [organizacionId, tipoRecursoId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([servicioId, tipoRecursoId])
+}
+
+// Consentimiento exigido por el servicio, por clave: siempre rige la versión vigente.
+model ServicioConsentimiento {
+  organizacionId String   @db.Uuid
+  servicioId     String   @db.Uuid
+  clave          String
+  servicio       Servicio @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Cascade)
+
+  @@id([servicioId, clave])
+}
+
+model ServicioSede {
+  organizacionId   String    @db.Uuid
+  servicioId       String    @db.Uuid
+  sedeId           String    @db.Uuid
+  habilitado       Boolean   @default(false)
+  precio           Decimal?  @db.Decimal(12, 2)
+  duracionMinutos  Int?
+  senaTipo         TipoSena?
+  senaValor        Decimal?  @db.Decimal(12, 2)
+  reservableOnline Boolean   @default(true)
+  updatedAt        DateTime  @updatedAt
+  servicio         Servicio  @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
+  sede             Sede      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([servicioId, sedeId])
+  @@index([organizacionId, sedeId])
+}
+
+// Profesional de la organización; puede trabajar en varias sedes. Usuario opcional (agenda propia, más adelante).
+model Profesional {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizacionId String                @db.Uuid
+  nombre         String
+  apellido       String?
+  usuarioId      String?               @db.Uuid
+  activo         Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  organizacion   Organizacion          @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sedes          ProfesionalSede[]
+  skills         ProfesionalSkill[]
+  servicios      ProfesionalServicio[]
+  horarios       HorarioProfesional[]
+  bloqueos       BloqueoAgenda[]
+  reservaItems   ReservaItem[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, usuarioId])
+}
+
+model ProfesionalSede {
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  sedeId         String      @db.Uuid
+  activo         Boolean     @default(true)
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([profesionalId, sedeId])
+  @@index([organizacionId, sedeId])
+}
+
+model ProfesionalSkill {
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  skillId        String      @db.Uuid
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Cascade)
+  skill          Skill       @relation(fields: [organizacionId, skillId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([profesionalId, skillId])
+}
+
+// Habilitación expresa: además de tener las skills, el profesional debe estar habilitado para el servicio.
+model ProfesionalServicio {
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  servicioId     String      @db.Uuid
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Cascade)
+  servicio       Servicio    @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([profesionalId, servicioId])
+}
+
+// Apertura semanal de la sede. Varios rangos por día = pausas. Vigencia opcional por fecha local.
+model HorarioSede {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizacionId String    @db.Uuid
+  sedeId         String    @db.Uuid
+  diaSemana      Int
+  inicioMinutos  Int
+  finMinutos     Int
+  vigenteDesde   DateTime? @db.Date
+  vigenteHasta   DateTime? @db.Date
+  sede           Sede      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([sedeId, diaSemana])
+}
+
+// Jornada del profesional en una sede. No puede solaparse con su jornada en otra sede.
+model HorarioProfesional {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  sedeId         String      @db.Uuid
+  diaSemana      Int
+  inicioMinutos  Int
+  finMinutos     Int
+  vigenteDesde   DateTime?   @db.Date
+  vigenteHasta   DateTime?   @db.Date
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([profesionalId, diaSemana])
+  @@index([sedeId, diaSemana])
+}
+
+// Fecha especial: sedeId null = toda la organización (feriado). Si la sede tiene filas para la fecha,
+// reemplazan a las de la organización. Cerrado, o rango especial de apertura.
+model ExcepcionHorario {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  sedeId         String?      @db.Uuid
+  fecha          DateTime     @db.Date
+  cerrado        Boolean
+  inicioMinutos  Int?
+  finMinutos     Int?
+  motivo         String?
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sede           Sede?        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([organizacionId, fecha])
+}
+
+// Ausencia del profesional en instantes UTC; vale en todas sus sedes.
+model BloqueoAgenda {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  inicio         DateTime
+  fin            DateTime
+  motivo         String?
+  creadoPor      String?     @db.Uuid
+  createdAt      DateTime    @default(now())
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([profesionalId, inicio])
+}
+
+// Unidad física individual de un tipo (cabina 1, láser A) en una sede.
+model Recurso {
+  id             String               @id @default(uuid()) @db.Uuid
+  organizacionId String               @db.Uuid
+  sedeId         String               @db.Uuid
+  tipoRecursoId  String               @db.Uuid
+  nombre         String
+  activo         Boolean              @default(true)
+  sede           Sede                 @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  tipoRecurso    TipoRecurso          @relation(fields: [organizacionId, tipoRecursoId], references: [organizacionId, id], onDelete: Restrict)
+  bloqueos       BloqueoRecurso[]
+  ocupaciones    ReservaItemRecurso[]
+
+  @@unique([organizacionId, id])
+  @@unique([sedeId, nombre])
+}
+
+model BloqueoRecurso {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizacionId String   @db.Uuid
+  recursoId      String   @db.Uuid
+  inicio         DateTime
+  fin            DateTime
+  motivo         String?
+  recurso        Recurso  @relation(fields: [organizacionId, recursoId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([recursoId, inicio])
+}
+
+// Reserva: agrupa uno o más ítems consecutivos (D15) de un cliente en una sede.
+// Ocupa agenda mientras está CONFIRMADA/ATENDIDA/AUSENTE, o pendiente con expiraEn futuro.
+model Reserva {
+  id             String          @id @default(uuid()) @db.Uuid
+  organizacionId String          @db.Uuid
+  sedeId         String          @db.Uuid
+  clienteId      String?         @db.Uuid
+  canal          CanalReserva
+  estado         EstadoReserva
+  expiraEn       DateTime?
+  notas          String?
+  // Reprogramación: la reserva nueva apunta a la que reemplaza (cancelada en la misma transacción).
+  reemplazaId    String?         @unique @db.Uuid
+  reemplaza      Reserva?        @relation("Reprogramacion", fields: [reemplazaId], references: [id], onDelete: Restrict)
+  reemplazadaPor Reserva?        @relation("Reprogramacion")
+  creadoPor      String?         @db.Uuid
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sede           Sede            @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  cliente        Cliente?        @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
+  items          ReservaItem[]
+  eventos        ReservaEvento[]
+  tokens         TokenReserva[]
+
+  @@unique([organizacionId, id])
+  @@index([sedeId, estado])
+}
+
+// Un servicio con su profesional e intervalo; snapshots de condiciones al reservar.
+model ReservaItem {
+  id                   String               @id @default(uuid()) @db.Uuid
+  organizacionId       String               @db.Uuid
+  reservaId            String               @db.Uuid
+  posicion             Int
+  servicioId           String               @db.Uuid
+  profesionalId        String               @db.Uuid
+  inicio               DateTime
+  fin                  DateTime
+  ocupaDesde           DateTime
+  ocupaHasta           DateTime
+  duracionMinutos      Int
+  bufferAntesMinutos   Int
+  bufferDespuesMinutos Int
+  precio               Decimal              @db.Decimal(12, 2)
+  sena                 Decimal?             @db.Decimal(12, 2)
+  reserva              Reserva              @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+  servicio             Servicio             @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
+  profesional          Profesional          @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+  recursos             ReservaItemRecurso[]
+
+  @@unique([organizacionId, id])
+  @@unique([reservaId, posicion])
+  @@index([profesionalId, ocupaDesde])
+}
+
+model ReservaItemRecurso {
+  organizacionId String      @db.Uuid
+  itemId         String      @db.Uuid
+  recursoId      String      @db.Uuid
+  ocupaDesde     DateTime
+  ocupaHasta     DateTime
+  item           ReservaItem @relation(fields: [organizacionId, itemId], references: [organizacionId, id], onDelete: Restrict)
+  recurso        Recurso     @relation(fields: [organizacionId, recursoId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([itemId, recursoId])
+  @@index([recursoId, ocupaDesde])
+}
+
+// Historial inmutable de la reserva: cada cambio de estado o de horario es un evento nuevo.
+model ReservaEvento {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizacionId String            @db.Uuid
+  reservaId      String            @db.Uuid
+  tipo           TipoEventoReserva
+  estadoAnterior EstadoReserva?
+  estadoNuevo    EstadoReserva
+  actorId        String?           @db.Uuid
+  detalle        Json?
+  orden          Int               @default(autoincrement())
+  createdAt      DateTime          @default(now())
+  reserva        Reserva           @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([reservaId, orden])
+}
+
+// Token opaco del invitado para consultar (y más adelante gestionar) su reserva. Solo se guarda el hash.
+model TokenReserva {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizacionId String    @db.Uuid
+  reservaId      String    @db.Uuid
+  tokenHash      String    @unique @db.Char(64)
+  expiraEn       DateTime
+  revocadoEn     DateTime?
+  createdAt      DateTime  @default(now())
+  reserva        Reserva   @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([reservaId])
+}
+
+// Idempotencia de operaciones públicas: misma clave + mismo contenido = misma respuesta.
+model ClaveIdempotencia {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizacionId String   @db.Uuid
+  ambito         String
+  clave          String
+  hashSolicitud  String   @db.Char(64)
+  estado         String
+  codigo         Int?
+  respuesta      Json?
+  reservaId      String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  expiraEn       DateTime
+
+  @@unique([organizacionId, ambito, clave])
+  @@index([expiraEn])
+}
+
+// Registro durable para límites del portal (por IP o por contacto). Sin datos personales en claro.
+model EventoPublico {
+  id        String   @id @default(uuid()) @db.Uuid
+  tipo      String
+  clave     String   @db.Char(64)
+  createdAt DateTime @default(now())
+
+  @@index([tipo, clave, createdAt])
 }

@@ -16,7 +16,7 @@ Calendario relativo, pendiente de confirmar días corridos/hábiles, equipo y ta
 |---|---|---|
 | F01 | Monorepo, Next, Vite, TypeScript, Prisma/PostgreSQL | Builds independientes, lint/typecheck y CI; dependencias fijadas; no secretos en bundle |
 | F02 | Organización, franquiciado, sede, usuarios | Migración reproducible y seed sintético; relaciones entre organizaciones inválidas rechazadas |
-| F03 | Login, logout y recuperación | Hash de contraseña, token de un uso, límites de intentos, usuario inactivo rechazado; sin rol implícito |
+| F03 | Login, logout y recuperación · hecho 2026-09-30, ver 09-autenticacion.md | Hash de contraseña, token de un uso, límites de intentos, usuario inactivo rechazado; sin rol implícito |
 | F04 | Staging, worker y outbox base | Job persiste/reanuda tras reinicio; health checks y documentación de variables |
 | F05 | Prueba temprana MP/Facturante | Contratos y credenciales de prueba funcionan; documentar deduplicación/consulta de resultados ambiguos |
 
@@ -27,18 +27,18 @@ Dependencias: D01–D03. Si falla el acceso a proveedores, completar base local 
 | ID | Entrega | Criterio de aceptación |
 |---|---|---|
 | A01 | Roles y alcances | Master/franquiciado/admin/recepción/profesional; pruebas de acceso cruzado por ID en lectura y escritura |
-| A02 | CRUD sede, usuarios y selector | Recepción con varias sedes; selector no amplía alcance; franquiciado ve consolidado de sus sedes |
-| A03 | Configuración y secretos por sede | Herencia/excepciones según D01; cifrado y secretos redactados en logs/respuestas |
+| A02 | CRUD sede, usuarios y selector · hecho 2026-10-01, ver 10-administracion.md | Recepción con varias sedes; selector no amplía alcance; franquiciado ve consolidado de sus sedes |
+| A03 | Configuración y secretos por sede · hecho 2026-10-01, ver 11-configuracion-secretos.md | Herencia/excepciones según D01; cifrado y secretos redactados en logs/respuestas |
 
 ## Fase 3 · días 11–16 · catálogo y disponibilidad
 
 | ID | Entrega | Criterio de aceptación |
 |---|---|---|
-| C01 | Clientes y consentimientos versionados | Sin datos médicos/fotos; contacto invitado; alcance e historial según política; aceptación por práctica |
-| C02 | Servicios y precios por sede | Duración, skills, recursos y seña validados; precio independiente del profesional |
-| C03 | Profesionales y recursos | Multi-sede, habilidades, habilitaciones, jornadas, pausas y bloqueos |
-| C04 | Motor de disponibilidad | Intervalo completo con todos los recursos; bloqueos entre sedes; feriados y buffers; «cualquiera» compatible |
-| C05 | Prueba de exclusión PostgreSQL | Dos conexiones intentan mismo profesional o recurso: solo una retención gana; intervalos contiguos válidos |
+| C01 | Clientes y consentimientos versionados · hecho 2026-10-01, ver 12-clientes-consentimientos.md | Sin datos médicos/fotos; contacto invitado; alcance e historial según política; aceptación por práctica |
+| C02 | Servicios y precios por sede · hecho 2026-10-01, ver 13-catalogo.md | Duración, skills, recursos y seña validados; precio independiente del profesional |
+| C03 | Profesionales y recursos · hecho 2026-10-01, ver 14-profesionales-calendario.md | Multi-sede, habilidades, habilitaciones, jornadas, pausas y bloqueos |
+| C04 | Motor de disponibilidad · hecho 2026-10-01, ver 15-disponibilidad.md | Intervalo completo con todos los recursos; bloqueos entre sedes; feriados y buffers; «cualquiera» por defecto; horizonte y anticipación por sede; varios ítems consecutivos atómicos |
+| C05 | Prueba de exclusión PostgreSQL · hecho 2026-10-01, ver 16-exclusion-concurrente.md | Dos conexiones intentan mismo profesional o recurso: solo una retención gana; intervalos contiguos válidos |
 
 Dependencias: A01–A03. C05 es una puerta de salida de fase, no una prueba diferida al día 47.
 
@@ -46,11 +46,11 @@ Dependencias: A01–A03. C05 es una puerta de salida de fase, no una prueba dife
 
 | ID | Entrega | Criterio de aceptación |
 |---|---|---|
-| R01 | Agenda y reserva manual | Día/semana, filtros, reserva por motor común; sin sobreocupación |
-| R02 | Retenciones y vencimientos | Worker reiniciado no deja retenciones perpetuas; carrera vencimiento/aprobación resuelta |
-| R03 | Cancelar/reprogramar/atender/ausente | Historial conservado; reprogramación atómica y política congelada |
+| R01 | Agenda y reserva manual · hecho 2026-10-01, ver 17-agenda-reserva-manual.md | Día/semana, filtros, reserva por motor común; sin sobreocupación |
+| R02 | Retenciones y vencimientos · hecho 2026-10-01 (vencimiento por worker; carrera con aprobación se cierra en R04), ver 17-agenda-reserva-manual.md | Worker reiniciado no deja retenciones perpetuas; carrera vencimiento/aprobación resuelta |
+| R03 | Cancelar/reprogramar/atender/ausente · hecho 2026-10-01 (sin reembolsos automáticos: D5 pendiente), ver 17-agenda-reserva-manual.md | Historial conservado; reprogramación atómica y política congelada |
 | R04 | Checkout MP y webhook en staging | Firma, cuenta/monto/moneda/referencia; aprobación idempotente; retorno manipulado no confirma |
-| R05 | Contrato público y protección de invitado | Validación backend, claves idempotentes, límites contra acaparamiento, tokens acotados |
+| R05 | Contrato público y protección de invitado · hecho 2026-10-01, ver 18-api-publica.md | Validación backend, claves idempotentes, límites contra acaparamiento, tokens acotados |
 
 Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación antes de construir todo el portal.
 

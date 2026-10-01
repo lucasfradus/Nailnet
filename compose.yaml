@@ -38,6 +38,9 @@ services:
     <<: *app
     environment:
       DATABASE_URL: postgresql://nailnet:nailnet_local_only@postgres:5432/nailnet
+      # Clave de cifrado SOLO para desarrollo local; en otros ambientes se genera y guarda fuera del repo.
+      NAILNET_CLAVES_CIFRADO: "v1:BCHvT3OHnS14ri/WyKIl7sGo9I9xw4Lhi0cWeJvlGiM="
+      NAILNET_CLAVE_ACTIVA: v1
       WATCHPACK_POLLING: "true"
     command: ["npm", "run", "dev", "-w", "@nailnet/backoffice", "--", "--hostname", "0.0.0.0"]
     ports:

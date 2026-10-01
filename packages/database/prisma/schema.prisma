@@ -101,6 +101,8 @@ enum Ambiente {
 model Organizacion {
   id              String                     @id @default(uuid()) @db.Uuid
   nombre          String
+  // Identificador público para el portal (URL). Opcional hasta publicar la organización.
+  slug            String?                    @unique
   activo          Boolean                    @default(true)
   createdAt       DateTime                   @default(now())
   updatedAt       DateTime                   @updatedAt
@@ -705,6 +707,7 @@ model Reserva {
   cliente        Cliente?        @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
   items          ReservaItem[]
   eventos        ReservaEvento[]
+  tokens         TokenReserva[]
 
   @@unique([organizacionId, id])
   @@index([sedeId, estado])
@@ -765,4 +768,46 @@ model ReservaEvento {
   reserva        Reserva           @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
 
   @@index([reservaId, orden])
+}
+
+// Token opaco del invitado para consultar (y más adelante gestionar) su reserva. Solo se guarda el hash.
+model TokenReserva {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizacionId String    @db.Uuid
+  reservaId      String    @db.Uuid
+  tokenHash      String    @unique @db.Char(64)
+  expiraEn       DateTime
+  revocadoEn     DateTime?
+  createdAt      DateTime  @default(now())
+  reserva        Reserva   @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([reservaId])
+}
+
+// Idempotencia de operaciones públicas: misma clave + mismo contenido = misma respuesta.
+model ClaveIdempotencia {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizacionId String   @db.Uuid
+  ambito         String
+  clave          String
+  hashSolicitud  String   @db.Char(64)
+  estado         String
+  codigo         Int?
+  respuesta      Json?
+  reservaId      String?  @db.Uuid
+  createdAt      DateTime @default(now())
+  expiraEn       DateTime
+
+  @@unique([organizacionId, ambito, clave])
+  @@index([expiraEn])
+}
+
+// Registro durable para límites del portal (por IP o por contacto). Sin datos personales en claro.
+model EventoPublico {
+  id        String   @id @default(uuid()) @db.Uuid
+  tipo      String
+  clave     String   @db.Char(64)
+  createdAt DateTime @default(now())
+
+  @@index([tipo, clave, createdAt])
 }

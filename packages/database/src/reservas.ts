@@ -23,6 +23,7 @@ const ordenar = (ids: Iterable<string>) => [...new Set(ids)].sort();
  * de los recursos de los tipos requeridos, siempre ordenados por ID (primero profesionales, luego
  * recursos). Jornadas, ausencias y otros turnos toman el mismo lock de fila del profesional.
  */
+export type { Tx };
 export async function bloquearAgenda(tx: Tx, profesionales: string[], recursos: string[]) {
   if (profesionales.length) await tx.$queryRaw`SELECT id FROM "Profesional" WHERE id IN (${Prisma.join(profesionales.map(id => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`;
   if (recursos.length) await tx.$queryRaw`SELECT id FROM "Recurso" WHERE id IN (${Prisma.join(recursos.map(id => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`;
@@ -57,7 +58,13 @@ export type TurnoTomado = { reservaId: string; estado: Estado; expiraEn: Date | 
  * configurada (D4, 15 min por defecto); online sin seña → CONFIRMADA; recepción → CONFIRMADA salvo
  * que la sede exija seña. Recepción requiere cliente, que queda vinculado a la sede.
  */
-export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; notas?: string | null }, ahora = new Date()): Promise<TurnoTomado> {
+/**
+ * `antes` corre dentro de la transacción, después de los locks y antes de revalidar: lo usa el portal
+ * para crear el cliente invitado y aplicar límites por contacto de forma atómica. Puede devolver el
+ * cliente a asignar.
+ */
+export type AntesDeTomar = (tx: Tx) => Promise<{ clienteId?: string } | void>;
+export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; notas?: string | null }, ahora = new Date(), opciones: { antes?: AntesDeTomar } = {}): Promise<TurnoTomado> {
   if (actorId) {
     exigirIds(pedido.sedeId);
     const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
@@ -76,7 +83,8 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
   return conReintento(() => db.$transaction(async tx => {
     await bloquearAgenda(tx, profesionales, recursos);
     const config = await configuracionEfectiva(tx, organizacionId, pedido.sedeId);
-    if (pedido.clienteId && !await tx.cliente.count({ where: { id: pedido.clienteId, organizacionId } })) throw new AccesoDenegado();
+    const clienteId = (await opciones.antes?.(tx))?.clienteId ?? pedido.clienteId ?? null;
+    if (clienteId && !await tx.cliente.count({ where: { id: clienteId, organizacionId } })) throw new AccesoDenegado();
     await expirarVencidas(tx, organizacionId, profesionales, ahora);
 
     // Revalidación bajo lock con exactamente las mismas reglas que la consulta pública.
@@ -89,7 +97,7 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
     const estado: Estado = exigeSena ? "PENDIENTE_PAGO" : "CONFIRMADA";
     const expiraEn = exigeSena ? new Date(ahora.getTime() + config.retencionMinutos.valor! * 60_000) : null;
 
-    const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId: pedido.clienteId ?? null, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId }, turno, efectivos);
+    const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId }, turno, efectivos);
     await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena });
     return r;
   }, { maxWait: 10_000, timeout: 20_000 }));

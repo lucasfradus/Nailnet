@@ -6,5 +6,10 @@ const db = createDatabase();
 try {
   const id = "00000000-0000-4000-8000-000000000001";
   if (await db.organizacion.findUnique({ where: { id } })) console.info("Demo existente; no se modificó.");
-  else { await crearFixture(db, id); console.info("Demo creada. Usuarios sintéticos sin contraseña."); }
+  else {
+    await crearFixture(db, id);
+    // Slug público para probar el portal: /api/public/v1/organizaciones/demo/sedes
+    await db.organizacion.update({ where: { id }, data: { slug: "demo" } });
+    console.info("Demo creada (slug «demo»). Usuarios sintéticos sin contraseña.");
+  }
 } finally { await db.$disconnect(); }

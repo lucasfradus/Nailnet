@@ -13,7 +13,8 @@
     "./catalogo": "./src/catalogo.ts",
     "./profesionales": "./src/profesionales.ts",
     "./disponibilidad": "./src/disponibilidad.ts",
-    "./reservas": "./src/reservas.ts"
+    "./reservas": "./src/reservas.ts",
+    "./publico": "./src/publico.ts"
   },
   "scripts": {
     "generate": "prisma generate",
@@ -33,6 +34,7 @@
     "@nailnet/domain": "0.1.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
-    "dotenv": "17.4.2"
+    "dotenv": "17.4.2",
+    "@nailnet/contracts": "0.1.0"
   }
 }

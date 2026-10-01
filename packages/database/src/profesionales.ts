@@ -1,8 +1,9 @@
 import { AccesoDenegado, tienePermiso, type Permiso } from "@nailnet/domain";
-import { parsearRangos, solapan, validarFecha, vigenciasSeCruzan, type Rango } from "@nailnet/domain/agenda";
+import { aLocal, diaSemana, parsearRangos, solapan, validarFecha, vigenciasSeCruzan, type Rango } from "@nailnet/domain/agenda";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, exigirIds, sedesConPermiso } from "./access.ts";
+import { reservaActiva } from "./disponibilidad.ts";
 
 type Tx = Prisma.TransactionClient;
 export type Semana = Partial<Record<0 | 1 | 2 | 3 | 4 | 5 | 6, Rango[]>>;
@@ -169,6 +170,7 @@ export async function guardarHorarioProfesional(db: Database, actorId: string, o
         && vigenciasSeCruzan(null, null, fechaTexto(o.vigenteDesde), fechaTexto(o.vigenteHasta)));
       if (choque) throw new DatosInvalidos(`Se superpone con su jornada en ${ids.has(choque.sedeId) ? choque.sede.nombre : "otra sede"}`);
     }
+    await exigirSinTurnosAfectados(tx, { profesionalId, reserva: { sedeId } }, i => !dentroDeSemana(semana, i.ocupaDesde, i.ocupaHasta, i.tz));
     await tx.horarioProfesional.deleteMany({ where: { profesionalId, sedeId, vigenteDesde: null, vigenteHasta: null } });
     await tx.horarioProfesional.createMany({ data: filasSemana(semana).map(f => ({ organizacionId, profesionalId, sedeId, ...f })) });
     await auditar(tx, organizacionId, actorId, "profesional.horario", "Profesional", profesionalId, { sedeId });
@@ -183,6 +185,7 @@ export async function crearBloqueo(db: Database, actorId: string, organizacionId
   return db.$transaction(async tx => {
     await bloquearProfesional(tx, profesionalId);
     await contextoProfesional(tx, actorId, organizacionId, profesionalId, "profesional:administrar");
+    await exigirSinTurnosAfectados(tx, { profesionalId, ocupaDesde: { lt: datos.fin }, ocupaHasta: { gt: datos.inicio } }, () => true);
     const b = await tx.bloqueoAgenda.create({ data: { organizacionId, profesionalId, inicio: datos.inicio, fin: datos.fin, motivo: datos.motivo?.trim().slice(0, 200) || null, creadoPor: actorId }, select: { id: true } });
     await auditar(tx, organizacionId, actorId, "profesional.bloqueo.crear", "Profesional", profesionalId, { bloqueoId: b.id });
     return b;
@@ -230,6 +233,8 @@ export async function calendarioSede(db: Database, actorId: string, organizacion
 export async function guardarHorarioSede(db: Database, actorId: string, organizacionId: string, sedeId: string, semana: Semana) {
   await db.$transaction(async tx => {
     await exigirSede(tx, actorId, organizacionId, sedeId, "sede:administrar");
+    await bloquearProfesionales(tx, await profesionalesDeSedes(tx, [sedeId]));
+    await exigirSinTurnosAfectados(tx, { reserva: { sedeId } }, i => !dentroDeSemana(semana, i.inicio, i.fin, i.tz));
     await tx.horarioSede.deleteMany({ where: { sedeId, vigenteDesde: null, vigenteHasta: null } });
     await tx.horarioSede.createMany({ data: filasSemana(semana).map(f => ({ organizacionId, sedeId, ...f })) });
     await auditar(tx, organizacionId, actorId, "sede.horario", "Sede", sedeId);
@@ -242,6 +247,11 @@ export async function crearExcepcion(db: Database, actorId: string, organizacion
   return db.$transaction(async tx => {
     if (datos.sedeId) await exigirSede(tx, actorId, organizacionId, datos.sedeId, "sede:administrar");
     else if (!(await asignacionesActor(tx, actorId, organizacionId)).some(a => tienePermiso(a, "organizacion:configurar"))) throw new AccesoDenegado();
+    const sedes = datos.sedeId ? [datos.sedeId] : (await tx.sede.findMany({ where: { organizacionId }, select: { id: true } })).map(x => x.id);
+    await bloquearProfesionales(tx, await profesionalesDeSedes(tx, sedes));
+    const rango = datos.rango;
+    await exigirSinTurnosAfectados(tx, { reserva: { sedeId: { in: sedes } } }, i => aLocal(i.inicio, i.tz).fecha === datos.fecha
+      && (rango === null || !dentroDeSemana({ [diaSemana(datos.fecha)]: [rango] } as Semana, i.inicio, i.fin, i.tz)));
     const e = await tx.excepcionHorario.create({ data: {
       organizacionId, sedeId: datos.sedeId, fecha: fechaDb(datos.fecha)!, cerrado: datos.rango === null,
       inicioMinutos: datos.rango?.inicio ?? null, finMinutos: datos.rango?.fin ?? null, motivo: datos.motivo?.trim().slice(0, 120) || null,
@@ -287,4 +297,42 @@ export async function cambiarEstadoRecurso(db: Database, actorId: string, organi
     await tx.recurso.update({ where: { id: r.id }, data: { activo } });
     await auditar(tx, organizacionId, actorId, activo ? "recurso.activar" : "recurso.desactivar", "Recurso", r.id);
   });
+}
+
+// ─── Cambios de calendario contra turnos vigentes (R03) ──────────────────────
+
+type ItemTurno = { inicio: Date; fin: Date; ocupaDesde: Date; ocupaHasta: Date; tz: string };
+/**
+ * Rechaza un cambio de calendario si deja afuera turnos vigentes futuros: hay que reprogramarlos o
+ * cancelarlos primero. Se llama bajo el lock de los profesionales involucrados, el mismo que toman las
+ * reservas, así que no puede colarse un turno entre la verificación y el cambio.
+ */
+async function exigirSinTurnosAfectados(tx: Tx, filtro: Prisma.ReservaItemWhereInput, queda_afuera: (i: ItemTurno) => boolean) {
+  const ahora = new Date();
+  const items = await tx.reservaItem.findMany({
+    // AND explícito: un spread con otra clave `reserva` pisaría el filtro de sede del llamador.
+    where: { AND: [filtro, { fin: { gt: ahora }, reserva: reservaActiva(ahora) }] },
+    select: { inicio: true, fin: true, ocupaDesde: true, ocupaHasta: true, reserva: { select: { sede: { select: { timezone: true } } } } },
+    orderBy: { inicio: "asc" },
+  });
+  const afectados = items.map(i => ({ ...i, tz: i.reserva.sede.timezone })).filter(queda_afuera);
+  if (afectados.length) {
+    const primero = afectados[0]!;
+    const cuando = primero.inicio.toLocaleString("es-AR", { timeZone: primero.tz, dateStyle: "short", timeStyle: "short", hourCycle: "h23" });
+    throw new DatosInvalidos(`El cambio deja afuera ${afectados.length} ${afectados.length === 1 ? "turno" : "turnos"} (el primero, ${cuando}). Reprogramalos o cancelalos antes.`);
+  }
+}
+/** ¿El intervalo [desde, hasta) cae dentro de algún rango del día local en la semana dada? */
+function dentroDeSemana(semana: Semana, desde: Date, hasta: Date, tz: string) {
+  const a = aLocal(desde, tz), b = aLocal(hasta, tz);
+  const finMin = b.fecha === a.fecha ? b.minutos : b.minutos === 0 && b.fecha > a.fecha ? 1440 : -1;
+  if (finMin < 0) return false;
+  return (semana[diaSemana(a.fecha) as 0] ?? []).some(r => r.inicio <= a.minutos && finMin <= r.fin);
+}
+async function profesionalesDeSedes(tx: Tx, sedeIds: string[]) {
+  const filas = await tx.profesionalSede.findMany({ where: { sedeId: { in: sedeIds } }, select: { profesionalId: true } });
+  return [...new Set(filas.map(f => f.profesionalId))].sort();
+}
+async function bloquearProfesionales(tx: Tx, ids: string[]) {
+  if (ids.length) await tx.$queryRaw`SELECT id FROM "Profesional" WHERE id IN (${Prisma.join(ids.map(id => Prisma.sql`${id}::uuid`))}) ORDER BY id FOR UPDATE`;
 }

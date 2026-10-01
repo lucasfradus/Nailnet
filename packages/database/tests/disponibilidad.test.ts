@@ -89,6 +89,8 @@ test("disponibilidad desde la base", async (t) => {
     });
 
     await t.test("feriado de la organización cierra el día", async () => {
+      await assert.rejects(crearExcepcion(db, M, O, { sedeId: null, fecha: FECHA, rango: null, motivo: "Feriado" }), /deja afuera \d+ turnos?/, "no cierra un día con turnos vigentes (R03)");
+      await db.reserva.updateMany({ where: { sedeId: a.centro.id, estado: { in: ["CONFIRMADA", "PENDIENTE_PAGO"] } }, data: { estado: "CANCELADA" } });
       await crearExcepcion(db, M, O, { sedeId: null, fecha: FECHA, rango: null, motivo: "Feriado" });
       assert.deepEqual(await consultarDisponibilidad(db, a.recepcion.id, O, pedido([{ servicioId: pies }]), ahora), []);
     });

@@ -21,7 +21,7 @@ Implementa C03. Migración `202610010005_profesionales`. Pantallas: Profesionale
   - Cuando la otra sede está fuera del alcance de quien edita, el mensaje dice «otra sede» sin nombrarla.
 - **Ausencias** (`BloqueoAgenda`): son instantes UTC y valen para todas las sedes del profesional. Se cargan y muestran en la zona horaria de su primera sede visible, máximo un año.
 - **Vigencia por fecha:** el esquema admite vigencia desde y hasta en jornadas y horarios de sede. La UI edita por ahora la plantilla sin vigencia; versionar horarios por temporada queda para cuando se pida.
-- **Turnos ya tomados:** cambiar una jornada o agregar una ausencia todavía no se valida contra reservas, porque no existen. El motor (C04) y R01 deberán rechazar cambios que pisen turnos vigentes, con el mismo lock por profesional.
+- **Turnos ya tomados (resuelto en R03):** cambiar una jornada o agregar una ausencia que deje afuera turnos vigentes se rechaza; ver doc 17. El motor (C04) y R01 deberán rechazar cambios que pisen turnos vigentes, con el mismo lock por profesional.
 
 ## Calendario de la sede
 

@@ -35,7 +35,7 @@ try {
   // Reaplicar no debe duplicar migraciones.
   await run(join(root, "node_modules/prisma/build/index.js"), ["migrate", "deploy"], database);
   for (let i = 0; i < 2; i++) await run(join(root, "node_modules/tsx/dist/cli.mjs"), ["prisma/seed.ts"], database, { ALLOW_DEMO_SEED: "true" });
-  await run(join(root, "node_modules/tsx/dist/cli.mjs"), ["--test", "tests/foundation.test.ts", "tests/auth.test.ts", "tests/administracion.test.ts", "tests/configuracion.test.ts", "tests/clientes.test.ts", "tests/catalogo.test.ts", "tests/profesionales.test.ts", "tests/disponibilidad.test.ts", "tests/reservas.test.ts", "tests/recepcion.test.ts"], database);
+  await run(join(root, "node_modules/tsx/dist/cli.mjs"), ["--test", "tests/foundation.test.ts", "tests/auth.test.ts", "tests/administracion.test.ts", "tests/configuracion.test.ts", "tests/clientes.test.ts", "tests/catalogo.test.ts", "tests/profesionales.test.ts", "tests/disponibilidad.test.ts", "tests/reservas.test.ts", "tests/recepcion.test.ts", "tests/operacion.test.ts"], database);
 } catch (error) {
   console.error(logs.slice(-5).join("\n"));
   throw error;

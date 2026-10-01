@@ -78,3 +78,33 @@ Implementa R01 con las decisiones del 2026-10-01: D3, D4 y D6 confirmadas; D5 si
   - El build valida tipos y empaqueta con `esbuild` en `dist/index.js` (≈250 KB), con los paquetes del monorepo incluidos y Prisma, `pg` y `dotenv` como dependencias externas.
 - **Verificado contra PostgreSQL embebido:** el bundle arrancó, expiró una retención vencida con un evento y respondió el chequeo de vida.
 - **Pendiente (F04):** cola durable de trabajos y outbox (emails, reconciliación de pagos) sobre la misma base.
+
+## Operación del turno (R03) · 2026-10-01
+
+Migración `202610010009_reprogramacion`. Todas las operaciones toman primero el lock de los profesionales del turno (el mismo protocolo de doc 16), releen el estado y hacen una transición condicional. Cada cambio deja un evento inmutable.
+
+| Operación | Desde | Reglas |
+|---|---|---|
+| Cancelar | Confirmado o pendiente vigente | Motivo obligatorio. Libera el horario en el acto. D5 pendiente: sin reembolso automático; el evento lo deja anotado y la devolución, si hubo seña, es manual (M01) |
+| Atendido | Confirmado | Desde una hora antes del inicio. Exige los consentimientos de práctica que piden los servicios, vigentes (última versión aceptada y no revocada); si falta, indica cuál registrar en la ficha del cliente |
+| Ausente | Confirmado | Solo después del inicio |
+| Reprogramar | Confirmado | Atómico: libera el original y toma el nuevo horario en la misma transacción con los locks de ambos (incluidos recursos). El nuevo puede solaparse con el viejo. Si no entra, no cambia nada. Conserva servicios, cliente, canal, notas y **precio y seña pactados**. La nueva reserva enlaza a la original (`reemplazaId`); la original queda cancelada con evento `REPROGRAMADA`. Usa reglas de recepción (sin anticipación ni horizonte online). Dos reprogramaciones simultáneas: gana una |
+
+**Cambios de calendario contra turnos (pendiente de C03, resuelto).** Cambiar la jornada de un profesional, cargarle una ausencia, cambiar el horario de la sede o crear una fecha especial o un feriado se rechaza si deja afuera turnos vigentes futuros. El mensaje indica cuántos son y cuál es el primero, para reprogramarlos o cancelarlos antes. La verificación corre bajo los locks de los profesionales involucrados.
+
+Durante esta etapa los tests detectaron un bug propio: el filtro de la validación pisaba el filtro de sede con otro filtro de reserva y contaba turnos de otras sedes. Se corrigió con un `AND` explícito.
+
+**Pantallas:**
+- **Agenda:** cada turno muestra Atendido, Ausente, Reprogramar y Cancelar (con motivo), según su estado.
+- **Reprogramar** abre Nuevo turno con los servicios y el cliente del original. Los botones dicen «Mover a HH:MM».
+
+**Verificación:**
+- `npm run test:database`: 96 tests. Los de R03 cubren:
+  - cancelación con motivo, liberación del horario y evento;
+  - atención con ventana horaria y consentimiento;
+  - ausente;
+  - reprogramación con solapamiento propio, precio congelado, enlace y eventos, fallo sin cambios y estado inválido;
+  - doble reprogramación concurrente;
+  - cambios de calendario rechazados y aceptados;
+  - alcance.
+- Prueba E2E con `next dev`: reservar 09:00, reprogramar a 11:00 desde la agenda (09:00 queda libre) y cancelar con motivo (visible solo con «incluir cancelados»). No se probó en un navegador real.

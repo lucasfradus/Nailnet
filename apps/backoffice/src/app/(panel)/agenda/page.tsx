@@ -5,8 +5,10 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { aLocal } from "@nailnet/domain/agenda";
 import { listarProfesionales } from "@nailnet/database/profesionales";
 import { agendaSede } from "@nailnet/database/reservas";
+import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
+import { accionAtendida, accionAusente, accionCancelarReserva } from "../acciones";
 
 export const metadata: Metadata = { title: "Agenda · NailNet" };
 type Params = { sede?: string; fecha?: string; vista?: string; profesional?: string; cerrados?: string; ok?: string };
@@ -41,7 +43,7 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
     <p className="eyebrow">AGENDA · {sedeActual.nombre.toUpperCase()}</p>
     <div className="fila-cabecera"><h1>{semana ? `Semana del ${fecha}` : dia(new Date(`${fecha}T12:00:00Z`))}</h1>
       {puede.verSedes && <Link className="boton" href={`/agenda/nuevo?sede=${sedeId}&fecha=${fecha}`}>Nuevo turno</Link>}</div>
-    {q.ok && <p className="alerta ok">Turno reservado.</p>}
+    {q.ok && <p className="alerta ok">{q.ok === "reprogramado" ? "Turno reprogramado." : "Turno reservado."}</p>}
     <nav className="en-linea">
       <Link href={enlace({ fecha: sumar(fecha, semana ? -7 : -1) })}>← Anterior</Link>
       <Link href={enlace({ fecha: hoy })}>Hoy</Link>
@@ -64,6 +66,19 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
           {" · "}{i.profesional.nombre} {i.profesional.apellido}{i.recursos.length ? ` · ${i.recursos.join(", ")}` : ""}{i.canal === "ONLINE" ? " · online" : ""}
           {i.estado === "PENDIENTE_PAGO" && i.expiraEn ? ` · vence ${hora(i.expiraEn)}` : ""}</p>
         {i.notas && i.posicion === 0 && <p className="ayuda">{i.notas}</p>}
+        {i.posicion === 0 && ["CONFIRMADA", "PENDIENTE_PAGO", "PAGO_EN_REVISION"].includes(i.estado) && <div className="acciones">
+          {i.estado === "CONFIRMADA" && <>
+            <Formulario accion={accionAtendida} boton="Atendido" className="en-linea" secundario><input type="hidden" name="reservaId" value={i.reservaId} /></Formulario>
+            <Formulario accion={accionAusente} boton="Ausente" className="en-linea" secundario confirmar="¿Marcar ausente?"><input type="hidden" name="reservaId" value={i.reservaId} /></Formulario>
+            <Link className="boton secundario" href={`/agenda/nuevo?sede=${sedeId}&fecha=${aLocal(i.inicio, tz).fecha}&reprogramar=${i.reservaId}`}>Reprogramar</Link>
+          </>}
+          <details><summary>Cancelar</summary>
+            <Formulario accion={accionCancelarReserva} boton="Cancelar turno" className="en-linea" secundario confirmar="¿Cancelar el turno? El horario se libera en el acto.">
+              <input type="hidden" name="reservaId" value={i.reservaId} />
+              <input name="motivo" placeholder="Motivo" required maxLength={300} aria-label="Motivo de la cancelación" />
+            </Formulario>
+          </details>
+        </div>}
       </article>)}</div>
     </div>)}
   </section>;

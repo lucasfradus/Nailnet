@@ -8,13 +8,14 @@ import { catalogoSede } from "@nailnet/database/catalogo";
 import { listarClientes, obtenerCliente } from "@nailnet/database/clientes";
 import { ConfiguracionIncompleta, consultarDisponibilidad } from "@nailnet/database/disponibilidad";
 import { listarProfesionales } from "@nailnet/database/profesionales";
+import { resumenReserva } from "@nailnet/database/reservas";
 import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
-import { accionReservar } from "../../acciones";
+import { accionReprogramar, accionReservar } from "../../acciones";
 
 export const metadata: Metadata = { title: "Nuevo turno · NailNet" };
-type Params = { sede?: string; fecha?: string; s?: string | string[]; p?: string | string[]; cliente?: string; buscar?: string };
+type Params = { sede?: string; fecha?: string; s?: string | string[]; p?: string | string[]; cliente?: string; buscar?: string; reprogramar?: string };
 const lista = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ? [v] : []);
 
 export default async function NuevoTurno({ searchParams }: { searchParams: Promise<Params> }) {
@@ -33,10 +34,13 @@ export default async function NuevoTurno({ searchParams }: { searchParams: Promi
     catalogoSede(db(), actorId, organizacion.id, sedeId),
     listarProfesionales(db(), actorId, organizacion.id, { sedeId }).catch(e => { if (e instanceof AccesoDenegado) return []; throw e; }),
   ]);
-  const cliente = q.cliente ? await obtenerCliente(db(), actorId, organizacion.id, q.cliente).catch(e => { if (e instanceof AccesoDenegado) return null; throw e; }) : null;
+  // Modo reprogramar: servicios y cliente vienen del turno original.
+  const original = q.reprogramar ? await resumenReserva(db(), actorId, organizacion.id, q.reprogramar).catch(e => { if (e instanceof AccesoDenegado) return null; throw e; }) : null;
+  if (q.reprogramar && (!original || original.estado !== "CONFIRMADA")) notFound();
+  const cliente = original?.clienteId ? await obtenerCliente(db(), actorId, organizacion.id, original.clienteId).catch(() => null) : q.cliente ? await obtenerCliente(db(), actorId, organizacion.id, q.cliente).catch(e => { if (e instanceof AccesoDenegado) return null; throw e; }) : null;
   const candidatos = !cliente && q.buscar ? await listarClientes(db(), actorId, organizacion.id, { texto: q.buscar }).catch(e => { if (e instanceof AccesoDenegado) return []; throw e; }) : [];
   const habilitados = catalogo.servicios.filter(s => s.efectivo.habilitado);
-  const elegidos = lista(q.s).filter(Boolean).slice(0, 3);
+  const elegidos = (original && !q.s ? original.items.map(i => i.servicioId) : lista(q.s)).filter(Boolean).slice(0, 3);
   const prefer = lista(q.p);
   const items = elegidos.map((servicioId, i) => ({ servicioId, profesionalId: prefer[i] || null }));
 
@@ -53,14 +57,15 @@ export default async function NuevoTurno({ searchParams }: { searchParams: Promi
   const hora = (iso: string) => new Date(iso).toLocaleTimeString("es-AR", { timeZone: sedeActual.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const nombreServicio = new Map(habilitados.map(s => [s.id, s.nombre]));
   // Parámetros a conservar entre pasos (cliente → servicios → horario).
-  const base = new URLSearchParams({ sede: sedeId, fecha });
+  const base = new URLSearchParams({ sede: sedeId, fecha, ...(original ? { reprogramar: original.id } : {}) });
   elegidos.forEach((s, i) => { base.append("s", s); base.append("p", prefer[i] ?? ""); });
 
   return <section className="panel">
-    <p className="eyebrow"><Link href={`/agenda?sede=${sedeId}&fecha=${fecha}`}>AGENDA</Link> · {sedeActual.nombre.toUpperCase()}</p><h1>Nuevo turno</h1>
+    <p className="eyebrow"><Link href={`/agenda?sede=${sedeId}&fecha=${fecha}`}>AGENDA</Link> · {sedeActual.nombre.toUpperCase()}</p><h1>{original ? "Reprogramar turno" : "Nuevo turno"}</h1>
+    {original && <p className="intro">{original.items.map(i => i.servicio).join(" + ")} de {original.cliente?.nombre} {original.cliente?.apellido}. Se conservan precio y seña pactados; el horario actual se libera solo si el nuevo se confirma.</p>}
 
     <h2 className="subtitulo">1 · Cliente</h2>
-    {cliente ? <p>{cliente.nombre} {cliente.apellido} · {[cliente.telefono, cliente.email].filter(Boolean).join(" · ")} · <Link href={`/agenda/nuevo?${base}`}>cambiar</Link></p> : <>
+    {original ? <p>{cliente?.nombre} {cliente?.apellido}</p> : cliente ? <p>{cliente.nombre} {cliente.apellido} · {[cliente.telefono, cliente.email].filter(Boolean).join(" · ")} · <Link href={`/agenda/nuevo?${base}`}>cambiar</Link></p> : <>
       <form className="en-linea" role="search">
         {[...base.entries()].map(([k, v], i) => <input key={i} type="hidden" name={k} value={v} />)}
         <input name="buscar" defaultValue={q.buscar} placeholder="Nombre, email o parte del teléfono" aria-label="Buscar cliente" required />
@@ -72,7 +77,7 @@ export default async function NuevoTurno({ searchParams }: { searchParams: Promi
 
     <h2 className="subtitulo">2 · Servicios y fecha</h2>
     <form className="formulario">
-      <input type="hidden" name="sede" value={sedeId} />{cliente && <input type="hidden" name="cliente" value={cliente.id} />}
+      <input type="hidden" name="sede" value={sedeId} />{cliente && !original && <input type="hidden" name="cliente" value={cliente.id} />}{original && <input type="hidden" name="reprogramar" value={original.id} />}
       <label>Fecha<input type="date" name="fecha" defaultValue={fecha} min={hoy} required /></label>
       {[0, 1, 2].map(i => <div key={i} className="en-linea sin-margen">
         <select name="s" defaultValue={elegidos[i] ?? ""} aria-label={`Servicio ${i + 1}`}>
@@ -95,7 +100,11 @@ export default async function NuevoTurno({ searchParams }: { searchParams: Promi
       <div className="tabla">{turnos.map(t => <article key={t.inicio} className="fila">
         <div className="fila-cabecera"><h2>{hora(t.inicio)} – {hora(t.fin)}</h2></div>
         <p>{t.items.map(i => `${nombreServicio.get(i.servicioId)} con ${i.profesional} (${hora(i.inicio)})`).join(" → ")}</p>
-        {cliente && <Formulario accion={accionReservar} boton={`Reservar ${hora(t.inicio)}`} className="en-linea">
+        {original && <Formulario accion={accionReprogramar} boton={`Mover a ${hora(t.inicio)}`} className="en-linea">
+          <input type="hidden" name="reservaId" value={original.id} /><input type="hidden" name="sedeId" value={sedeId} /><input type="hidden" name="fecha" value={fecha} /><input type="hidden" name="inicio" value={t.inicio} />
+          {t.items.map((i, k) => <input key={k} type="hidden" name="p" value={prefer[k] || i.profesionalId} />)}
+        </Formulario>}
+        {cliente && !original && <Formulario accion={accionReservar} boton={`Reservar ${hora(t.inicio)}`} className="en-linea">
           <input type="hidden" name="sedeId" value={sedeId} /><input type="hidden" name="fecha" value={fecha} />
           <input type="hidden" name="clienteId" value={cliente.id} /><input type="hidden" name="inicio" value={t.inicio} />
           {/* Se envía el profesional asignado: si «cualquiera» cambió mientras tanto, se revalida igual bajo lock. */}

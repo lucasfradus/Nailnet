@@ -15,7 +15,7 @@ import { crearCategoria, crearSkill, crearTipoRecurso, guardarServicio, guardarS
 import { aMinutos, aUtc, validarFecha } from "@nailnet/domain/agenda";
 import { actualizarProfesional, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "@nailnet/database/profesionales";
 import { ConfiguracionIncompleta } from "@nailnet/database/disponibilidad";
-import { TurnoNoDisponible, tomarTurno } from "@nailnet/database/reservas";
+import { TurnoNoDisponible, cancelarReserva, marcarAtendida, marcarAusente, reprogramarReserva, tomarTurno } from "@nailnet/database/reservas";
 import { db } from "@/lib/db";
 import { COOKIE_ORGANIZACION, COOKIE_SEDE, requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
@@ -293,4 +293,33 @@ export async function accionSenaRecepcion(_: Estado, form: FormData) {
   const sedeId = texto(form, "sedeId");
   const valor = texto(form, "valor");
   return ejecutar(`/sedes/${sedeId}`, (actor, org) => configurarSenaRecepcion(db(), actor, org, texto(form, "nivel") === "organizacion" ? null : sedeId, valor === "" ? null : valor === "true"), "Política de seña en recepción guardada");
+}
+
+// Operación del turno (R03).
+async function operar(form: FormData, fn: (actor: string, org: string, reservaId: string) => Promise<unknown>, exito: string): Promise<Estado> {
+  try {
+    return await ejecutar("/agenda", async (actor, org) => { await fn(actor, org, texto(form, "reservaId")); }, exito);
+  } catch (e) {
+    if (e instanceof TurnoNoDisponible) return { error: e.message };
+    throw e;
+  }
+}
+export async function accionCancelarReserva(_: Estado, form: FormData) {
+  return operar(form, (actor, org, id) => cancelarReserva(db(), actor, org, id, texto(form, "motivo")), "Turno cancelado. Si hubo seña, la devolución es manual por ahora (D5).");
+}
+export async function accionAtendida(_: Estado, form: FormData) {
+  return operar(form, (actor, org, id) => marcarAtendida(db(), actor, org, id), "Marcado como atendido");
+}
+export async function accionAusente(_: Estado, form: FormData) {
+  return operar(form, (actor, org, id) => marcarAusente(db(), actor, org, id), "Marcado como ausente");
+}
+export async function accionReprogramar(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId"), fecha = texto(form, "fecha");
+  let ok = false;
+  const r = await operar(form, async (actor, org, id) => {
+    await reprogramarReserva(db(), actor, org, id, { fecha, inicio: new Date(texto(form, "inicio")), profesionales: form.getAll("p").map(String).map(p => p || null) });
+    ok = true;
+  }, "Turno reprogramado");
+  if (!ok) return r;
+  redirect(`/agenda?${new URLSearchParams({ sede: sedeId, fecha, ok: "reprogramado" })}`);
 }

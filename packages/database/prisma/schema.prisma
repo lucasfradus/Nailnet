@@ -694,6 +694,10 @@ model Reserva {
   estado         EstadoReserva
   expiraEn       DateTime?
   notas          String?
+  // Reprogramación: la reserva nueva apunta a la que reemplaza (cancelada en la misma transacción).
+  reemplazaId    String?         @unique @db.Uuid
+  reemplaza      Reserva?        @relation("Reprogramacion", fields: [reemplazaId], references: [id], onDelete: Restrict)
+  reemplazadaPor Reserva?        @relation("Reprogramacion")
   creadoPor      String?         @db.Uuid
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

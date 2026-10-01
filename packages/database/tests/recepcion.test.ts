@@ -9,7 +9,7 @@ import { crearCategoria, guardarServicio, guardarServicioSede } from "../src/cat
 import { crearCliente } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion, configurarSenaRecepcion } from "../src/configuracion.ts";
 import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
-import { TurnoNoDisponible, agendaSede, tomarTurno } from "../src/reservas.ts";
+import { TurnoNoDisponible, agendaSede, expirarRetenciones, tomarTurno } from "../src/reservas.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -98,5 +98,26 @@ test("reserva manual en recepción y agenda (R01)", async (t) => {
       await assert.rejects(agendaSede(db, a.recepcion.id, O, { sedeId: a.sur.id, desde: FECHA, dias: 1 }, ahora), AccesoDenegado);
       await assert.rejects(agendaSede(db, a.recepcion.id, O, { sedeId: a.centro.id, desde: FECHA, dias: 3 }, ahora), DatosInvalidos);
     });
+  } finally { await db.$disconnect(); }
+});
+
+test("worker: expiración de retenciones idempotente y concurrente (R02)", async () => {
+  if (!process.env.TEST_DATABASE_URL) throw new Error("TEST_DATABASE_URL es obligatoria");
+  const db = createDatabase(process.env.TEST_DATABASE_URL);
+  try {
+    const a = await crearFixture(db);
+    const vencida = await db.reserva.create({ data: { organizacionId: a.org.id, sedeId: a.centro.id, canal: "ONLINE", estado: "PENDIENTE_PAGO", expiraEn: new Date(ahora.getTime() - 1000) } });
+    const vigente = await db.reserva.create({ data: { organizacionId: a.org.id, sedeId: a.centro.id, canal: "ONLINE", estado: "PENDIENTE_PAGO", expiraEn: new Date(ahora.getTime() + 60_000) } });
+    const confirmada = await db.reserva.create({ data: { organizacionId: a.org.id, sedeId: a.centro.id, canal: "RECEPCION", estado: "CONFIRMADA" } });
+    // Dos instancias del worker a la vez (o un reinicio a mitad de camino): un solo cambio por reserva.
+    await Promise.all([expirarRetenciones(db, ahora), expirarRetenciones(db, ahora), expirarRetenciones(db, ahora)]);
+    await expirarRetenciones(db, ahora);
+    assert.equal((await db.reserva.findUniqueOrThrow({ where: { id: vencida.id } })).estado, "EXPIRADA");
+    assert.equal((await db.reserva.findUniqueOrThrow({ where: { id: vigente.id } })).estado, "PENDIENTE_PAGO");
+    assert.equal((await db.reserva.findUniqueOrThrow({ where: { id: confirmada.id } })).estado, "CONFIRMADA");
+    assert.equal(await db.reservaEvento.count({ where: { reservaId: vencida.id, tipo: "EXPIRADA" } }), 1);
+    const despues = new Date(ahora.getTime() + 61_000);
+    assert.ok((await expirarRetenciones(db, despues)).expiradas >= 1);
+    assert.equal((await db.reserva.findUniqueOrThrow({ where: { id: vigente.id } })).estado, "EXPIRADA");
   } finally { await db.$disconnect(); }
 });

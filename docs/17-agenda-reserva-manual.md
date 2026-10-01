@@ -62,3 +62,19 @@ Implementa R01 con las decisiones del 2026-10-01: D3, D4 y D6 confirmadas; D5 si
   - la ve confirmada en la agenda;
   - 09:00 y 09:30 dejan de ofrecerse y 10:00, contiguo, sigue disponible.
   - No se probó en un navegador real.
+
+## Worker: vencimiento de retenciones (R02) · 2026-10-01
+
+- `expirarRetenciones` pasa a `EXPIRADA` las reservas pendientes vencidas, con su evento, aunque nadie vuelva a reservar. El motor ya las ignoraba; esto deja el estado y el historial al día.
+- **Transición condicional** (sigue pendiente y vencida):
+  - varias instancias del worker, un reinicio a mitad de camino o la limpieza que hace `tomarTurno` nunca generan dos cambios ni dos eventos (probado con tres corridas simultáneas);
+  - la aprobación de pago de R04 usará la transición condicional inversa (pendiente y no vencida → confirmada) sobre la misma fila, así que vencimiento y aprobación no pueden ganar ambos. Un pago que llegue tarde abrirá una incidencia (doc 02).
+- **El worker** (`apps/worker`) corre la tarea al iniciar y luego cada `WORKER_INTERVALO_SEGUNDOS` (30 por defecto, mínimo 5), sin solapar vueltas.
+  - Un error se registra y se reintenta en la vuelta siguiente.
+  - Al apagarse espera la vuelta en curso.
+  - Sin `DATABASE_URL` queda solo con el chequeo de vida, como antes, así que el smoke no necesita base.
+- **Build:** el cliente de Prisma generado usa sintaxis que Node no ejecuta quitando tipos.
+  - En desarrollo el worker corre con `tsx watch`.
+  - El build valida tipos y empaqueta con `esbuild` en `dist/index.js` (≈250 KB), con los paquetes del monorepo incluidos y Prisma, `pg` y `dotenv` como dependencias externas.
+- **Verificado contra PostgreSQL embebido:** el bundle arrancó, expiró una retención vencida con un evento y respondió el chequeo de vida.
+- **Pendiente (F04):** cola durable de trabajos y outbox (emails, reconciliación de pagos) sobre la misma base.

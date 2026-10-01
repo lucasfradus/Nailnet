@@ -144,3 +144,24 @@ export async function agendaSede(db: Database, actorId: string, organizacionId: 
     precio: i.precio.toFixed(2), sena: i.sena?.toFixed(2) ?? null,
   })) };
 }
+
+/**
+ * Tarea periódica del worker (R02): pasa a EXPIRADA las retenciones vencidas aunque nadie vuelva a
+ * reservar. El motor ya las ignora; esto libera el estado y deja el evento. La transición es
+ * condicional (sigue pendiente y vencida), así que varias instancias del worker o una aprobación de
+ * pago concurrente (R04, transición condicional inversa) nunca aplican dos cambios sobre la misma fila.
+ */
+export async function expirarRetenciones(db: Database, ahora = new Date(), limite = 200) {
+  const vencidas = await db.reserva.findMany({
+    where: { estado: { in: ["PENDIENTE_PAGO", "PAGO_EN_REVISION"] }, expiraEn: { lte: ahora } },
+    select: { id: true, organizacionId: true, estado: true }, orderBy: { expiraEn: "asc" }, take: limite,
+  });
+  let expiradas = 0;
+  for (const v of vencidas) {
+    await db.$transaction(async tx => {
+      const { count } = await tx.reserva.updateMany({ where: { id: v.id, estado: v.estado, expiraEn: { lte: ahora } }, data: { estado: "EXPIRADA" } });
+      if (count) { expiradas++; await registrarEvento(tx, v.organizacionId, v.id, "EXPIRADA", v.estado, "EXPIRADA", null, { origen: "worker" }); }
+    });
+  }
+  return { revisadas: vencidas.length, expiradas };
+}

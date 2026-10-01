@@ -33,6 +33,6 @@ Requiere Node.js 24 y npm 11. Ejecutar `npm ci` y `npm run db:generate` en la ra
 
 `npm run check` ejecuta lint, chequeo de tipos y los tres builds. Se puede compilar cada aplicación con `npm run build -w @nailnet/backoffice` (o `@nailnet/booking`, `@nailnet/worker`). Backoffice y worker tienen `npm run start -w <paquete>` después del build; el portal genera `apps/booking/dist`.
 
-El endpoint `/api/health` del backoffice y `/health` del worker solo verifican que el proceso responde, no disponibilidad de base de datos o proveedores. El worker aún no consume trabajos. `PORT` permite cambiar su puerto local, predeterminado 3001. Esta base funciona sin credenciales ni archivos `.env`.
+El endpoint `/api/health` del backoffice y `/health` del worker solo verifican que el proceso responde, no disponibilidad de base de datos o proveedores. El worker expira retenciones de turnos vencidas cada 30 s (`WORKER_INTERVALO_SEGUNDOS`) si tiene `DATABASE_URL`; sin base solo responde liveness. `PORT` permite cambiar su puerto local, predeterminado 3001. Esta base funciona sin credenciales ni archivos `.env`.
 
 La CI está definida en `.github/workflows/ci.yml` e incluye las pruebas de permisos y PostgreSQL. `npm run test:domain` prueba reglas puras; `npm run test:database` crea un PostgreSQL temporal aislado, migra, verifica el seed y ejecuta integración sin Docker. Ver [base de datos y permisos](docs/06-fundacion.md) para desarrollar con una base persistente.

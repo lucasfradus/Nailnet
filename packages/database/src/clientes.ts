@@ -1,21 +1,11 @@
-import { AccesoDenegado, cubreSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type Permiso } from "@nailnet/domain";
+import { AccesoDenegado, tienePermiso, type Permiso } from "@nailnet/domain";
 import { estadoConsentimiento, normalizarTelefono, validarClaveConsentimiento, validarCliente, type DatosCliente, type TipoConsentimiento } from "@nailnet/domain/clientes";
 import { normalizarEmail } from "@nailnet/domain/credenciales";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
-import { DatosInvalidos, asignacionesActor, auditar, bloquearOrganizacion, exigirIds } from "./access.ts";
+import { DatosInvalidos, asignacionesActor, auditar, bloquearOrganizacion, exigirIds, sedesConPermiso } from "./access.ts";
 
 type Cliente = Database | Prisma.TransactionClient;
-
-/** Sedes de la organización (activas) sobre las que el actor tiene el permiso. */
-async function sedesConPermiso(db: Cliente, actorId: string, organizacionId: string, permiso: Permiso) {
-  const actor = await asignacionesActor(db, actorId, organizacionId);
-  const sedes = await db.sede.findMany({ where: { organizacionId, activo: true }, select: { id: true, franquiciadoId: true, nombre: true } });
-  const mapa = new Map(sedes.map(s => [s.id, s.franquiciadoId]));
-  const franquiciadoDe: FranquiciadoDeSede = id => mapa.get(id);
-  const permitidas = sedes.filter(s => actor.some(a => tienePermiso(a, permiso) && cubreSede(a, s.id, franquiciadoDe)));
-  return { actor, sedes: permitidas, ids: new Set(permitidas.map(s => s.id)), organizacional: actor.some((a: Asignacion) => tienePermiso(a, permiso) && a.alcance === "ORGANIZACION") };
-}
 
 function datosValidos(d: DatosCliente) {
   const r = validarCliente(d);

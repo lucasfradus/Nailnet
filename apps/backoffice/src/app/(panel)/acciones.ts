@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { AccesoDenegado, type Asignacion } from "@nailnet/domain";
-import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes } from "@nailnet/database/access";
+import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes, zonaHorariaValida } from "@nailnet/database/access";
 import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol } from "@nailnet/database/usuarios";
 import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, eliminarCredencial, guardarCredencial } from "@nailnet/database/configuracion";
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
@@ -11,6 +11,8 @@ import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes"
 import { actualizarCliente, actualizarObservaciones, crearCliente, publicarConsentimiento, registrarConsentimiento, vincularCliente } from "@nailnet/database/clientes";
 import type { Sena, TipoSena } from "@nailnet/domain/catalogo";
 import { crearCategoria, crearSkill, crearTipoRecurso, guardarServicio, guardarServicioSede } from "@nailnet/database/catalogo";
+import { aMinutos, aUtc, validarFecha } from "@nailnet/domain/agenda";
+import { actualizarProfesional, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "@nailnet/database/profesionales";
 import { db } from "@/lib/db";
 import { COOKIE_ORGANIZACION, COOKIE_SEDE, requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
@@ -199,4 +201,66 @@ export async function accionServicioSede(_: Estado, form: FormData) {
     habilitado: marcado(form, "habilitado"), precio: texto(form, "precio") || null, duracionMinutos: Number.isNaN(duracion) ? null : duracion,
     sena: senaForm(form), reservableOnline: marcado(form, "reservableOnline"),
   }), "Condiciones de la sede guardadas");
+}
+
+// Profesionales, calendario y recursos (C03).
+const semanaForm = (f: FormData) => semanaDesdeTextos(Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(d => [d, texto(f, `dia${d}`)])));
+/** datetime-local interpretado en la zona de la sede indicada. */
+function instante(f: FormData, k: string): Date {
+  const [fecha, hora] = texto(f, k).split("T");
+  const tz = texto(f, "tz");
+  const minutos = hora ? aMinutos(hora.slice(0, 5)) : null;
+  if (!fecha || !validarFecha(fecha) || minutos === null || !zonaHorariaValida(tz)) return new Date(NaN);
+  return aUtc(fecha, minutos, tz);
+}
+export async function accionCrearProfesional(_: Estado, form: FormData) {
+  let id = "";
+  const r = await ejecutar("/profesionales", async (actor, org) => { id = (await crearProfesional(db(), actor, org, texto(form, "sedeId"), { nombre: texto(form, "nombre"), apellido: texto(form, "apellido") })).id; }, "Profesional creado");
+  if (r?.ok && id) redirect(`/profesionales/${id}`);
+  return r;
+}
+export async function accionActualizarProfesional(_: Estado, form: FormData) {
+  const id = texto(form, "profesionalId");
+  return ejecutar(`/profesionales/${id}`, (actor, org) => actualizarProfesional(db(), actor, org, id, { nombre: texto(form, "nombre"), apellido: texto(form, "apellido"), activo: marcado(form, "activo") }), "Datos guardados");
+}
+export async function accionVincularSedeProfesional(_: Estado, form: FormData) {
+  const id = texto(form, "profesionalId");
+  return ejecutar(`/profesionales/${id}`, (actor, org) => vincularSede(db(), actor, org, id, texto(form, "sedeId"), texto(form, "activo") !== "false"), "Sede actualizada");
+}
+export async function accionHabilidades(_: Estado, form: FormData) {
+  const id = texto(form, "profesionalId");
+  return ejecutar(`/profesionales/${id}`, (actor, org) => guardarHabilidades(db(), actor, org, id, { skillIds: form.getAll("skillId").map(String), servicioIds: form.getAll("servicioId").map(String) }), "Habilidades guardadas");
+}
+export async function accionHorarioProfesional(_: Estado, form: FormData) {
+  const id = texto(form, "profesionalId");
+  return ejecutar(`/profesionales/${id}`, (actor, org) => guardarHorarioProfesional(db(), actor, org, id, texto(form, "sedeId"), semanaForm(form)), "Jornada guardada");
+}
+export async function accionCrearBloqueo(_: Estado, form: FormData) {
+  const id = texto(form, "profesionalId");
+  return ejecutar(`/profesionales/${id}`, async (actor, org) => { await crearBloqueo(db(), actor, org, id, { inicio: instante(form, "inicio"), fin: instante(form, "fin"), motivo: texto(form, "motivo") }); }, "Bloqueo agregado");
+}
+export async function accionEliminarBloqueo(_: Estado, form: FormData) {
+  return ejecutar(`/profesionales/${texto(form, "profesionalId")}`, (actor, org) => eliminarBloqueo(db(), actor, org, texto(form, "bloqueoId")), "Bloqueo eliminado");
+}
+export async function accionHorarioSede(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => guardarHorarioSede(db(), actor, org, sedeId, semanaForm(form)), "Horario de la sede guardado");
+}
+export async function accionCrearExcepcion(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  const inicio = aMinutos(texto(form, "desde")), fin = aMinutos(texto(form, "hasta"));
+  return ejecutar(`/sedes/${sedeId}`, async (actor, org) => {
+    if (!marcado(form, "cerrado") && (inicio === null || fin === null || inicio >= fin)) throw new DatosInvalidos("Indicá el horario especial o marcá cerrado");
+    await crearExcepcion(db(), actor, org, { sedeId: marcado(form, "toda") ? null : sedeId, fecha: texto(form, "fecha"), rango: marcado(form, "cerrado") ? null : { inicio: inicio!, fin: fin! }, motivo: texto(form, "motivo") });
+  }, "Fecha especial agregada");
+}
+export async function accionEliminarExcepcion(_: Estado, form: FormData) {
+  return ejecutar(`/sedes/${texto(form, "sedeId")}`, (actor, org) => eliminarExcepcion(db(), actor, org, texto(form, "excepcionId")), "Fecha especial eliminada");
+}
+export async function accionCrearRecurso(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, async (actor, org) => { await crearRecurso(db(), actor, org, sedeId, { tipoRecursoId: texto(form, "tipoRecursoId"), nombre: texto(form, "nombre") }); }, "Recurso agregado");
+}
+export async function accionEstadoRecurso(_: Estado, form: FormData) {
+  return ejecutar(`/sedes/${texto(form, "sedeId")}`, (actor, org) => cambiarEstadoRecurso(db(), actor, org, texto(form, "recursoId"), texto(form, "activo") === "true"), "Recurso actualizado");
 }

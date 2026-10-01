@@ -1,4 +1,4 @@
-import { AccesoDenegado, puedeCrearSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type Permiso } from "@nailnet/domain";
+import { AccesoDenegado, cubreSede, puedeCrearSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type Permiso } from "@nailnet/domain";
 import { redactar } from "@nailnet/domain/secretos";
 import type { Database } from "./client.ts";
 import type { Prisma } from "../generated/client/client.ts";
@@ -24,6 +24,16 @@ export async function asignacionesActor(db: Cliente, usuarioId: string, organiza
   });
   if (!membresia?.activo || !membresia.usuario.activo || !membresia.organizacion.activo) throw new AccesoDenegado();
   return membresia.asignaciones;
+}
+
+/** Sedes de la organización (activas) sobre las que el actor tiene el permiso. */
+export async function sedesConPermiso(db: Cliente, actorId: string, organizacionId: string, permiso: Permiso) {
+  const actor = await asignacionesActor(db, actorId, organizacionId);
+  const sedes = await db.sede.findMany({ where: { organizacionId, activo: true }, select: { id: true, franquiciadoId: true, nombre: true } });
+  const mapa = new Map(sedes.map(s => [s.id, s.franquiciadoId]));
+  const franquiciadoDe: FranquiciadoDeSede = id => mapa.get(id);
+  const permitidas = sedes.filter(s => actor.some(a => tienePermiso(a, permiso) && cubreSede(a, s.id, franquiciadoDe)));
+  return { actor, sedes: permitidas, ids: new Set(permitidas.map(s => s.id)), organizacional: actor.some((a: Asignacion) => tienePermiso(a, permiso) && a.alcance === "ORGANIZACION") };
 }
 
 /** Mapa sede → franquiciado de la organización, incluidas sedes inactivas. */

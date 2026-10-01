@@ -6,10 +6,14 @@ import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import { ESQUEMAS, type Proveedor } from "@nailnet/domain/secretos";
 import { listarSedes } from "@nailnet/database/access";
 import { listarCredenciales, obtenerConfiguracion } from "@nailnet/database/configuracion";
+import { aHora } from "@nailnet/domain/agenda";
+import { listarCatalogo } from "@nailnet/database/catalogo";
+import { calendarioSede } from "@nailnet/database/profesionales";
 import { Formulario } from "@/components/formulario";
+import { CamposSemana, textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
-import { accionConfiguracionOrganizacion, accionConfiguracionSede, accionEliminarCredencial, accionGuardarCredencial } from "../../acciones";
+import { accionConfiguracionOrganizacion, accionConfiguracionSede, accionCrearExcepcion, accionCrearRecurso, accionEliminarCredencial, accionEliminarExcepcion, accionEstadoRecurso, accionGuardarCredencial, accionHorarioSede } from "../../acciones";
 
 export const metadata: Metadata = { title: "Configuración de sede · NailNet" };
 const PROVEEDORES: Record<Proveedor, string> = { MERCADO_PAGO: "Mercado Pago", FACTURANTE: "Facturante" };
@@ -33,6 +37,9 @@ export default async function ConfiguracionSede({ params }: { params: Promise<{ 
   const datos = await cargar().catch(e => { if (e instanceof AccesoDenegado) return null; throw e; });
   if (!datos) notFound();
   const { sede, config } = datos;
+  // El calendario solo aplica a sedes activas; una sede inactiva conserva su configuración.
+  const cal = sede.activo ? await calendarioSede(db(), actorId, organizacion.id, sedeId) : null;
+  const tiposRecurso = cal?.editable ? (await listarCatalogo(db(), actorId, organizacion.id)).tiposRecurso : [];
   const credenciales = config.puedeCredenciales ? await listarCredenciales(db(), actorId, organizacion.id, sedeId) : [];
 
   return <section className="panel">
@@ -51,6 +58,45 @@ export default async function ConfiguracionSede({ params }: { params: Promise<{ 
     {config.puedeEditarOrganizacion && <>
       <p className="ayuda">Valores por defecto para todas las sedes de {organizacion.nombre}:</p>
       <Formulario accion={accionConfiguracionOrganizacion} boton="Guardar para la organización" className="en-linea"><CamposParametros valores={config.organizacion} /></Formulario>
+    </>}
+
+    {cal && <>
+    <h2 className="subtitulo">Horario de atención</h2>
+    <p>{textoSemana(cal.semana)}</p>
+    {cal.editable && <details><summary>Editar horario semanal</summary>
+      <Formulario accion={accionHorarioSede} boton="Guardar horario">
+        <input type="hidden" name="sedeId" value={sede.id} /><CamposSemana semana={cal.semana} />
+        <p className="ayuda">Los turnos online se ofrecen dentro de este horario y de la jornada de cada profesional.</p>
+      </Formulario>
+    </details>}
+
+    <h2 className="subtitulo">Feriados y fechas especiales</h2>
+    <ul className="lista">{cal.excepciones.map(e => <li key={e.id}>{e.fecha} · {e.cerrado ? "Cerrado" : `${aHora(e.inicio!)}-${aHora(e.fin!)}`}{e.motivo ? ` · ${e.motivo}` : ""}{e.deOrganizacion ? " · toda la organización" : ""}
+      {((e.deOrganizacion && cal.editarFeriados) || (!e.deOrganizacion && cal.editable)) && <Formulario accion={accionEliminarExcepcion} boton="Quitar" className="en-linea" secundario>
+        <input type="hidden" name="sedeId" value={sede.id} /><input type="hidden" name="excepcionId" value={e.id} />
+      </Formulario>}</li>)}
+      {!cal.excepciones.length && <li>Sin fechas especiales próximas.</li>}</ul>
+    <p className="ayuda">Si la sede tiene filas propias para una fecha, reemplazan al feriado de la organización (por ejemplo, abrir medio día).</p>
+    {cal.editable && <Formulario accion={accionCrearExcepcion} boton="Agregar fecha" className="en-linea">
+      <input type="hidden" name="sedeId" value={sede.id} />
+      <input type="date" name="fecha" required aria-label="Fecha" />
+      <label className="check"><input type="checkbox" name="cerrado" defaultChecked />Cerrado</label>
+      <input name="desde" placeholder="Desde HH:MM" size={8} aria-label="Desde" /><input name="hasta" placeholder="Hasta HH:MM" size={8} aria-label="Hasta" />
+      <input name="motivo" placeholder="Motivo" maxLength={120} aria-label="Motivo" />
+      {cal.editarFeriados && <label className="check"><input type="checkbox" name="toda" />Para toda la organización</label>}
+    </Formulario>}
+
+    <h2 className="subtitulo">Recursos</h2>
+    <ul className="lista">{cal.recursos.map(r => <li key={r.id}>{r.tipo} · {r.nombre}{r.activo ? "" : " · fuera de servicio"}
+      {cal.editable && <Formulario accion={accionEstadoRecurso} boton={r.activo ? "Fuera de servicio" : "Reactivar"} className="en-linea" secundario>
+        <input type="hidden" name="sedeId" value={sede.id} /><input type="hidden" name="recursoId" value={r.id} /><input type="hidden" name="activo" value={String(!r.activo)} />
+      </Formulario>}</li>)}
+      {!cal.recursos.length && <li>Sin recursos cargados.</li>}</ul>
+    {cal.editable && tiposRecurso.length > 0 && <Formulario accion={accionCrearRecurso} boton="Agregar recurso" className="en-linea">
+      <input type="hidden" name="sedeId" value={sede.id} />
+      <select name="tipoRecursoId" aria-label="Tipo">{tiposRecurso.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select>
+      <input name="nombre" placeholder="Nombre (Cabina 1)" required maxLength={80} aria-label="Nombre" />
+    </Formulario>}
     </>}
 
     {config.puedeCredenciales && <>

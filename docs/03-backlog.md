@@ -36,7 +36,7 @@ Dependencias: D01–D03. Si falla el acceso a proveedores, completar base local 
 |---|---|---|
 | C01 | Clientes y consentimientos versionados · hecho 2026-10-01, ver 12-clientes-consentimientos.md | Sin datos médicos/fotos; contacto invitado; alcance e historial según política; aceptación por práctica |
 | C02 | Servicios y precios por sede · hecho 2026-10-01, ver 13-catalogo.md | Duración, skills, recursos y seña validados; precio independiente del profesional |
-| C03 | Profesionales y recursos | Multi-sede, habilidades, habilitaciones, jornadas, pausas y bloqueos |
+| C03 | Profesionales y recursos · hecho 2026-10-01, ver 14-profesionales-calendario.md | Multi-sede, habilidades, habilitaciones, jornadas, pausas y bloqueos |
 | C04 | Motor de disponibilidad | Intervalo completo con todos los recursos; bloqueos entre sedes; feriados y buffers; «cualquiera» por defecto; horizonte y anticipación por sede; varios ítems consecutivos atómicos |
 | C05 | Prueba de exclusión PostgreSQL | Dos conexiones intentan mismo profesional o recurso: solo una retención gana; intervalos contiguos válidos |
 

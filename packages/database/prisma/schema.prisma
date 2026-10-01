@@ -90,6 +90,8 @@ model Organizacion {
   servicios       Servicio[]
   skills          Skill[]
   tiposRecurso    TipoRecurso[]
+  profesionales   Profesional[]
+  excepciones     ExcepcionHorario[]
 }
 
 model Franquiciado {
@@ -123,6 +125,11 @@ model Sede {
   clientes                ClienteSede[]
   consentimientos         ClienteConsentimiento[]
   servicios               ServicioSede[]
+  profesionales           ProfesionalSede[]
+  horarios                HorarioSede[]
+  horariosProfesionales   HorarioProfesional[]
+  excepciones             ExcepcionHorario[]
+  recursos                Recurso[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -410,17 +417,19 @@ model Servicio {
   recursos             ServicioRequisitoRecurso[]
   consentimientos      ServicioConsentimiento[]
   sedes                ServicioSede[]
+  profesionales        ProfesionalServicio[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, nombre])
 }
 
 model Skill {
-  id             String          @id @default(uuid()) @db.Uuid
-  organizacionId String          @db.Uuid
+  id             String             @id @default(uuid()) @db.Uuid
+  organizacionId String             @db.Uuid
   nombre         String
-  organizacion   Organizacion    @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  organizacion   Organizacion       @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
   servicios      ServicioSkill[]
+  profesionales  ProfesionalSkill[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, nombre])
@@ -443,6 +452,7 @@ model TipoRecurso {
   nombre         String
   organizacion   Organizacion               @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
   requisitos     ServicioRequisitoRecurso[]
+  recursos       Recurso[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, nombre])
@@ -486,4 +496,151 @@ model ServicioSede {
 
   @@id([servicioId, sedeId])
   @@index([organizacionId, sedeId])
+}
+
+// Profesional de la organización; puede trabajar en varias sedes. Usuario opcional (agenda propia, más adelante).
+model Profesional {
+  id             String                @id @default(uuid()) @db.Uuid
+  organizacionId String                @db.Uuid
+  nombre         String
+  apellido       String?
+  usuarioId      String?               @db.Uuid
+  activo         Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  organizacion   Organizacion          @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sedes          ProfesionalSede[]
+  skills         ProfesionalSkill[]
+  servicios      ProfesionalServicio[]
+  horarios       HorarioProfesional[]
+  bloqueos       BloqueoAgenda[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, usuarioId])
+}
+
+model ProfesionalSede {
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  sedeId         String      @db.Uuid
+  activo         Boolean     @default(true)
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([profesionalId, sedeId])
+  @@index([organizacionId, sedeId])
+}
+
+model ProfesionalSkill {
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  skillId        String      @db.Uuid
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Cascade)
+  skill          Skill       @relation(fields: [organizacionId, skillId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([profesionalId, skillId])
+}
+
+// Habilitación expresa: además de tener las skills, el profesional debe estar habilitado para el servicio.
+model ProfesionalServicio {
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  servicioId     String      @db.Uuid
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Cascade)
+  servicio       Servicio    @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([profesionalId, servicioId])
+}
+
+// Apertura semanal de la sede. Varios rangos por día = pausas. Vigencia opcional por fecha local.
+model HorarioSede {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizacionId String    @db.Uuid
+  sedeId         String    @db.Uuid
+  diaSemana      Int
+  inicioMinutos  Int
+  finMinutos     Int
+  vigenteDesde   DateTime? @db.Date
+  vigenteHasta   DateTime? @db.Date
+  sede           Sede      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([sedeId, diaSemana])
+}
+
+// Jornada del profesional en una sede. No puede solaparse con su jornada en otra sede.
+model HorarioProfesional {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  sedeId         String      @db.Uuid
+  diaSemana      Int
+  inicioMinutos  Int
+  finMinutos     Int
+  vigenteDesde   DateTime?   @db.Date
+  vigenteHasta   DateTime?   @db.Date
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([profesionalId, diaSemana])
+  @@index([sedeId, diaSemana])
+}
+
+// Fecha especial: sedeId null = toda la organización (feriado). Si la sede tiene filas para la fecha,
+// reemplazan a las de la organización. Cerrado, o rango especial de apertura.
+model ExcepcionHorario {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  sedeId         String?      @db.Uuid
+  fecha          DateTime     @db.Date
+  cerrado        Boolean
+  inicioMinutos  Int?
+  finMinutos     Int?
+  motivo         String?
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sede           Sede?        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([organizacionId, fecha])
+}
+
+// Ausencia del profesional en instantes UTC; vale en todas sus sedes.
+model BloqueoAgenda {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizacionId String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  inicio         DateTime
+  fin            DateTime
+  motivo         String?
+  creadoPor      String?     @db.Uuid
+  createdAt      DateTime    @default(now())
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([profesionalId, inicio])
+}
+
+// Unidad física individual de un tipo (cabina 1, láser A) en una sede.
+model Recurso {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizacionId String           @db.Uuid
+  sedeId         String           @db.Uuid
+  tipoRecursoId  String           @db.Uuid
+  nombre         String
+  activo         Boolean          @default(true)
+  sede           Sede             @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  tipoRecurso    TipoRecurso      @relation(fields: [organizacionId, tipoRecursoId], references: [organizacionId, id], onDelete: Restrict)
+  bloqueos       BloqueoRecurso[]
+
+  @@unique([organizacionId, id])
+  @@unique([sedeId, nombre])
+}
+
+model BloqueoRecurso {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizacionId String   @db.Uuid
+  recursoId      String   @db.Uuid
+  inicio         DateTime
+  fin            DateTime
+  motivo         String?
+  recurso        Recurso  @relation(fields: [organizacionId, recursoId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([recursoId, inicio])
 }

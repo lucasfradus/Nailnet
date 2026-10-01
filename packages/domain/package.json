@@ -9,7 +9,8 @@
     "./secretos": "./src/secretos.ts",
     "./configuracion": "./src/configuracion.ts",
     "./clientes": "./src/clientes.ts",
-    "./catalogo": "./src/catalogo.ts"
+    "./catalogo": "./src/catalogo.ts",
+    "./agenda": "./src/agenda.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

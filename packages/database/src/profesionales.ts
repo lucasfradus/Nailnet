@@ -35,9 +35,11 @@ function agruparSemana(filas: { diaSemana: number; inicioMinutos: number; finMin
   return s;
 }
 
-// Serializa cambios de agenda de un profesional (jornadas en varias sedes, bloqueos).
+// Serializa cambios de agenda de un profesional con el mismo lock de fila que usan las retenciones
+// de turnos (reservas.ts): jornadas, ausencias y reservas no se pisan entre sí.
 async function bloquearProfesional(tx: Tx, profesionalId: string) {
-  await tx.$queryRaw`SELECT 1 AS ok FROM (SELECT pg_advisory_xact_lock(hashtextextended(${"profesional:" + profesionalId}, 0))) AS l`;
+  exigirIds(profesionalId);
+  await tx.$queryRaw`SELECT id FROM "Profesional" WHERE id = ${profesionalId}::uuid FOR UPDATE`;
 }
 
 /**

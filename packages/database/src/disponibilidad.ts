@@ -29,7 +29,11 @@ const MARGEN = 4 * 3_600_000;
  * Arma la consulta del motor desde la base para un pedido ya autorizado. Se usa igual para mostrar
  * turnos y, dentro de la transacción con locks, para revalidar una retención (C05).
  */
-export async function cargarConsulta(db: Db, organizacionId: string, pedido: Pedido, ahora: Date) {
+/**
+ * `bloqueados`: dentro de la transacción de retención, limita candidatos y recursos a las filas ya
+ * bloqueadas. Así no puede asignarse un profesional o recurso que apareció después de tomar los locks.
+ */
+export async function cargarConsulta(db: Db, organizacionId: string, pedido: Pedido, ahora: Date, bloqueados?: { profesionales: ReadonlySet<string>; recursos: ReadonlySet<string> }) {
   const { sedeId, canal } = pedido;
   if (!validarFecha(pedido.fecha)) throw new DatosInvalidos("Fecha inválida");
   if (!pedido.items.length || pedido.items.length > 4) throw new DatosInvalidos("Elegí entre 1 y 4 servicios");
@@ -71,7 +75,7 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
 
   // Candidatos: activos, vinculados a la sede, habilitados para el servicio y con TODAS sus skills.
   const profesionales = await db.profesional.findMany({
-    where: { organizacionId, activo: true, sedes: { some: { sedeId, activo: true } }, servicios: { some: { servicioId: { in: ids } } } },
+    where: { organizacionId, activo: true, ...(bloqueados ? { id: { in: [...bloqueados.profesionales] } } : {}), sedes: { some: { sedeId, activo: true } }, servicios: { some: { servicioId: { in: ids } } } },
     include: { skills: { select: { skillId: true } }, servicios: { select: { servicioId: true } } },
   });
   const aptos = (servicioId: string) => {
@@ -82,13 +86,12 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
   const inicioDia = aUtc(pedido.fecha, 0, tz).getTime(), finDia = aUtc(pedido.fecha, 1440, tz).getTime();
   const ventana = { gte: new Date(inicioDia - MARGEN), lt: new Date(finDia + MARGEN) };
   const profIds = profesionales.map(p => p.id);
-  const [horarios, ocupaciones, bloqueos, horarioSede, excepciones] = await Promise.all([
-    db.horarioProfesional.findMany({ where: { profesionalId: { in: profIds }, sedeId } }),
-    db.reservaItem.findMany({ where: { profesionalId: { in: profIds }, ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, reserva: reservaActiva(ahora) }, select: { profesionalId: true, ocupaDesde: true, ocupaHasta: true } }),
-    db.bloqueoAgenda.findMany({ where: { profesionalId: { in: profIds }, inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } } }),
-    db.horarioSede.findMany({ where: { sedeId } }),
-    db.excepcionHorario.findMany({ where: { organizacionId, fecha: new Date(`${pedido.fecha}T00:00:00Z`), OR: [{ sedeId }, { sedeId: null }] } }),
-  ]);
+  // Secuencial a propósito: dentro de una transacción todas las consultas comparten conexión.
+  const horarios = await db.horarioProfesional.findMany({ where: { profesionalId: { in: profIds }, sedeId } });
+  const ocupaciones = await db.reservaItem.findMany({ where: { profesionalId: { in: profIds }, ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, reserva: reservaActiva(ahora) }, select: { profesionalId: true, ocupaDesde: true, ocupaHasta: true } });
+  const bloqueos = await db.bloqueoAgenda.findMany({ where: { profesionalId: { in: profIds }, inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } } });
+  const horarioSede = await db.horarioSede.findMany({ where: { sedeId } });
+  const excepciones = await db.excepcionHorario.findMany({ where: { organizacionId, fecha: new Date(`${pedido.fecha}T00:00:00Z`), OR: [{ sedeId }, { sedeId: null }] } });
   const semanal = <T extends { diaSemana: number; inicioMinutos: number; finMinutos: number; vigenteDesde: Date | null; vigenteHasta: Date | null }>(f: T) =>
     ({ diaSemana: f.diaSemana, inicioMinutos: f.inicioMinutos, finMinutos: f.finMinutos, vigenteDesde: fecha(f.vigenteDesde), vigenteHasta: fecha(f.vigenteHasta) });
   const apertura = aIntervalos(aperturaDelDia(horarioSede.map(semanal), excepciones.filter(e => e.sedeId), excepciones.filter(e => !e.sedeId), pedido.fecha), pedido.fecha, tz);
@@ -105,7 +108,7 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
 
   const tipos = [...new Set(servicios.flatMap(s => s.recursos.map(r => r.tipoRecursoId)))];
   const recursos = tipos.length ? await db.recurso.findMany({
-    where: { sedeId, activo: true, tipoRecursoId: { in: tipos } },
+    where: { sedeId, activo: true, tipoRecursoId: { in: tipos }, ...(bloqueados ? { id: { in: [...bloqueados.recursos] } } : {}) },
     include: {
       ocupaciones: { where: { ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, item: { reserva: reservaActiva(ahora) } }, select: { ocupaDesde: true, ocupaHasta: true } },
       bloqueos: { where: { inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } }, select: { inicio: true, fin: true } },
@@ -126,7 +129,7 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
     recursos: recursos.map(r => ({ id: r.id, tipoRecursoId: r.tipoRecursoId, ocupado: [...r.ocupaciones.map(o => ({ desde: o.ocupaDesde.getTime(), hasta: o.ocupaHasta.getTime() })), ...r.bloqueos.map(b => ({ desde: b.inicio.getTime(), hasta: b.fin.getTime() }))] })),
     desdeMs, hastaMs: fueraDeHorizonte ? -1 : null,
   };
-  return { consulta, efectivos, nombres: new Map(profesionales.map(p => [p.id, [p.nombre, p.apellido].filter(Boolean).join(" ")])) };
+  return { consulta, efectivos, tipos, nombres: new Map(profesionales.map(p => [p.id, [p.nombre, p.apellido].filter(Boolean).join(" ")])) };
 }
 
 function presentar(turno: Turno, nombres: Map<string, string>) {

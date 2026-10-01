@@ -7,7 +7,7 @@ Las propuestas siguen pendientes salvo donde se registra una confirmación expl�
 | D1 | Nombre del repositorio | Confirmado: repositorio creado por el usuario en https://github.com/lucasfradus/Nailnet; nombre del proyecto NailNet | Resuelto |
 | D2 | Cuenta del cliente | Invitado con enlace seguro por email; cuenta posterior opcional | Identidad y portal |
 | D3 | Tipo e importe de seña | Fija/porcentual por servicio, excepción por sede; indicar monto o porcentaje inicial | Checkout, snapshots y configuración |
-| D4 | Retención | 15 minutos desde intención; sin extensión por reintento; revisión sujeta al mismo vencimiento | Agenda, worker y pagos tardíos |
+| D4 | Retención (modelada el 2026-10-01 como parámetro `retencionMinutos` sin valor por defecto; ver 16-exclusion-concurrente.md) | 15 minutos desde intención; sin extensión por reintento; revisión sujeta al mismo vencimiento | Agenda, worker y pagos tardíos |
 | D5 | Cancelación/reprogramación | Indicar horas de anticipación, devolución total/parcial/nula, ausencias y cancelación por la sede | Políticas, UI y reembolsos |
 | D6 | Reservas de recepción | Confirmar si también exigen MP o hay excepción autorizada y cómo se cobra | Estados y canales |
 | D7 | Reembolsos | Propuesta: aprobación manual por rol autorizado, ejecución por sistema y seguimiento; definir pago tardío | Circuito financiero |

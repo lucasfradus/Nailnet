@@ -12,7 +12,8 @@
     "./clientes": "./src/clientes.ts",
     "./catalogo": "./src/catalogo.ts",
     "./profesionales": "./src/profesionales.ts",
-    "./disponibilidad": "./src/disponibilidad.ts"
+    "./disponibilidad": "./src/disponibilidad.ts",
+    "./reservas": "./src/reservas.ts"
   },
   "scripts": {
     "generate": "prisma generate",

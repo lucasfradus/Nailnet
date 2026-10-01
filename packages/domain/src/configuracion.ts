@@ -8,6 +8,8 @@ export const PARAMETROS = {
   anticipacionMinimaMinutos: { etiqueta: "Anticipación mínima", unidad: "minutos", min: 0, max: 10_080, decision: "D18" },
   // Cada cuánto se ofrecen inicios de turno desde la medianoche local. Pendiente de definición (D17).
   pasoGrillaMinutos: { etiqueta: "Intervalo entre inicios de turno", unidad: "minutos", min: 5, max: 120, multiplo: 5, decision: "D17" },
+  // Cuánto se sostiene un turno pendiente de pago antes de liberarse. Propuesta 15 min, pendiente (D4).
+  retencionMinutos: { etiqueta: "Retención de turno pendiente", unidad: "minutos", min: 5, max: 60, decision: "D4" },
 } as const;
 export type Parametro = keyof typeof PARAMETROS;
 export type ValoresConfiguracion = { [K in Parametro]: number | null };

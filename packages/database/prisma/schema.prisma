@@ -285,6 +285,7 @@ model ConfiguracionOrganizacion {
   horizonteReservaDias      Int?
   anticipacionMinimaMinutos Int?
   pasoGrillaMinutos         Int?
+  retencionMinutos          Int?
   updatedAt                 DateTime     @updatedAt
   organizacion              Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
 }
@@ -295,6 +296,7 @@ model ConfiguracionSede {
   horizonteReservaDias      Int?
   anticipacionMinimaMinutos Int?
   pasoGrillaMinutos         Int?
+  retencionMinutos          Int?
   updatedAt                 DateTime @updatedAt
   sede                      Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
 

@@ -1,5 +1,5 @@
 export type Rol = "MASTER_FRANQUICIADOR" | "FRANQUICIADO" | "ADMIN_SEDE" | "RECEPCIONISTA" | "PROFESIONAL";
-export type Permiso = "sede:leer" | "sede:administrar" | "sede:crear" | "sede:credenciales" | "franquiciado:administrar" | "organizacion:configurar" | "usuario:leer" | "usuario:administrar" | "cliente:leer" | "cliente:editar" | "consentimiento:administrar" | "catalogo:administrar" | "catalogo:precios" | "profesional:administrar";
+export type Permiso = "sede:leer" | "sede:administrar" | "sede:crear" | "sede:credenciales" | "franquiciado:administrar" | "organizacion:configurar" | "usuario:leer" | "usuario:administrar" | "cliente:leer" | "cliente:editar" | "consentimiento:administrar" | "catalogo:administrar" | "catalogo:precios" | "profesional:administrar" | "reserva:gestionar";
 export type Asignacion = {
   rol: Rol;
   alcance: "ORGANIZACION" | "FRANQUICIADO" | "SEDE" | "PROPIO";
@@ -7,11 +7,11 @@ export type Asignacion = {
   sedeId: string | null;
 };
 const permisos: Record<Rol, readonly Permiso[]> = {
-  MASTER_FRANQUICIADOR: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "franquiciado:administrar", "organizacion:configurar", "usuario:leer", "usuario:administrar", "cliente:leer", "cliente:editar", "consentimiento:administrar", "catalogo:administrar", "catalogo:precios", "profesional:administrar"],
+  MASTER_FRANQUICIADOR: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "franquiciado:administrar", "organizacion:configurar", "usuario:leer", "usuario:administrar", "cliente:leer", "cliente:editar", "consentimiento:administrar", "catalogo:administrar", "catalogo:precios", "profesional:administrar", "reserva:gestionar"],
   // Credenciales de proveedores: solo quien es dueño comercial de la sede (o el master), no la operación diaria.
-  FRANQUICIADO: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "usuario:leer", "usuario:administrar", "cliente:leer", "cliente:editar", "catalogo:precios", "profesional:administrar"],
-  ADMIN_SEDE: ["sede:leer", "sede:administrar", "usuario:leer", "cliente:leer", "cliente:editar", "catalogo:precios", "profesional:administrar"],
-  RECEPCIONISTA: ["sede:leer", "cliente:leer", "cliente:editar"],
+  FRANQUICIADO: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "usuario:leer", "usuario:administrar", "cliente:leer", "cliente:editar", "catalogo:precios", "profesional:administrar", "reserva:gestionar"],
+  ADMIN_SEDE: ["sede:leer", "sede:administrar", "usuario:leer", "cliente:leer", "cliente:editar", "catalogo:precios", "profesional:administrar", "reserva:gestionar"],
+  RECEPCIONISTA: ["sede:leer", "cliente:leer", "cliente:editar", "reserva:gestionar"],
   PROFESIONAL: [],
 };
 export function asignacionValida(a: Asignacion): boolean {

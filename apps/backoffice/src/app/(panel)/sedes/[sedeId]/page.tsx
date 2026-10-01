@@ -13,12 +13,12 @@ import { Formulario } from "@/components/formulario";
 import { CamposSemana, textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
-import { accionConfiguracionOrganizacion, accionConfiguracionSede, accionCrearExcepcion, accionCrearRecurso, accionEliminarCredencial, accionEliminarExcepcion, accionEstadoRecurso, accionGuardarCredencial, accionHorarioSede } from "../../acciones";
+import { accionConfiguracionOrganizacion, accionConfiguracionSede, accionCrearExcepcion, accionCrearRecurso, accionEliminarCredencial, accionEliminarExcepcion, accionEstadoRecurso, accionGuardarCredencial, accionHorarioSede, accionSenaRecepcion } from "../../acciones";
 
 export const metadata: Metadata = { title: "Configuración de sede · NailNet" };
 const PROVEEDORES: Record<Proveedor, string> = { MERCADO_PAGO: "Mercado Pago", FACTURANTE: "Facturante" };
 const AMBIENTES = { PRUEBA: "Prueba", PRODUCCION: "Producción" } as const;
-const ORIGEN = { SEDE: "definido en la sede", ORGANIZACION: "heredado de la organización", SIN_DEFINIR: "sin definir" } as const;
+const ORIGEN = { SEDE: "definido en la sede", ORGANIZACION: "heredado de la organización", POR_DEFECTO: "valor por defecto", SIN_DEFINIR: "sin definir" } as const;
 
 function CamposParametros({ valores }: { valores: Partial<Record<Parametro, number | null>> | null }) {
   return <>{(Object.keys(PARAMETROS) as Parametro[]).map(p => <label key={p} className="campo">{PARAMETROS[p].etiqueta} ({PARAMETROS[p].unidad})
@@ -51,9 +51,22 @@ export default async function ConfiguracionSede({ params }: { params: Promise<{ 
       const e = config.efectiva[p];
       return <li key={p}>{PARAMETROS[p].etiqueta}: <strong>{e.valor ?? "—"}</strong>{e.valor !== null ? ` ${PARAMETROS[p].unidad}` : ""} · {ORIGEN[e.origen]}</li>;
     })}</ul>
-    {Object.values(config.efectiva).some(e => e.origen === "SIN_DEFINIR") && <p className="alerta error">Mientras falten valores, la sede no podrá ofrecer turnos online. Los valores iniciales están pendientes de definición (D18).</p>}
+    {Object.values(config.efectiva).some(e => e.origen === "SIN_DEFINIR") && <p className="alerta error">Mientras falten valores, la sede no podrá ofrecer turnos online. Los valores iniciales están pendientes de definición (D17/D18).</p>}
     {config.puedeEditarSede && <Formulario accion={accionConfiguracionSede} boton="Guardar para esta sede" className="en-linea">
       <input type="hidden" name="sedeId" value={sede.id} /><CamposParametros valores={config.sede} />
+    </Formulario>}
+    <p>Seña en reservas de recepción: <strong>{config.senaRecepcion.efectiva ? "se exige por Mercado Pago" : "no se exige, el turno se confirma"}</strong> · {config.senaRecepcion.sede !== null ? "definido en la sede" : config.senaRecepcion.organizacion !== null ? "heredado de la organización" : "valor por defecto"} (D6)</p>
+    {config.puedeEditarSede && <Formulario accion={accionSenaRecepcion} boton="Guardar" className="en-linea">
+      <input type="hidden" name="sedeId" value={sede.id} /><input type="hidden" name="nivel" value="sede" />
+      <select name="valor" defaultValue={config.senaRecepcion.sede === null ? "" : String(config.senaRecepcion.sede)} aria-label="Seña en recepción">
+        <option value="">Heredar de la organización</option><option value="false">Confirmar sin seña</option><option value="true">Exigir seña por Mercado Pago</option>
+      </select>
+    </Formulario>}
+    {config.puedeEditarOrganizacion && <Formulario accion={accionSenaRecepcion} boton="Guardar para la organización" className="en-linea" secundario>
+      <input type="hidden" name="sedeId" value={sede.id} /><input type="hidden" name="nivel" value="organizacion" />
+      <select name="valor" defaultValue={config.senaRecepcion.organizacion === null ? "" : String(config.senaRecepcion.organizacion)} aria-label="Seña en recepción para la organización">
+        <option value="">Sin definir (no exige)</option><option value="false">Confirmar sin seña</option><option value="true">Exigir seña por Mercado Pago</option>
+      </select>
     </Formulario>}
     {config.puedeEditarOrganizacion && <>
       <p className="ayuda">Valores por defecto para todas las sedes de {organizacion.nombre}:</p>

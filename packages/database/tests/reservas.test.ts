@@ -5,7 +5,8 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { aUtc } from "@nailnet/domain/agenda";
 import { createDatabase } from "../src/client.ts";
 import { crearCategoria, crearTipoRecurso, guardarServicio, guardarServicioSede } from "../src/catalogo.ts";
-import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
+import { actualizarConfiguracionOrganizacion, configurarSenaRecepcion } from "../src/configuracion.ts";
+import { crearCliente } from "../src/clientes.ts";
 import { ConfiguracionIncompleta, consultarDisponibilidad } from "../src/disponibilidad.ts";
 import { crearProfesional, crearRecurso, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
 import { TurnoNoDisponible, retenerTurno } from "../src/reservas.ts";
@@ -47,12 +48,15 @@ test("exclusión concurrente de turnos (C05)", async (t) => {
     const [ana, bea] = pros as [string, string, string];
     await vincularSede(db, M, O, ana, a.norte.id, true);
     await guardarHorarioProfesional(db, M, O, ana, a.norte.id, semanaDesdeTextos({ 2: "14:00-18:00" }));
-    const pedido = (extra: object = {}) => ({ sedeId: a.centro.id, fecha: FECHA, canal: "RECEPCION" as const, items: [{ servicioId: manos, profesionalId: ana }], inicio: en("09:00"), ...extra });
+    // Estas pruebas ejercitan retenciones: la sede exige seña también en recepción (D6 configurable).
+    await configurarSenaRecepcion(db, M, O, null, true);
+    const cliente = (await crearCliente(db, M, O, a.centro.id, { nombre: "Clienta", telefono: "1122223333" }))!.id;
+    const pedido = (extra: object = {}) => ({ sedeId: a.centro.id, fecha: FECHA, canal: "RECEPCION" as const, clienteId: cliente, items: [{ servicioId: manos, profesionalId: ana }], inicio: en("09:00"), ...extra });
 
-    await t.test("sin retención definida (D4) no se retiene", async () => {
-      await actualizarConfiguracionOrganizacion(db, M, O, { pasoGrillaMinutos: 10 });
+    await t.test("sin intervalo (D17) no se toma; la retención usa 15 min por defecto (D4)", async () => {
       await assert.rejects(retenerTurno(db, a.recepcion.id, O, pedido(), ahora), ConfiguracionIncompleta);
-      await actualizarConfiguracionOrganizacion(db, M, O, { pasoGrillaMinutos: 10, retencionMinutos: 15 });
+      await actualizarConfiguracionOrganizacion(db, M, O, { pasoGrillaMinutos: 10 });
+      await assert.rejects(retenerTurno(db, a.recepcion.id, O, pedido({ clienteId: null }), ahora), /cliente/, "recepción exige cliente");
       await assert.rejects(retenerTurno(db, a.profesional.id, O, pedido(), ahora), AccesoDenegado);
       await assert.rejects(retenerTurno(db, null, O, pedido(), ahora), AccesoDenegado, "sin actor solo canal online");
     });
@@ -108,7 +112,8 @@ test("exclusión concurrente de turnos (C05)", async (t) => {
 
     await t.test("una retención vencida se libera y pasa a EXPIRADA al volver a reservar", async () => {
       const r = await retenerTurno(db, a.recepcion.id, O, pedido({ items: [{ servicioId: manos, profesionalId: pros[2]! }], inicio: en("09:00") }), ahora);
-      const despues = new Date(r.expiraEn.getTime() + 1000);
+      assert.equal(r.expiraEn!.getTime() - ahora.getTime(), 15 * 60_000, "retención por defecto");
+      const despues = new Date(r.expiraEn!.getTime() + 1000);
       const libres = await consultarDisponibilidad(db, a.recepcion.id, O, { sedeId: a.centro.id, fecha: FECHA, canal: "RECEPCION", items: [{ servicioId: manos, profesionalId: pros[2]! }] }, despues);
       assert.ok(libres.some(x => new Date(x.inicio).getTime() === en("09:00").getTime()));
       await retenerTurno(db, a.recepcion.id, O, pedido({ items: [{ servicioId: manos, profesionalId: pros[2]! }], inicio: en("09:00") }), despues);

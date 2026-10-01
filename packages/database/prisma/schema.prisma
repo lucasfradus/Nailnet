@@ -83,6 +83,16 @@ enum EstadoReserva {
   EXPIRADA
 }
 
+enum TipoEventoReserva {
+  CREADA
+  CONFIRMADA
+  EXPIRADA
+  CANCELADA
+  REPROGRAMADA
+  ATENDIDA
+  AUSENTE
+}
+
 enum Ambiente {
   PRUEBA
   PRODUCCION
@@ -286,6 +296,8 @@ model ConfiguracionOrganizacion {
   anticipacionMinimaMinutos Int?
   pasoGrillaMinutos         Int?
   retencionMinutos          Int?
+  // D6: si recepción exige seña por Mercado Pago. null = heredar; sin valor en ningún nivel = no exige.
+  recepcionExigeSena        Boolean?
   updatedAt                 DateTime     @updatedAt
   organizacion              Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
 }
@@ -297,6 +309,8 @@ model ConfiguracionSede {
   anticipacionMinimaMinutos Int?
   pasoGrillaMinutos         Int?
   retencionMinutos          Int?
+  // D6: si recepción exige seña por Mercado Pago. null = heredar; sin valor en ningún nivel = no exige.
+  recepcionExigeSena        Boolean?
   updatedAt                 DateTime @updatedAt
   sede                      Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
 
@@ -672,19 +686,21 @@ model BloqueoRecurso {
 // Reserva: agrupa uno o más ítems consecutivos (D15) de un cliente en una sede.
 // Ocupa agenda mientras está CONFIRMADA/ATENDIDA/AUSENTE, o pendiente con expiraEn futuro.
 model Reserva {
-  id             String        @id @default(uuid()) @db.Uuid
-  organizacionId String        @db.Uuid
-  sedeId         String        @db.Uuid
-  clienteId      String?       @db.Uuid
+  id             String          @id @default(uuid()) @db.Uuid
+  organizacionId String          @db.Uuid
+  sedeId         String          @db.Uuid
+  clienteId      String?         @db.Uuid
   canal          CanalReserva
   estado         EstadoReserva
   expiraEn       DateTime?
-  creadoPor      String?       @db.Uuid
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-  sede           Sede          @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
-  cliente        Cliente?      @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
+  notas          String?
+  creadoPor      String?         @db.Uuid
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  sede           Sede            @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  cliente        Cliente?        @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
   items          ReservaItem[]
+  eventos        ReservaEvento[]
 
   @@unique([organizacionId, id])
   @@index([sedeId, estado])
@@ -728,4 +744,21 @@ model ReservaItemRecurso {
 
   @@id([itemId, recursoId])
   @@index([recursoId, ocupaDesde])
+}
+
+// Historial inmutable de la reserva: cada cambio de estado o de horario es un evento nuevo.
+model ReservaEvento {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizacionId String            @db.Uuid
+  reservaId      String            @db.Uuid
+  tipo           TipoEventoReserva
+  estadoAnterior EstadoReserva?
+  estadoNuevo    EstadoReserva
+  actorId        String?           @db.Uuid
+  detalle        Json?
+  orden          Int               @default(autoincrement())
+  createdAt      DateTime          @default(now())
+  reserva        Reserva           @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@index([reservaId, orden])
 }

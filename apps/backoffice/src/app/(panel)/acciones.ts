@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { AccesoDenegado, type Asignacion } from "@nailnet/domain";
 import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes, zonaHorariaValida } from "@nailnet/database/access";
 import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol } from "@nailnet/database/usuarios";
-import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, eliminarCredencial, guardarCredencial } from "@nailnet/database/configuracion";
+import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configurarSenaRecepcion, eliminarCredencial, guardarCredencial } from "@nailnet/database/configuracion";
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
 import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
@@ -14,6 +14,8 @@ import type { Sena, TipoSena } from "@nailnet/domain/catalogo";
 import { crearCategoria, crearSkill, crearTipoRecurso, guardarServicio, guardarServicioSede } from "@nailnet/database/catalogo";
 import { aMinutos, aUtc, validarFecha } from "@nailnet/domain/agenda";
 import { actualizarProfesional, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "@nailnet/database/profesionales";
+import { ConfiguracionIncompleta } from "@nailnet/database/disponibilidad";
+import { TurnoNoDisponible, tomarTurno } from "@nailnet/database/reservas";
 import { db } from "@/lib/db";
 import { COOKIE_ORGANIZACION, COOKIE_SEDE, requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
@@ -264,4 +266,31 @@ export async function accionCrearRecurso(_: Estado, form: FormData) {
 }
 export async function accionEstadoRecurso(_: Estado, form: FormData) {
   return ejecutar(`/sedes/${texto(form, "sedeId")}`, (actor, org) => cambiarEstadoRecurso(db(), actor, org, texto(form, "recursoId"), texto(form, "activo") === "true"), "Recurso actualizado");
+}
+
+// Reservas (R01).
+export async function accionReservar(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId"), fecha = texto(form, "fecha");
+  const servicios = form.getAll("s").map(String), profesionales = form.getAll("p").map(String);
+  let ok = false;
+  try {
+    const r = await ejecutar("/agenda", async (actor, org) => {
+      await tomarTurno(db(), actor, org, {
+        sedeId, fecha, canal: "RECEPCION", clienteId: texto(form, "clienteId"), notas: texto(form, "notas"),
+        items: servicios.map((servicioId, i) => ({ servicioId, profesionalId: profesionales[i] || null })), inicio: new Date(texto(form, "inicio")),
+      });
+      ok = true;
+    }, "Turno reservado");
+    if (!ok) return r;
+  } catch (e) {
+    if (e instanceof TurnoNoDisponible) return { error: e.message };
+    if (e instanceof ConfiguracionIncompleta) return { error: e.message };
+    throw e;
+  }
+  redirect(`/agenda?${new URLSearchParams({ sede: sedeId, fecha, ok: "1" })}`);
+}
+export async function accionSenaRecepcion(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  const valor = texto(form, "valor");
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => configurarSenaRecepcion(db(), actor, org, texto(form, "nivel") === "organizacion" ? null : sedeId, valor === "" ? null : valor === "true"), "Política de seña en recepción guardada");
 }

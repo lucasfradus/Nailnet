@@ -46,7 +46,7 @@ Dependencias: A01–A03. C05 es una puerta de salida de fase, no una prueba dife
 
 | ID | Entrega | Criterio de aceptación |
 |---|---|---|
-| R01 | Agenda y reserva manual | Día/semana, filtros, reserva por motor común; sin sobreocupación |
+| R01 | Agenda y reserva manual · hecho 2026-10-01, ver 17-agenda-reserva-manual.md | Día/semana, filtros, reserva por motor común; sin sobreocupación |
 | R02 | Retenciones y vencimientos | Worker reiniciado no deja retenciones perpetuas; carrera vencimiento/aprobación resuelta |
 | R03 | Cancelar/reprogramar/atender/ausente | Historial conservado; reprogramación atómica y política congelada |
 | R04 | Checkout MP y webhook en staging | Firma, cuenta/monto/moneda/referencia; aprobación idempotente; retorno manipulado no confirma |

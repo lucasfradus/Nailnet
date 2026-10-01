@@ -43,6 +43,8 @@ test("herencia de configuración y rangos", () => {
   assert.deepEqual(r.horizonteReservaDias, { valor: 30, origen: "SEDE" });
   assert.deepEqual(r.anticipacionMinimaMinutos, { valor: null, origen: "SIN_DEFINIR" });
   assert.deepEqual(resolverConfiguracion({ horizonteReservaDias: 14 }, null).horizonteReservaDias, { valor: 14, origen: "ORGANIZACION" });
+  assert.deepEqual(resolverConfiguracion(null, null).retencionMinutos, { valor: 15, origen: "POR_DEFECTO" }, "D4");
+  assert.deepEqual(resolverConfiguracion({ retencionMinutos: 10 }, null).retencionMinutos, { valor: 10, origen: "ORGANIZACION" });
   assert.ok("error" in validarValores({ horizonteReservaDias: 0 }));
   assert.ok("error" in validarValores({ anticipacionMinimaMinutos: 1.5 }));
   assert.deepEqual(validarValores({ horizonteReservaDias: null }), { valores: { horizonteReservaDias: null } });

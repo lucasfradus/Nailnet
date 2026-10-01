@@ -39,6 +39,7 @@ export async function obtenerConfiguracion(db: Database, actorId: string, organi
     organizacion: soloValores(organizacion),
     sede: soloValores(sede),
     efectiva: resolverConfiguracion(organizacion, sede),
+    senaRecepcion: { sede: sede?.recepcionExigeSena ?? null, organizacion: organizacion?.recepcionExigeSena ?? null, efectiva: sede?.recepcionExigeSena ?? organizacion?.recepcionExigeSena ?? false },
     puedeEditarSede: permitido(actor, "sede:administrar", sedeId, franquiciadoDe),
     puedeEditarOrganizacion: actor.some(a => tienePermiso(a, "organizacion:configurar")),
     puedeCredenciales: permitido(actor, "sede:credenciales", sedeId, franquiciadoDe),
@@ -47,11 +48,29 @@ export async function obtenerConfiguracion(db: Database, actorId: string, organi
 
 /** Para el motor de reservas: sin actor, nunca expuesto a formularios. */
 export async function configuracionEfectiva(db: Database | Prisma.TransactionClient, organizacionId: string, sedeId: string) {
-  const [organizacion, sede] = await Promise.all([
-    db.configuracionOrganizacion.findUnique({ where: { organizacionId } }),
-    db.configuracionSede.findFirst({ where: { sedeId, organizacionId } }),
-  ]);
-  return resolverConfiguracion(organizacion, sede);
+  // Secuencial: puede correr dentro de una transacción (una sola conexión).
+  const organizacion = await db.configuracionOrganizacion.findUnique({ where: { organizacionId } });
+  const sede = await db.configuracionSede.findFirst({ where: { sedeId, organizacionId } });
+  return { ...resolverConfiguracion(organizacion, sede), recepcionExigeSena: sede?.recepcionExigeSena ?? organizacion?.recepcionExigeSena ?? false };
+}
+
+/**
+ * D6: si las reservas de recepción quedan pendientes de seña por Mercado Pago en vez de confirmarse.
+ * sedeId null = valor de la organización (master). valor null = heredar.
+ */
+export async function configurarSenaRecepcion(db: Database, actorId: string, organizacionId: string, sedeId: string | null, valor: boolean | null) {
+  await db.$transaction(async tx => {
+    await bloquearOrganizacion(tx, organizacionId);
+    if (sedeId) {
+      await exigirSobreSede(tx, actorId, organizacionId, sedeId, "sede:administrar");
+      await tx.configuracionSede.upsert({ where: { sedeId }, create: { organizacionId, sedeId, recepcionExigeSena: valor }, update: { recepcionExigeSena: valor } });
+    } else {
+      const actor = await asignacionesActor(tx, actorId, organizacionId);
+      if (!actor.some(a => tienePermiso(a, "organizacion:configurar"))) throw new AccesoDenegado();
+      await tx.configuracionOrganizacion.upsert({ where: { organizacionId }, create: { organizacionId, recepcionExigeSena: valor }, update: { recepcionExigeSena: valor } });
+    }
+    await auditar(tx, organizacionId, actorId, "configuracion.senaRecepcion", sedeId ? "Sede" : "Organizacion", sedeId ?? organizacionId, { valor });
+  });
 }
 
 function valoresValidos(entrada: Partial<Record<Parametro, number | null>>) {

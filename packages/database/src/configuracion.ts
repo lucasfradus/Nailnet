@@ -1,5 +1,5 @@
 import { AccesoDenegado, cubreSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type Permiso } from "@nailnet/domain";
-import { resolverConfiguracion, validarValores, type Parametro, type ValoresConfiguracion } from "@nailnet/domain/configuracion";
+import { PARAMETROS, resolverConfiguracion, validarValores, type Parametro, type ValoresConfiguracion } from "@nailnet/domain/configuracion";
 import { ESQUEMAS, cifrar, descifrar, llaveroDesde, pista, validarCredencial, versionDe, type Llavero, type Proveedor } from "@nailnet/domain/secretos";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
@@ -26,7 +26,7 @@ async function exigirSobreSede(db: Database | Prisma.TransactionClient, actorId:
   return { actor, franquiciadoDe };
 }
 const soloValores = (fila: Partial<ValoresConfiguracion> | null): Partial<ValoresConfiguracion> | null =>
-  fila && { horizonteReservaDias: fila.horizonteReservaDias ?? null, anticipacionMinimaMinutos: fila.anticipacionMinimaMinutos ?? null };
+  fila && Object.fromEntries((Object.keys(PARAMETROS) as Parametro[]).map(p => [p, fila[p] ?? null]));
 
 /** Configuración de una sede visible para el actor, con el origen de cada valor efectivo. */
 export async function obtenerConfiguracion(db: Database, actorId: string, organizacionId: string, sedeId: string) {

@@ -10,7 +10,8 @@
     "./configuracion": "./src/configuracion.ts",
     "./clientes": "./src/clientes.ts",
     "./catalogo": "./src/catalogo.ts",
-    "./agenda": "./src/agenda.ts"
+    "./agenda": "./src/agenda.ts",
+    "./disponibilidad": "./src/disponibilidad.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

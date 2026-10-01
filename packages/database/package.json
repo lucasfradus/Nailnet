@@ -11,7 +11,8 @@
     "./configuracion": "./src/configuracion.ts",
     "./clientes": "./src/clientes.ts",
     "./catalogo": "./src/catalogo.ts",
-    "./profesionales": "./src/profesionales.ts"
+    "./profesionales": "./src/profesionales.ts",
+    "./disponibilidad": "./src/disponibilidad.ts"
   },
   "scripts": {
     "generate": "prisma generate",

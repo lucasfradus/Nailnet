@@ -68,6 +68,21 @@ enum TipoSena {
   PORCENTAJE
 }
 
+enum CanalReserva {
+  ONLINE
+  RECEPCION
+}
+
+enum EstadoReserva {
+  PENDIENTE_PAGO
+  PAGO_EN_REVISION
+  CONFIRMADA
+  ATENDIDA
+  AUSENTE
+  CANCELADA
+  EXPIRADA
+}
+
 enum Ambiente {
   PRUEBA
   PRODUCCION
@@ -130,6 +145,7 @@ model Sede {
   horariosProfesionales   HorarioProfesional[]
   excepciones             ExcepcionHorario[]
   recursos                Recurso[]
+  reservas                Reserva[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -268,6 +284,7 @@ model ConfiguracionOrganizacion {
   organizacionId            String       @id @db.Uuid
   horizonteReservaDias      Int?
   anticipacionMinimaMinutos Int?
+  pasoGrillaMinutos         Int?
   updatedAt                 DateTime     @updatedAt
   organizacion              Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
 }
@@ -277,6 +294,7 @@ model ConfiguracionSede {
   sedeId                    String   @id @db.Uuid
   horizonteReservaDias      Int?
   anticipacionMinimaMinutos Int?
+  pasoGrillaMinutos         Int?
   updatedAt                 DateTime @updatedAt
   sede                      Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
 
@@ -321,6 +339,7 @@ model Cliente {
   organizacion    Organizacion            @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
   sedes           ClienteSede[]
   consentimientos ClienteConsentimiento[]
+  reservas        Reserva[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, email])
@@ -418,6 +437,7 @@ model Servicio {
   consentimientos      ServicioConsentimiento[]
   sedes                ServicioSede[]
   profesionales        ProfesionalServicio[]
+  reservaItems         ReservaItem[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, nombre])
@@ -514,6 +534,7 @@ model Profesional {
   servicios      ProfesionalServicio[]
   horarios       HorarioProfesional[]
   bloqueos       BloqueoAgenda[]
+  reservaItems   ReservaItem[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, usuarioId])
@@ -619,15 +640,16 @@ model BloqueoAgenda {
 
 // Unidad física individual de un tipo (cabina 1, láser A) en una sede.
 model Recurso {
-  id             String           @id @default(uuid()) @db.Uuid
-  organizacionId String           @db.Uuid
-  sedeId         String           @db.Uuid
-  tipoRecursoId  String           @db.Uuid
+  id             String               @id @default(uuid()) @db.Uuid
+  organizacionId String               @db.Uuid
+  sedeId         String               @db.Uuid
+  tipoRecursoId  String               @db.Uuid
   nombre         String
-  activo         Boolean          @default(true)
-  sede           Sede             @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
-  tipoRecurso    TipoRecurso      @relation(fields: [organizacionId, tipoRecursoId], references: [organizacionId, id], onDelete: Restrict)
+  activo         Boolean              @default(true)
+  sede           Sede                 @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  tipoRecurso    TipoRecurso          @relation(fields: [organizacionId, tipoRecursoId], references: [organizacionId, id], onDelete: Restrict)
   bloqueos       BloqueoRecurso[]
+  ocupaciones    ReservaItemRecurso[]
 
   @@unique([organizacionId, id])
   @@unique([sedeId, nombre])
@@ -643,4 +665,65 @@ model BloqueoRecurso {
   recurso        Recurso  @relation(fields: [organizacionId, recursoId], references: [organizacionId, id], onDelete: Restrict)
 
   @@index([recursoId, inicio])
+}
+
+// Reserva: agrupa uno o más ítems consecutivos (D15) de un cliente en una sede.
+// Ocupa agenda mientras está CONFIRMADA/ATENDIDA/AUSENTE, o pendiente con expiraEn futuro.
+model Reserva {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizacionId String        @db.Uuid
+  sedeId         String        @db.Uuid
+  clienteId      String?       @db.Uuid
+  canal          CanalReserva
+  estado         EstadoReserva
+  expiraEn       DateTime?
+  creadoPor      String?       @db.Uuid
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  sede           Sede          @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  cliente        Cliente?      @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
+  items          ReservaItem[]
+
+  @@unique([organizacionId, id])
+  @@index([sedeId, estado])
+}
+
+// Un servicio con su profesional e intervalo; snapshots de condiciones al reservar.
+model ReservaItem {
+  id                   String               @id @default(uuid()) @db.Uuid
+  organizacionId       String               @db.Uuid
+  reservaId            String               @db.Uuid
+  posicion             Int
+  servicioId           String               @db.Uuid
+  profesionalId        String               @db.Uuid
+  inicio               DateTime
+  fin                  DateTime
+  ocupaDesde           DateTime
+  ocupaHasta           DateTime
+  duracionMinutos      Int
+  bufferAntesMinutos   Int
+  bufferDespuesMinutos Int
+  precio               Decimal              @db.Decimal(12, 2)
+  sena                 Decimal?             @db.Decimal(12, 2)
+  reserva              Reserva              @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+  servicio             Servicio             @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
+  profesional          Profesional          @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+  recursos             ReservaItemRecurso[]
+
+  @@unique([organizacionId, id])
+  @@unique([reservaId, posicion])
+  @@index([profesionalId, ocupaDesde])
+}
+
+model ReservaItemRecurso {
+  organizacionId String      @db.Uuid
+  itemId         String      @db.Uuid
+  recursoId      String      @db.Uuid
+  ocupaDesde     DateTime
+  ocupaHasta     DateTime
+  item           ReservaItem @relation(fields: [organizacionId, itemId], references: [organizacionId, id], onDelete: Restrict)
+  recurso        Recurso     @relation(fields: [organizacionId, recursoId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([itemId, recursoId])
+  @@index([recursoId, ocupaDesde])
 }

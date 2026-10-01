@@ -7,6 +7,7 @@ import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, c
 import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol } from "@nailnet/database/usuarios";
 import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, eliminarCredencial, guardarCredencial } from "@nailnet/database/configuracion";
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
+import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
 import { actualizarCliente, actualizarObservaciones, crearCliente, publicarConsentimiento, registrarConsentimiento, vincularCliente } from "@nailnet/database/clientes";
 import type { Sena, TipoSena } from "@nailnet/domain/catalogo";
@@ -105,7 +106,7 @@ export async function accionInvitar(_: Estado, form: FormData) {
 
 // Configuración (A03). Vacío = heredar de la organización.
 const numero = (f: FormData, k: string) => { const v = texto(f, k).trim(); return v === "" ? null : Number(v); };
-const parametros = (f: FormData) => ({ horizonteReservaDias: numero(f, "horizonteReservaDias"), anticipacionMinimaMinutos: numero(f, "anticipacionMinimaMinutos") });
+const parametros = (f: FormData) => Object.fromEntries((Object.keys(PARAMETROS) as Parametro[]).map(p => [p, numero(f, p)]));
 
 export async function accionConfiguracionSede(_: Estado, form: FormData) {
   const sedeId = texto(form, "sedeId");

@@ -10,6 +10,7 @@ Cada parámetro operativo tiene un valor opcional por organización y otro por s
 |---|---|---|
 | Horizonte de reserva | 1–365 días | D18: criterio confirmado, valor pendiente (competencia: ~14) |
 | Anticipación mínima | 0–10.080 minutos | D18: criterio confirmado, valor pendiente |
+| Intervalo entre inicios de turno | 5–120 minutos, múltiplo de 5 | D17: pendiente; agregado con C04 |
 
 **Quién edita:**
 - **Valores de la sede:** administración de sede, franquiciado o master, siempre dentro de su alcance.

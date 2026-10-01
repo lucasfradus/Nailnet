@@ -11,6 +11,7 @@ export default async function Panel({ children }: { children: React.ReactNode })
       <nav className="nav">
         <Link href="/">Inicio</Link>
         {puede.verSedes && <Link href="/sedes">Sedes</Link>}
+        {puede.verSedes && <Link href="/agenda">Agenda</Link>}
         {puede.verSedes && <Link href="/catalogo">Catálogo</Link>}
         {puede.verSedes && <Link href="/profesionales">Profesionales</Link>}
         {puede.verClientes && <Link href="/clientes">Clientes</Link>}

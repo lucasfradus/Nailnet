@@ -35,7 +35,7 @@ Se agregó `pasoGrillaMinutos` a la configuración heredable organización → s
 - **Sin valor:** el motor no genera turnos y responde `ConfiguracionIncompleta` con lo que falta. La pantalla lo indica con un enlace a la configuración de la sede.
 - **Canal online:** además exige horizonte y anticipación definidos (D18).
 
-Esto respeta que D17 está abierta: cuando se decida, se carga el valor o se reemplaza la regla. La competencia usa 60 minutos fijos sin importar la duración. Alternativas como «derivado de la duración» o «paso fino con compactación» pueden implementarse sin cambiar el esquema de reservas.
+Esto respeta que D17 está abierta: cuando se decida, se carga el valor o se reemplaza la regla. El sistema actual usa 60 minutos fijos sin importar la duración. Alternativas como «derivado de la duración» o «paso fino con compactación» pueden implementarse sin cambiar el esquema de reservas.
 
 ## Esquema de reservas (D15)
 

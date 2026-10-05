@@ -9,7 +9,7 @@ import { requerirOrganizacion } from "@/lib/contexto";
 import { accionActualizarCliente, accionConsentimiento, accionObservaciones } from "../../acciones";
 import { CamposCliente } from "../campos";
 
-export const metadata: Metadata = { title: "Cliente · NailNet" };
+export const metadata: Metadata = { title: "Cliente · Sicurella" };
 const ESTADOS = { VIGENTE: "Aceptado", DESACTUALIZADO: "Aceptó una versión anterior", REVOCADO: "Revocado", NUNCA: "Sin registrar" } as const;
 const TIPOS = { PRACTICA: "Práctica", TERMINOS: "Términos", MARKETING: "Comunicaciones" } as const;
 

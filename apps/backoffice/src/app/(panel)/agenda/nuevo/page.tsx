@@ -14,7 +14,7 @@ import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { accionReprogramar, accionReservar } from "../../acciones";
 
-export const metadata: Metadata = { title: "Nuevo turno · NailNet" };
+export const metadata: Metadata = { title: "Nuevo turno · Sicurella" };
 type Params = { sede?: string; fecha?: string; s?: string | string[]; p?: string | string[]; cliente?: string; buscar?: string; reprogramar?: string };
 const lista = (v: string | string[] | undefined) => (Array.isArray(v) ? v : v ? [v] : []);
 

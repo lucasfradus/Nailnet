@@ -7,7 +7,7 @@ import { requerirOrganizacion } from "@/lib/contexto";
 import { ROLES } from "@/lib/etiquetas";
 import { accionCrearUsuario, accionEstadoUsuario, accionInvitar, accionOtorgarRol, accionRevocarRol } from "../acciones";
 
-export const metadata: Metadata = { title: "Usuarios · NailNet", referrer: "no-referrer" };
+export const metadata: Metadata = { title: "Usuarios · Sicurella", referrer: "no-referrer" };
 
 type Opcion = Awaited<ReturnType<typeof opcionesDeRol>>[number];
 const valor = ({ asignacion: a }: Opcion) => [a.rol, a.alcance, a.franquiciadoId ?? "", a.sedeId ?? ""].join("|");

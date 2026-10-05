@@ -8,7 +8,7 @@ import { requerirOrganizacion } from "@/lib/contexto";
 import { ZONAS } from "@/lib/etiquetas";
 import { accionActualizarSede, accionCrearFranquiciado, accionCrearSede, accionEstadoSede } from "../acciones";
 
-export const metadata: Metadata = { title: "Sedes · NailNet" };
+export const metadata: Metadata = { title: "Sedes · Sicurella" };
 
 function SelectorZona({ valor }: { valor?: string }) {
   const zonas = valor && !ZONAS.includes(valor) ? [valor, ...ZONAS] : ZONAS;

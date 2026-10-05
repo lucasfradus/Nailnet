@@ -20,8 +20,8 @@ Las propuestas siguen pendientes salvo donde se registra una confirmación expl�
 | D14 | Capacidad y calendario | ¿50 días corridos/hábiles? ¿Equipo disponible? ¿Sedes/profesionales y volumen del piloto? | Viabilidad, carga y alcance de lanzamiento |
 | D15 | Reserva con varios servicios | Confirmado el 2026-09-30: el esquema de reservas admite varios servicios consecutivos, cada uno con su profesional e intervalo. La UI del portal lo habilita en una etapa posterior | Resuelto; modelo Reserva 1:N ítems |
 | D16 | Elección de profesional | Confirmado el 2026-09-30: opcional; «cualquiera» por defecto con asignación balanceada dentro del motor | Resuelto; portal y motor |
-| D17 | Grilla de inicio de turnos | Pendiente. Modelado el 2026-10-01 como parámetro heredable `pasoGrillaMinutos` sin valor por defecto: sin definirlo la sede no genera turnos (ver 15-disponibilidad.md). La competencia usa paso fijo de 60 min; se busca una definición prolija (configurable por sede y/o derivada de duración y buffers) | Motor de disponibilidad (C04) |
-| D18 | Horizonte y anticipación | Confirmado el 2026-09-30: horizonte máximo y anticipación mínima configurables por sede. Valores iniciales pendientes (referencia de la competencia: ~14 días) | Resuelto el criterio; valores con D12 |
+| D17 | Grilla de inicio de turnos | Pendiente. Modelado el 2026-10-01 como parámetro heredable `pasoGrillaMinutos` sin valor por defecto: sin definirlo la sede no genera turnos (ver 15-disponibilidad.md). El sistema actual usa paso fijo de 60 min; se busca una definición prolija (configurable por sede y/o derivada de duración y buffers) | Motor de disponibilidad (C04) |
+| D18 | Horizonte y anticipación | Confirmado el 2026-09-30: horizonte máximo y anticipación mínima configurables por sede. Valores iniciales pendientes (referencia del sistema actual: ~14 días) | Resuelto el criterio; valores con D12 |
 
 ## Escenarios a cerrar con las respuestas
 

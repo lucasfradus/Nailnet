@@ -9,7 +9,7 @@ import { requerirOrganizacion } from "@/lib/contexto";
 import { accionCrearCliente, accionVincularCliente } from "../acciones";
 import { CamposCliente } from "./campos";
 
-export const metadata: Metadata = { title: "Clientes · NailNet" };
+export const metadata: Metadata = { title: "Clientes · Sicurella" };
 
 function SelectorSede({ sedes, elegida }: { sedes: { id: string; nombre: string }[]; elegida?: string }) {
   if (sedes.length === 1 || elegida) return <input type="hidden" name="sedeId" value={elegida ?? sedes[0]!.id} />;

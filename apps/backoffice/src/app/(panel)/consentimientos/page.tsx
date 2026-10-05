@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { accionPublicarConsentimiento } from "../acciones";
 
-export const metadata: Metadata = { title: "Consentimientos · NailNet" };
+export const metadata: Metadata = { title: "Consentimientos · Sicurella" };
 const TIPOS = { PRACTICA: "Práctica", TERMINOS: "Términos", MARKETING: "Comunicaciones" } as const;
 
 export default async function Consentimientos() {

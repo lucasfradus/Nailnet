@@ -10,7 +10,7 @@ import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { accionAtendida, accionAusente, accionCancelarReserva } from "../acciones";
 
-export const metadata: Metadata = { title: "Agenda · NailNet" };
+export const metadata: Metadata = { title: "Agenda · Sicurella" };
 type Params = { sede?: string; fecha?: string; vista?: string; profesional?: string; cerrados?: string; ok?: string };
 const ESTADOS: Record<string, string> = { PENDIENTE_PAGO: "Pendiente de seña", PAGO_EN_REVISION: "Pago en revisión", CONFIRMADA: "Confirmado", ATENDIDA: "Atendido", AUSENTE: "Ausente", CANCELADA: "Cancelado", EXPIRADA: "Vencido" };
 const sumar = (f: string, n: number) => new Date(Date.parse(`${f}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { FormularioRecuperacion } from "../acceso/formularios";
 import { TarjetaAcceso } from "../acceso/tarjeta";
 
-export const metadata: Metadata = { title: "Recuperar acceso · NailNet" };
+export const metadata: Metadata = { title: "Recuperar acceso · Sicurella" };
 export default function Recuperar() {
   // Sin proveedor de email (P03) no se emiten enlaces que nadie recibiría.
   if (process.env.NODE_ENV === "production") return <TarjetaAcceso titulo="Recuperar acceso">

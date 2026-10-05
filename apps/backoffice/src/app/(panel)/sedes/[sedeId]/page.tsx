@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { accionConfiguracionOrganizacion, accionConfiguracionSede, accionCrearExcepcion, accionCrearRecurso, accionEliminarCredencial, accionEliminarExcepcion, accionEstadoRecurso, accionGuardarCredencial, accionHorarioSede, accionSenaRecepcion } from "../../acciones";
 
-export const metadata: Metadata = { title: "Configuración de sede · NailNet" };
+export const metadata: Metadata = { title: "Configuración de sede · Sicurella" };
 const PROVEEDORES: Record<Proveedor, string> = { MERCADO_PAGO: "Mercado Pago", FACTURANTE: "Facturante" };
 const AMBIENTES = { PRUEBA: "Prueba", PRODUCCION: "Producción" } as const;
 const ORIGEN = { SEDE: "definido en la sede", ORGANIZACION: "heredado de la organización", POR_DEFECTO: "valor por defecto", SIN_DEFINIR: "sin definir" } as const;

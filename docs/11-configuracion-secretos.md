@@ -8,7 +8,7 @@ Cada parámetro operativo tiene un valor opcional por organización y otro por s
 
 | Parámetro | Rango | Decisión |
 |---|---|---|
-| Horizonte de reserva | 1–365 días | D18: criterio confirmado, valor pendiente (competencia: ~14) |
+| Horizonte de reserva | 1–365 días | D18: criterio confirmado, valor pendiente (sistema actual: ~14) |
 | Anticipación mínima | 0–10.080 minutos | D18: criterio confirmado, valor pendiente |
 | Intervalo entre inicios de turno | 5–120 minutos, múltiplo de 5 | D17: pendiente; agregado con C04 |
 | Retención de turno pendiente | 5–60 minutos | D4: confirmado, 15 por defecto |

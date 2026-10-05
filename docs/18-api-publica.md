@@ -7,11 +7,13 @@ Implementa R05. Migración `202610010010_portal_publico`. Contrato en `packages/
 | Método y ruta | Uso | Respuestas |
 |---|---|---|
 | `GET /organizaciones/{slug}/sedes` | Sedes activas de la organización | 200, 404 |
+| `GET /organizaciones/{slug}/terminos` | Términos vigentes que se aceptan al reservar (agregado con P01, doc 19) | 200, 404 |
 | `GET /sedes/{sedeId}/servicios` | Solo servicios reservables online (habilitados, con precio y seña definida, D3) | 200, 404 |
 | `GET /sedes/{sedeId}/profesionales?servicioId=` | Profesionales aptos; nombre e inicial del apellido | 200, 404 |
 | `GET /sedes/{sedeId}/disponibilidad?fecha=&servicio=&profesional=` | Turnos con reglas online (anticipación, horizonte). `servicio` y `profesional` se repiten en orden para varios servicios; sin IDs de recursos | 200, 404, 422 |
 | `POST /reservas` + `Idempotency-Key` | Reserva invitada | 201, 409, 422, 429 |
 | `GET /reservas/actual` + `Authorization: Bearer <token>` | Estado de la reserva del invitado | 200, 404 |
+| `GET /imagenes/{id}` | Imagen de servicio o profesional, cacheable (doc 20) | 200, 304, 404 |
 
 - **Errores:** siempre `{ error: { codigo, mensaje } }` con `INVALIDO`, `NO_DISPONIBLE`, `CONFLICTO_IDEMPOTENCIA`, `LIMITE`, `NO_ENCONTRADO` o `INTERNO`. Un error interno no expone detalles.
 - **Recursos inexistentes o ajenos:** 404, sin distinguir uno de otro.

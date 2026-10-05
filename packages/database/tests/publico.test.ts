@@ -8,7 +8,7 @@ import { crearCategoria, crearSkill, guardarServicio, guardarServicioSede } from
 import { crearCliente, publicarConsentimiento } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
 import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
-import { ConflictoIdempotencia, LimiteExcedido, POLITICA_PUBLICA, consultarReservaPublica, crearReservaPublica, disponibilidadPublica, profesionalesPublicos, sedesPublicas, serviciosPublicos } from "../src/publico.ts";
+import { ConflictoIdempotencia, LimiteExcedido, POLITICA_PUBLICA, consultarReservaPublica, crearReservaPublica, disponibilidadPublica, profesionalesPublicos, sedesPublicas, serviciosPublicos, terminosPublicos } from "../src/publico.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 import type { ReservaPublicaRespuesta } from "@nailnet/contracts/publico";
 
@@ -47,6 +47,10 @@ test("contrato público del portal (R05)", async (t) => {
       assert.deepEqual((await sedesPublicas(db, slug)).map(s => s.nombre), ["Centro", "Norte", "Sur"]);
       await assert.rejects(sedesPublicas(db, "no-existe"), AccesoDenegado);
       await assert.rejects(sedesPublicas(db, "Con Mayúsculas"), AccesoDenegado);
+      await publicarConsentimiento(db, M, O, { tipo: "TERMINOS", clave: "terminos", titulo: "Términos", texto: "Acepto los términos y condiciones del servicio de turnos, versión 2." });
+      await publicarConsentimiento(db, M, O, { tipo: "PRACTICA", clave: "semi", titulo: "Semi", texto: "Consentimiento de práctica que no se muestra en el portal." });
+      assert.deepEqual((await terminosPublicos(db, slug)).map(t => [t.clave, t.version, t.texto.endsWith("versión 2.")]), [["terminos", 2, true]], "solo la última versión de TERMINOS");
+      await assert.rejects(terminosPublicos(db, "no-existe"), AccesoDenegado);
       assert.deepEqual((await serviciosPublicos(db, a.centro.id)).map(s => [s.nombre, s.sena]), [["Semi", "9000.00"]], "sin seña definida no se publica (D3)");
       assert.deepEqual((await profesionalesPublicos(db, a.centro.id, semi)).map(p => p.nombre), ["Ana P."], "Bea no tiene la skill");
       const turnos = await disponibilidadPublica(db, a.centro.id, FECHA, [{ servicioId: semi }], ahora);

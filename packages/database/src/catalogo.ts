@@ -3,6 +3,7 @@ import { aCentavos, importe, servicioEfectivo, validarBuffer, validarDuracion, v
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, bloquearOrganizacion, exigirIds, mapaSedes } from "./access.ts";
+import { borrarImagenHuerfana, insertarImagen, procesarImagen } from "./imagenes.ts";
 
 type Tx = Prisma.TransactionClient;
 const TIPOS_SENA: readonly TipoSena[] = ["NINGUNA", "FIJA", "PORCENTAJE"];
@@ -137,6 +138,21 @@ export async function guardarServicio(db: Database, actorId: string, organizacio
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003") throw new AccesoDenegado();
     unico(e, "Ya existe un servicio con ese nombre");
   }
+}
+
+/** Reemplaza (o quita, con null) la imagen del servicio. Se procesa antes de abrir la transacción. */
+export async function guardarImagenServicio(db: Database, actorId: string, organizacionId: string, servicioId: string, archivo: Uint8Array | null) {
+  exigirIds(servicioId);
+  const imagen = archivo ? await procesarImagen(archivo, "SERVICIO") : null;
+  await db.$transaction(async tx => {
+    await exigirOrganizacional(tx, actorId, organizacionId, "catalogo:administrar");
+    const servicio = await tx.servicio.findFirst({ where: { id: servicioId, organizacionId }, select: { imagenId: true } });
+    if (!servicio) throw new AccesoDenegado();
+    const imagenId = imagen ? await insertarImagen(tx, organizacionId, actorId, imagen) : null;
+    await tx.servicio.update({ where: { id: servicioId }, data: { imagenId } });
+    await borrarImagenHuerfana(tx, servicio.imagenId);
+    await auditar(tx, organizacionId, actorId, imagen ? "catalogo.servicio.imagen" : "catalogo.servicio.imagen.quitar", "Servicio", servicioId, imagenId ? { imagenId } : undefined);
+  });
 }
 
 // ─── Condiciones por sede ─────────────────────────────────────────────────────

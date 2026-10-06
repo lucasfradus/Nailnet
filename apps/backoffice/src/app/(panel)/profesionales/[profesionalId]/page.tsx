@@ -5,12 +5,13 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { listarCatalogo } from "@nailnet/database/catalogo";
 import { obtenerProfesional } from "@nailnet/database/profesionales";
 import { Formulario } from "@/components/formulario";
+import { EditorImagen } from "@/components/imagen";
 import { CamposSemana, textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
-import { accionActualizarProfesional, accionCrearBloqueo, accionEliminarBloqueo, accionHabilidades, accionHorarioProfesional, accionVincularSedeProfesional } from "../../acciones";
+import { accionActualizarProfesional, accionFotoProfesional, accionCrearBloqueo, accionEliminarBloqueo, accionHabilidades, accionHorarioProfesional, accionVincularSedeProfesional } from "../../acciones";
 
-export const metadata: Metadata = { title: "Profesional · NailNet" };
+export const metadata: Metadata = { title: "Profesional · Sicurella" };
 
 export default async function Profesional({ params }: { params: Promise<{ profesionalId: string }> }) {
   const { profesionalId } = await params;
@@ -31,6 +32,10 @@ export default async function Profesional({ params }: { params: Promise<{ profes
     <h1>{p.nombre} {p.apellido}</h1>
     {!p.activo && <p className="alerta error">Inactivo: no aparece en la agenda.</p>}
     {p.otrasSedes > 0 && <p className="ayuda">También trabaja en {p.otrasSedes} {p.otrasSedes === 1 ? "sede" : "sedes"} fuera de tu alcance; su jornada allí bloquea esos horarios.</p>}
+
+    {p.editable ? <EditorImagen accion={accionFotoProfesional} ocultos={{ profesionalId: p.id }} imagenId={p.fotoId} titulo={`Foto de ${p.nombre}`} retrato />
+      : p.fotoId && <img src={`/api/public/v1/imagenes/${p.fotoId}`} alt={`Foto de ${p.nombre}`} className="miniatura retrato" />}
+    <p className="ayuda">La foto y el nombre con la inicial del apellido se muestran en el portal de reservas.</p>
 
     {p.editable && <details><summary>Editar datos</summary>
       <Formulario accion={accionActualizarProfesional} boton="Guardar" className="en-linea">

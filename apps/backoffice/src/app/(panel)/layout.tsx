@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Marca } from "@/components/marca";
 import { contextoPanel } from "@/lib/contexto";
 import { salir } from "../acceso/actions";
 import { elegirContexto } from "./acciones";
@@ -7,7 +8,7 @@ export default async function Panel({ children }: { children: React.ReactNode })
   const { sesion, organizaciones, organizacion, sedes, sede, puede } = await contextoPanel();
   return <main>
     <header>
-      <span className="brand">NailNet<span> / gestión</span></span>
+      <Marca />
       <nav className="nav">
         <Link href="/">Inicio</Link>
         {puede.verSedes && <Link href="/sedes">Sedes</Link>}

@@ -4,6 +4,7 @@ import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, exigirIds, sedesConPermiso } from "./access.ts";
 import { reservaActiva } from "./disponibilidad.ts";
+import { borrarImagenHuerfana, insertarImagen, procesarImagen } from "./imagenes.ts";
 
 type Tx = Prisma.TransactionClient;
 export type Semana = Partial<Record<0 | 1 | 2 | 3 | 4 | 5 | 6, Rango[]>>;
@@ -100,7 +101,7 @@ export async function obtenerProfesional(db: Database, actorId: string, organiza
   const nombres = new Map(sedes.map(s => [s.id, s.nombre]));
   const editable = visibles.some(v => admin.ids.has(v.sedeId)) || admin.organizacional;
   return {
-    id: prof.id, nombre: prof.nombre, apellido: prof.apellido, activo: prof.activo, editable,
+    id: prof.id, nombre: prof.nombre, apellido: prof.apellido, activo: prof.activo, fotoId: prof.fotoId, editable,
     // Las sedes de otros alcances no se nombran: solo se informa que existen.
     otrasSedes: prof.sedes.length - visibles.length,
     sedes: visibles.map(v => ({
@@ -118,6 +119,18 @@ export async function actualizarProfesional(db: Database, actorId: string, organ
     await contextoProfesional(tx, actorId, organizacionId, profesionalId, "profesional:administrar");
     await tx.profesional.update({ where: { id: profesionalId }, data: { nombre: n, apellido: a, activo: datos.activo } });
     await auditar(tx, organizacionId, actorId, "profesional.actualizar", "Profesional", profesionalId, { activo: datos.activo });
+  });
+}
+
+/** Reemplaza (o quita, con null) la foto pública. Se procesa antes de abrir la transacción. */
+export async function guardarFotoProfesional(db: Database, actorId: string, organizacionId: string, profesionalId: string, archivo: Uint8Array | null) {
+  const foto = archivo ? await procesarImagen(archivo, "RETRATO") : null;
+  await db.$transaction(async tx => {
+    const { prof } = await contextoProfesional(tx, actorId, organizacionId, profesionalId, "profesional:administrar");
+    const fotoId = foto ? await insertarImagen(tx, organizacionId, actorId, foto) : null;
+    await tx.profesional.update({ where: { id: profesionalId }, data: { fotoId } });
+    await borrarImagenHuerfana(tx, prof.fotoId);
+    await auditar(tx, organizacionId, actorId, foto ? "profesional.foto" : "profesional.foto.quitar", "Profesional", profesionalId, fotoId ? { fotoId } : undefined);
   });
 }
 

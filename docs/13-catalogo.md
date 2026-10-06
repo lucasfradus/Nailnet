@@ -11,7 +11,7 @@ Aplica la propuesta de D12, todavía no confirmada. El esquema no impide cambiar
 | Organización | Categorías, servicios, duración base, tiempos de preparación, habilidades requeridas, recursos que ocupa, consentimientos que exige, seña por defecto | Master |
 | Sede | Habilitación, **precio**, duración propia, seña propia, si se reserva online | Admin de sede, franquiciado o master, dentro de su alcance |
 
-- **Precio:** es solo de la sede, independiente del profesional. El análisis de la competencia mostró que el precio por profesional existe en su sistema pero no se usa.
+- **Precio:** es solo de la sede, independiente del profesional. El análisis del sistema actual mostró que el precio por profesional existe pero no se usa.
 - **Habilitación:** un servicio habilitado exige precio, también por `CHECK` en la base. Desactivar un servicio lo quita de todas las sedes.
 - **Habilidades:** el profesional debe tener todas las requeridas (se asignan en C03).
 - **Recursos:** se declara cuántas unidades distintas de cada tipo ocupa el servicio durante todo el turno. Las unidades concretas por sede llegan en C03.
@@ -35,7 +35,7 @@ Los cambios de precio, duración o seña no alteran reservas ya tomadas: la rese
 ## Pendiente
 
 - Confirmar D12 y D3 (tipo e importe inicial de seña).
-- Variantes y adicionales de servicio: la competencia los tiene habilitados pero no los usa; fuera del MVP.
+- Variantes y adicionales de servicio: el sistema actual los tiene habilitados pero no los usa; fuera del MVP.
 - Unidades de recurso concretas y requisito de «unidad específica» (C03).
 - Imágenes de servicios y categorías para el portal (P01).
 

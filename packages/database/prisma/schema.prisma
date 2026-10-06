@@ -119,6 +119,7 @@ model Organizacion {
   tiposRecurso    TipoRecurso[]
   profesionales   Profesional[]
   excepciones     ExcepcionHorario[]
+  imagenes        Imagen[]
 }
 
 model Franquiciado {
@@ -439,6 +440,8 @@ model Servicio {
   categoriaId          String                     @db.Uuid
   nombre               String
   descripcion          String?
+  // Imagen pública del servicio (portal). Reemplazarla crea otra Imagen y borra la anterior.
+  imagenId             String?                    @db.Uuid
   duracionMinutos      Int
   bufferAntesMinutos   Int                        @default(0)
   bufferDespuesMinutos Int                        @default(0)
@@ -450,6 +453,7 @@ model Servicio {
   updatedAt            DateTime                   @updatedAt
   organizacion         Organizacion               @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
   categoria            CategoriaServicio          @relation(fields: [organizacionId, categoriaId], references: [organizacionId, id], onDelete: Restrict)
+  imagen               Imagen?                    @relation(fields: [organizacionId, imagenId], references: [organizacionId, id], onDelete: Restrict)
   skills               ServicioSkill[]
   recursos             ServicioRequisitoRecurso[]
   consentimientos      ServicioConsentimiento[]
@@ -543,10 +547,13 @@ model Profesional {
   nombre         String
   apellido       String?
   usuarioId      String?               @db.Uuid
+  // Foto pública (portal). Reemplazarla crea otra Imagen y borra la anterior.
+  fotoId         String?               @db.Uuid
   activo         Boolean               @default(true)
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   organizacion   Organizacion          @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  foto           Imagen?               @relation(fields: [organizacionId, fotoId], references: [organizacionId, id], onDelete: Restrict)
   sedes          ProfesionalSede[]
   skills         ProfesionalSkill[]
   servicios      ProfesionalServicio[]
@@ -810,4 +817,23 @@ model EventoPublico {
   createdAt DateTime @default(now())
 
   @@index([tipo, clave, createdAt])
+}
+
+// Imagen subida desde el backoffice, ya procesada (WebP, sin metadatos EXIF). Es pública: se sirve
+// solo mientras la referencia un servicio o profesional. Inmutable: el id sirve de clave de caché.
+model Imagen {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizacionId String        @db.Uuid
+  mime           String
+  ancho          Int
+  alto           Int
+  datos          Bytes
+  sha256         String        @db.Char(64)
+  creadoPor      String?       @db.Uuid
+  createdAt      DateTime      @default(now())
+  organizacion   Organizacion  @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  servicios      Servicio[]
+  profesionales  Profesional[]
+
+  @@unique([organizacionId, id])
 }

@@ -3,10 +3,11 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { aCentavos, importe, servicioEfectivo, type Sena } from "@nailnet/domain/catalogo";
 import { normalizarTelefono, validarCliente } from "@nailnet/domain/clientes";
 import { generarToken, hashToken, normalizarEmail } from "@nailnet/domain/credenciales";
-import type { ReservaPublicaEstado, ReservaPublicaRespuesta, ReservaPublicaSolicitud, ServicioPublico, TurnoPublico } from "@nailnet/contracts/publico";
+import type { ReservaPublicaEstado, ReservaPublicaRespuesta, ReservaPublicaSolicitud, ServicioPublico, TerminoPublico, TurnoPublico } from "@nailnet/contracts/publico";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds } from "./access.ts";
+import { rutaImagen } from "./imagenes.ts";
 import { ConfiguracionIncompleta, consultarDisponibilidad } from "./disponibilidad.ts";
 import { TurnoNoDisponible, tomarTurno, type Tx } from "./reservas.ts";
 
@@ -36,11 +37,22 @@ async function sedePublica(db: Database | Tx, sedeId: string) {
   return sede;
 }
 
-export async function sedesPublicas(db: Database, slug: string) {
+async function organizacionPublica(db: Database, slug: string) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) throw new AccesoDenegado();
   const org = await db.organizacion.findFirst({ where: { slug, activo: true }, select: { id: true } });
   if (!org) throw new AccesoDenegado();
+  return org;
+}
+
+export async function sedesPublicas(db: Database, slug: string) {
+  const org = await organizacionPublica(db, slug);
   return db.sede.findMany({ where: { organizacionId: org.id, activo: true, franquiciado: { activo: true } }, select: { id: true, nombre: true, timezone: true }, orderBy: { nombre: "asc" } });
+}
+
+/** Versión vigente de cada término publicado: lo que el invitado acepta al reservar (misma consulta que crearReservaPublica). */
+export async function terminosPublicos(db: Database, slug: string): Promise<TerminoPublico[]> {
+  const org = await organizacionPublica(db, slug);
+  return db.consentimientoVersion.findMany({ where: { organizacionId: org.id, tipo: "TERMINOS" }, orderBy: [{ clave: "asc" }, { version: "desc" }], distinct: ["clave"], select: { clave: true, version: true, titulo: true, texto: true } });
 }
 
 /** Solo servicios en condiciones de reservarse online (precio, seña definida, habilitado). */
@@ -51,7 +63,7 @@ export async function serviciosPublicos(db: Database, sedeId: string): Promise<S
     const ss = s.sedes[0]!;
     const e = servicioEfectivo({ duracionMinutos: s.duracionMinutos, bufferAntesMinutos: s.bufferAntesMinutos, bufferDespuesMinutos: s.bufferDespuesMinutos, sena: senaDe(s.senaTipo, s.senaValor), activo: s.activo },
       { habilitado: ss.habilitado, precio: ss.precio?.toFixed(2) ?? null, duracionMinutos: ss.duracionMinutos, sena: senaDe(ss.senaTipo, ss.senaValor), reservableOnline: ss.reservableOnline });
-    return e.reservableOnline ? [{ id: s.id, nombre: s.nombre, categoria: s.categoria.nombre, duracionMinutos: e.duracionMinutos, precio: e.precio!, sena: e.sena! }] : [];
+    return e.reservableOnline ? [{ id: s.id, nombre: s.nombre, categoria: s.categoria.nombre, descripcion: s.descripcion, imagenUrl: rutaImagen(s.imagenId), duracionMinutos: e.duracionMinutos, precio: e.precio!, sena: e.sena! }] : [];
   });
 }
 
@@ -64,7 +76,7 @@ export async function profesionalesPublicos(db: Database, sedeId: string, servic
     where: { organizacionId: sede.organizacionId, activo: true, sedes: { some: { sedeId, activo: true } }, ...(servicioId ? { servicios: { some: { servicioId } } } : {}) },
     include: { skills: { select: { skillId: true } } }, orderBy: { nombre: "asc" },
   });
-  return pros.filter(p => requeridas.every(r => p.skills.some(s => s.skillId === r))).map(p => ({ id: p.id, nombre: p.apellido ? `${p.nombre} ${p.apellido[0]}.` : p.nombre }));
+  return pros.filter(p => requeridas.every(r => p.skills.some(s => s.skillId === r))).map(p => ({ id: p.id, nombre: p.apellido ? `${p.nombre} ${p.apellido[0]}.` : p.nombre, fotoUrl: rutaImagen(p.fotoId) }));
 }
 
 export async function disponibilidadPublica(db: Database, sedeId: string, fecha: string, items: { servicioId: string; profesionalId?: string | null }[], ahora = new Date()): Promise<TurnoPublico[]> {
@@ -169,7 +181,7 @@ export async function consultarReservaPublica(db: Database, token: string | null
   if (!tokenConFormato(token)) throw new AccesoDenegado();
   const t = await db.tokenReserva.findFirst({
     where: { tokenHash: hashToken(token), revocadoEn: null, expiraEn: { gt: ahora } },
-    include: { reserva: { include: { sede: { select: { nombre: true } }, items: { orderBy: { posicion: "asc" }, include: { servicio: { select: { nombre: true } }, profesional: { select: { nombre: true } } } } } } },
+    include: { reserva: { include: { sede: { select: { nombre: true } }, items: { orderBy: { posicion: "asc" }, include: { servicio: { select: { nombre: true, imagenId: true } }, profesional: { select: { nombre: true, fotoId: true } } } } } } },
   });
   if (!t) throw new AccesoDenegado();
   const r = t.reserva;
@@ -177,6 +189,6 @@ export async function consultarReservaPublica(db: Database, token: string | null
   return {
     estado: vencida ? "EXPIRADA" : r.estado, expiraEn: r.expiraEn?.toISOString() ?? null, sede: r.sede.nombre,
     sena: importe(r.items.reduce((s, i) => s + (aCentavos(i.sena?.toFixed(2) ?? "0") ?? 0n), 0n)),
-    items: r.items.map(i => ({ servicio: i.servicio.nombre, profesional: i.profesional.nombre, inicio: i.inicio.toISOString(), fin: i.fin.toISOString() })),
+    items: r.items.map(i => ({ servicio: i.servicio.nombre, imagenUrl: rutaImagen(i.servicio.imagenId), profesional: i.profesional.nombre, fotoUrl: rutaImagen(i.profesional.fotoId), inicio: i.inicio.toISOString(), fin: i.fin.toISOString() })),
   };
 }

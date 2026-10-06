@@ -6,7 +6,7 @@ Documentación preparada el 9 de septiembre de 2026 a partir del pedido y de la 
 - [Arquitectura y modelo de dominio propuesto](docs/02-arquitectura.md).
 - [Backlog por fases y criterios de aceptación](docs/03-backlog.md).
 - [Decisiones pendientes](docs/04-decisiones.md).
-- [Análisis de la competencia (Sicurella)](docs/08-competencia-sicurella.md).
+- [Sistema de reservas actual de Sicurella](docs/08-competencia-sicurella.md).
 - [Autenticación del backoffice](docs/09-autenticacion.md).
 - [Administración de sedes y usuarios](docs/10-administracion.md).
 - [Configuración y secretos por sede](docs/11-configuracion-secretos.md).
@@ -17,12 +17,14 @@ Documentación preparada el 9 de septiembre de 2026 a partir del pedido y de la 
 - [Retención de turnos y exclusión concurrente](docs/16-exclusion-concurrente.md).
 - [Agenda y reserva manual](docs/17-agenda-reserva-manual.md).
 - [API pública del portal](docs/18-api-publica.md).
+- [Portal de reservas](docs/19-portal.md).
+- [Imágenes de servicios y profesionales](docs/20-imagenes.md).
 
-Estado al 10 de septiembre: monorepo con backoffice Next.js, portal React/Vite, worker y primera migración Prisma/PostgreSQL de organización, sedes, identidad y configuración fiscal. Incluye repositorios con permisos por sede y pruebas de integración. Desde el 30 de septiembre el backoffice tiene login, logout y recuperación de contraseña con sesiones revocables en PostgreSQL; también administra sedes, franquiciados y usuarios con roles por alcance y selector de sede. Incluye clientes compartidos con observaciones por sede y consentimientos versionados. También catálogo global con precio y seña configurables por sede. Además profesionales multi-sede con jornadas, ausencias, horario de sede, feriados y recursos. El motor de disponibilidad calcula turnos (con varios servicios encadenados); la retención de turnos con exclusión concurrente está implementada y probada; recepción ya toma turnos y los ve en la agenda, y la API pública `/api/public/v1` permite reservar como invitado (con idempotencia y límites); todavía no hay cobros. Repositorio: [lucasfradus/Nailnet](https://github.com/lucasfradus/Nailnet). Las políticas comerciales restantes siguen pendientes.
+Estado al 10 de septiembre: monorepo con backoffice Next.js, portal React/Vite, worker y primera migración Prisma/PostgreSQL de organización, sedes, identidad y configuración fiscal. Incluye repositorios con permisos por sede y pruebas de integración. Desde el 30 de septiembre el backoffice tiene login, logout y recuperación de contraseña con sesiones revocables en PostgreSQL; también administra sedes, franquiciados y usuarios con roles por alcance y selector de sede. Incluye clientes compartidos con observaciones por sede y consentimientos versionados. También catálogo global con precio y seña configurables por sede. Además profesionales multi-sede con jornadas, ausencias, horario de sede, feriados y recursos. El motor de disponibilidad calcula turnos (con varios servicios encadenados); la retención de turnos con exclusión concurrente está implementada y probada; recepción ya toma turnos y los ve en la agenda, y la API pública `/api/public/v1` permite reservar como invitado (con idempotencia y límites). Desde el 5 de octubre el portal recorre sede, servicio, profesional, horario y datos y muestra el estado real de la reserva; todavía no hay cobros: la reserva queda pendiente de seña hasta R04. Repositorio: [lucasfradus/Nailnet](https://github.com/lucasfradus/Nailnet). Las políticas comerciales restantes siguen pendientes.
 
 ## Desarrollo local
 
-Con Docker Desktop iniciado, ejecutar `docker compose up -d --build --wait`. Levanta PostgreSQL, aplica migraciones y seed de demo, y arranca backoffice en http://localhost:3000, portal en http://localhost:5173 y worker en http://localhost:3001/health. No requiere instalar Node en el host ni crear un .env. `docker compose down` detiene el entorno conservando los datos. Ver [guía Docker](docs/07-docker-local.md).
+Con Docker Desktop iniciado, ejecutar `docker compose up -d --build --wait`. Levanta PostgreSQL, aplica migraciones y seed de demo (con catálogo, profesionales y horarios para recorrer el portal), y arranca backoffice en http://localhost:3000, portal en http://localhost:5173 y worker en http://localhost:3001/health. No requiere instalar Node en el host ni crear un .env. `docker compose down` detiene el entorno conservando los datos. Ver [guía Docker](docs/07-docker-local.md).
 
 ### Alternativa con Node en el host
 

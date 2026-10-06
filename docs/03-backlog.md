@@ -58,7 +58,7 @@ Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación ante
 
 | ID | Entrega | Criterio de aceptación |
 |---|---|---|
-| P01 | Portal separado responsive | Sede → servicio → profesional → horario → datos → seña → confirmación |
+| P01 | Portal separado responsive · hecho 2026-10-05 (seña pendiente de R04), ver 19-portal.md | Sede → servicio → profesional → horario → datos → seña → confirmación |
 | P02 | Estado real de reserva | Consulta backend tras retorno; UX para pendiente, conflicto, rechazo y expiración |
 | P03 | Emails Resend | Confirmación/cancelación/reprogramación y recuperación; job reintentable y evidencia de entrega/resultado |
 | P04 | Cancelación por enlace y revisión de reembolso | Token válido y política aplicados; devolución no se marca completa por solicitud enviada |

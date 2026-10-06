@@ -11,9 +11,9 @@ import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
 import { actualizarCliente, actualizarObservaciones, crearCliente, publicarConsentimiento, registrarConsentimiento, vincularCliente } from "@nailnet/database/clientes";
 import type { Sena, TipoSena } from "@nailnet/domain/catalogo";
-import { crearCategoria, crearSkill, crearTipoRecurso, guardarServicio, guardarServicioSede } from "@nailnet/database/catalogo";
+import { crearCategoria, crearSkill, crearTipoRecurso, guardarImagenServicio, guardarServicio, guardarServicioSede } from "@nailnet/database/catalogo";
 import { aMinutos, aUtc, validarFecha } from "@nailnet/domain/agenda";
-import { actualizarProfesional, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "@nailnet/database/profesionales";
+import { actualizarProfesional, guardarFotoProfesional, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "@nailnet/database/profesionales";
 import { ConfiguracionIncompleta } from "@nailnet/database/disponibilidad";
 import { TurnoNoDisponible, cancelarReserva, marcarAtendida, marcarAusente, reprogramarReserva, tomarTurno } from "@nailnet/database/reservas";
 import { db } from "@/lib/db";
@@ -198,6 +198,17 @@ export async function accionGuardarServicio(_: Estado, form: FormData) {
     }, servicioId);
   }, servicioId ? "Servicio actualizado" : "Servicio creado");
 }
+/** Archivo subido o null si se pidió quitar la imagen. El repositorio la valida y la procesa. */
+async function archivoImagen(form: FormData) {
+  if (texto(form, "quitar") === "1") return null;
+  const archivo = form.get("imagen");
+  if (!(archivo instanceof File) || !archivo.size) throw new DatosInvalidos("Elegí una imagen");
+  return new Uint8Array(await archivo.arrayBuffer());
+}
+export async function accionImagenServicio(_: Estado, form: FormData) {
+  const quitar = texto(form, "quitar") === "1";
+  return ejecutar("/catalogo", async (actor, org) => guardarImagenServicio(db(), actor, org, texto(form, "servicioId"), await archivoImagen(form)), quitar ? "Imagen quitada" : "Imagen guardada");
+}
 export async function accionServicioSede(_: Estado, form: FormData) {
   const duracion = entero(form, "duracionMinutos");
   return ejecutar("/catalogo", (actor, org) => guardarServicioSede(db(), actor, org, texto(form, "sedeId"), texto(form, "servicioId"), {
@@ -225,6 +236,10 @@ export async function accionCrearProfesional(_: Estado, form: FormData) {
 export async function accionActualizarProfesional(_: Estado, form: FormData) {
   const id = texto(form, "profesionalId");
   return ejecutar(`/profesionales/${id}`, (actor, org) => actualizarProfesional(db(), actor, org, id, { nombre: texto(form, "nombre"), apellido: texto(form, "apellido"), activo: marcado(form, "activo") }), "Datos guardados");
+}
+export async function accionFotoProfesional(_: Estado, form: FormData) {
+  const id = texto(form, "profesionalId"), quitar = texto(form, "quitar") === "1";
+  return ejecutar(`/profesionales/${id}`, async (actor, org) => guardarFotoProfesional(db(), actor, org, id, await archivoImagen(form)), quitar ? "Foto quitada" : "Foto guardada");
 }
 export async function accionVincularSedeProfesional(_: Estado, form: FormData) {
   const id = texto(form, "profesionalId");

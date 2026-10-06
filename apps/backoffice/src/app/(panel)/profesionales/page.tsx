@@ -8,7 +8,7 @@ import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { accionCrearProfesional } from "../acciones";
 
-export const metadata: Metadata = { title: "Profesionales · NailNet" };
+export const metadata: Metadata = { title: "Profesionales · Sicurella" };
 
 export default async function Profesionales() {
   const { sesion, organizacion, sede, sedes, puede } = await requerirOrganizacion();

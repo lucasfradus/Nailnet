@@ -5,11 +5,12 @@ import { AccesoDenegado } from "@nailnet/domain";
 import type { Sena } from "@nailnet/domain/catalogo";
 import { catalogoSede, listarCatalogo } from "@nailnet/database/catalogo";
 import { Formulario } from "@/components/formulario";
+import { EditorImagen } from "@/components/imagen";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
-import { accionCrearCategoria, accionCrearSkill, accionCrearTipoRecurso, accionGuardarServicio, accionServicioSede } from "../acciones";
+import { accionCrearCategoria, accionCrearSkill, accionCrearTipoRecurso, accionGuardarServicio, accionImagenServicio, accionServicioSede } from "../acciones";
 
-export const metadata: Metadata = { title: "Catálogo · NailNet" };
+export const metadata: Metadata = { title: "Catálogo · Sicurella" };
 const pesos = (v: string | null) => v === null ? "—" : `$ ${Number(v).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
 const textoSena = (s: Sena) => !s ? "sin definir" : s.tipo === "NINGUNA" ? "sin seña" : s.tipo === "FIJA" ? pesos(s.valor) : `${s.valor}%`;
 
@@ -87,7 +88,9 @@ export default async function Catalogo({ searchParams }: { searchParams: Promise
       <h2 className="subtitulo">Catálogo de la organización</h2>
       <p className="ayuda">Servicios, habilidades, recursos y consentimientos son comunes a todas las sedes (propuesta D12). Cada sede define su precio. La política de seña (D3) sigue pendiente: un servicio sin seña definida no se ofrece online.</p>
       {cat.categorias.map(c => <div key={c.id}><h3>{c.nombre}</h3>
-        {c.servicios.map(s => <details key={s.id} className="fila"><summary>{s.nombre} · {s.duracionMinutos} min · seña {textoSena(s.sena)}{s.activo ? "" : " · inactivo"}</summary><FormServicio cat={cat} servicio={s} /></details>)}
+        {c.servicios.map(s => <details key={s.id} className="fila"><summary>{s.nombre} · {s.duracionMinutos} min · seña {textoSena(s.sena)}{s.activo ? "" : " · inactivo"}{s.imagenId ? "" : " · sin imagen"}</summary>
+          <EditorImagen accion={accionImagenServicio} ocultos={{ servicioId: s.id }} imagenId={s.imagenId} titulo={`Imagen de ${s.nombre}`} />
+          <FormServicio cat={cat} servicio={s} /></details>)}
       </div>)}
       {cat.categorias.length > 0 && <details><summary>Nuevo servicio</summary><FormServicio cat={cat} /></details>}
       <div className="grilla">

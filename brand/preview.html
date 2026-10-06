@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sicurella — kit de marca</title>
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="tokens/tokens.css">
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-sans);color:var(--color-foreground);background:var(--color-background)}
+main{max-width:1080px;margin:auto;padding:48px 20px}
+h1{font-size:44px;font-weight:700;letter-spacing:var(--tracking-heading);line-height:1.05;margin:0 0 8px}
+h1 em{font-style:normal;color:var(--color-primary)}
+h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-muted-foreground);margin:56px 0 16px;font-weight:600}
+p{color:var(--color-muted-foreground);line-height:1.6;margin:0}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.card{border:1px solid var(--color-border);border-radius:var(--radius);padding:24px;display:flex;align-items:center;justify-content:center;min-height:140px}
+.card img{max-width:100%;height:auto}
+.dark{background:var(--color-primary);border-color:var(--color-primary)}
+.ink{background:var(--color-foreground);border-color:var(--color-foreground)}
+.sw{border:1px solid var(--color-border);border-radius:var(--radius);overflow:hidden}
+.sw div{height:80px}
+.sw span{display:block;padding:10px 12px;font-size:13px}
+.sw code{color:var(--color-muted-foreground);font-size:12px}
+.scale{display:grid;grid-template-columns:repeat(11,1fr);border-radius:var(--radius);overflow:hidden}
+.scale div{height:56px;font-size:11px;display:flex;align-items:flex-end;padding:6px}
+.row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.btn{font:inherit;font-size:14px;font-weight:500;border-radius:var(--radius-md);padding:8px 16px;border:1px solid transparent;cursor:pointer}
+.btn-primary{background:var(--color-primary);color:var(--color-primary-foreground)}
+.btn-primary:hover{background:var(--color-primary-hover)}
+.btn-outline{background:#fff;border-color:var(--color-border);color:var(--color-foreground)}
+.badge{font-size:12px;border-radius:var(--radius-full);padding:4px 10px;border:1px solid var(--color-border);background:var(--color-secondary);color:var(--color-secondary-foreground)}
+.ok{background:var(--color-success-soft);color:var(--color-success);border-color:transparent}
+.warn{background:var(--color-warning-soft);color:var(--color-warning);border-color:transparent}
+.err{background:#FEECEC;color:#C53030;border-color:transparent}
+.type div{padding:14px 0;border-bottom:1px solid var(--color-border)}
+.type small{display:block;color:var(--color-muted-foreground);font-size:12px;margin-bottom:4px}
+</style>
+</head>
+<body>
+<main>
+  <img src="logos/svg/sicurella-logo-teal.svg" alt="Sicurella" width="240">
+  <h1 style="margin-top:40px">Resalta tu belleza<br>natural en <em>Sicurella Pilar</em></h1>
+  <p>Kit de marca para Nailnet — logos, color, tipografía y componentes base.</p>
+
+  <h2>Logo</h2>
+  <div class="grid">
+    <div class="card"><img src="logos/svg/sicurella-logo-teal.svg" alt=""></div>
+    <div class="card dark"><img src="logos/svg/sicurella-logo-white.svg" alt=""></div>
+    <div class="card ink"><img src="logos/svg/sicurella-logo-white.svg" alt=""></div>
+    <div class="card"><img src="logos/svg/sicurella-logo-black.svg" alt=""></div>
+  </div>
+  <h2>Isotipo</h2>
+  <div class="row">
+    <img src="icons/sicurella-isotipo.svg" width="96" alt="">
+    <img src="icons/sicurella-isotipo-circle.svg" width="96" alt="">
+    <img src="icons/sicurella-isotipo-teal.svg" width="96" alt="">
+    <img src="icons/favicon.svg" width="32" alt="">
+    <img src="icons/favicon.svg" width="16" alt="">
+  </div>
+
+  <h2>Color</h2>
+  <div class="grid" id="swatches"></div>
+  <h2>Escala teal [derivado]</h2>
+  <div class="scale" id="scale"></div>
+
+  <h2>Tipografía</h2>
+  <div class="type">
+    <div><small>Display · Varela Round 400</small><span style="font-family:var(--font-display);font-size:40px">Hola, Sofía</span></div>
+    <div><small>H1 · Figtree 700 · tracking −0.05em</small><span style="font-size:40px;font-weight:700;letter-spacing:var(--tracking-heading)">Tus próximos turnos</span></div>
+    <div><small>H2 · Figtree 600</small><span style="font-size:24px;font-weight:600">Uñas esculpidas y manicura</span></div>
+    <div><small>Cuerpo · Figtree 400 · 16/24</small><span style="font-size:16px">Disfrutá de nuestros tratamientos exclusivos corporales, faciales y reflexología.</span></div>
+    <div><small>Secundario · Figtree 400 · 14</small><span style="font-size:14px;color:var(--color-muted-foreground)">Lunes a sábados · 9 a 20 h</span></div>
+  </div>
+
+  <h2>Componentes</h2>
+  <div class="row">
+    <button class="btn btn-primary">Reservar turno →</button>
+    <button class="btn btn-outline">Ver tratamientos</button>
+    <span class="badge">Nails</span>
+    <span class="badge ok">Confirmada</span>
+    <span class="badge warn">Pago pendiente</span>
+    <span class="badge err">Cancelada</span>
+  </div>
+</main>
+<script>
+const cs=getComputedStyle(document.documentElement);
+const sw=['brand','primary','primary-foreground','foreground','muted-foreground','secondary','secondary-foreground','border','destructive','success','warning'];
+document.getElementById('swatches').innerHTML=sw.map(n=>{const v=cs.getPropertyValue('--color-'+n).trim();return `<div class="sw"><div style="background:${v}"></div><span>${n}<br><code>${v}</code></span></div>`}).join('');
+const st=[50,100,200,300,400,500,600,700,800,900,950];
+document.getElementById('scale').innerHTML=st.map(n=>`<div style="background:var(--teal-${n});color:${n>=500?'#fff':'#020817'}">${n}</div>`).join('');
+</script>
+</body>
+</html>

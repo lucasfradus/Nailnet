@@ -4,7 +4,7 @@ import { FormularioIngreso } from "../acceso/formularios";
 import { TarjetaAcceso } from "../acceso/tarjeta";
 import { leerTokenSesion, sesionActual } from "@/lib/sesion";
 
-export const metadata: Metadata = { title: "Ingresar · NailNet" };
+export const metadata: Metadata = { title: "Ingresar · Sicurella" };
 export default async function Login() {
   // Sin cookie no se consulta la base: la pantalla de ingreso no depende de ella.
   if (await leerTokenSesion() && await sesionActual()) redirect("/");

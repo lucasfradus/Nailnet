@@ -1,10 +1,13 @@
 /**
  * Contrato público v1 del portal (`/api/public/v1`). Sin dependencias: lo importan el portal y el
- * backend. Importes como cadenas decimales «12345.67»; instantes en ISO 8601 UTC.
+ * backend. Importes como cadenas decimales «12345.67»; instantes en ISO 8601 UTC. Las URLs de imágenes
+ * son rutas relativas al origen de la API (`/api/public/v1/imagenes/{id}`), o null si no hay imagen.
  */
 export type SedePublica = { id: string; nombre: string; timezone: string };
-export type ServicioPublico = { id: string; nombre: string; categoria: string; duracionMinutos: number; precio: string; sena: string };
-export type ProfesionalPublico = { id: string; nombre: string };
+export type ServicioPublico = { id: string; nombre: string; categoria: string; descripcion: string | null; imagenUrl: string | null; duracionMinutos: number; precio: string; sena: string };
+/** Términos vigentes que el invitado acepta al reservar (uno por clave, última versión). */
+export type TerminoPublico = { clave: string; version: number; titulo: string; texto: string };
+export type ProfesionalPublico = { id: string; nombre: string; fotoUrl: string | null };
 export type TurnoPublico = { inicio: string; fin: string; items: { servicioId: string; profesionalId: string; profesional: string; inicio: string; fin: string }[] };
 
 export type ItemSolicitado = { servicioId: string; profesionalId?: string | null };
@@ -21,7 +24,7 @@ export type ReservaPublicaRespuesta = {
 };
 export type ReservaPublicaEstado = {
   estado: EstadoReservaPublico; expiraEn: string | null; sede: string; sena: string;
-  items: { servicio: string; profesional: string; inicio: string; fin: string }[];
+  items: { servicio: string; imagenUrl: string | null; profesional: string; fotoUrl: string | null; inicio: string; fin: string }[];
 };
 export type ErrorPublico = { error: { codigo: "INVALIDO" | "NO_DISPONIBLE" | "CONFLICTO_IDEMPOTENCIA" | "LIMITE" | "NO_ENCONTRADO" | "INTERNO"; mensaje: string } };
 

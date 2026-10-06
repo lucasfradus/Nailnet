@@ -1,0 +1,60 @@
+/*
+ * Sicurella — design tokens
+ * Fuente: sicurella.com.ar (variables :root del CSS publicado) + color del logo.
+ * Los valores marcados [derivado] no existen en el sitio; se agregaron para la app.
+ */
+:root {
+  /* Marca */
+  --color-brand: #008194;            /* color exacto del logo */
+  --color-primary: #008094;          /* hsl(188 100% 29%) — botones, links, foco */
+  --color-primary-hover: #00707F;    /* [derivado] primary −4% L, para :hover */
+  --color-primary-foreground: #F5FEFF;
+
+  /* Superficies y texto */
+  --color-background: #FFFFFF;
+  --color-foreground: #020817;       /* títulos y texto principal */
+  --color-muted: #F4F6F6;
+  --color-muted-foreground: #628084; /* texto secundario */
+  --color-secondary: #F2F7F8;        /* fondos suaves, botón secundario, chips */
+  --color-secondary-foreground: #005A66;
+  --color-accent: #F2F7F8;
+  --color-accent-foreground: #005A66;
+  --color-border: #E0E9EB;
+  --color-input: #E0E9EB;
+  --color-ring: #008094;
+  --color-primary-soft: rgb(0 128 148 / 0.1); /* badges e íconos sobre fondo claro */
+
+  /* Estados */
+  --color-destructive: #EF4444;
+  --color-destructive-foreground: #F8FAFC;
+  --color-success: #18734B;          /* [derivado] */
+  --color-success-soft: #E8F5EE;     /* [derivado] */
+  --color-warning: #8F5F14;          /* [derivado] */
+  --color-warning-soft: #FDF4E3;     /* [derivado] */
+
+  /* Escala teal [derivado] — 600 = primary, 800 = secondary-foreground */
+  --teal-50: #F2FBFC;
+  --teal-100: #DDF4F7;
+  --teal-200: #B6E7EE;
+  --teal-300: #7DD3E0;
+  --teal-400: #33B4C7;
+  --teal-500: #0098AD;
+  --teal-600: #008094;
+  --teal-700: #006B7A;
+  --teal-800: #005A66;
+  --teal-900: #00424B;
+  --teal-950: #002A30;
+
+  /* Tipografía */
+  --font-sans: "Figtree", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Varela Round", var(--font-sans);
+  --tracking-heading: -0.05em;       /* el sitio usa títulos bold muy compactos */
+
+  /* Forma */
+  --radius: 0.75rem;                 /* 12px — cards, imágenes */
+  --radius-md: calc(var(--radius) - 2px); /* 10px — botones, inputs */
+  --radius-sm: calc(var(--radius) - 4px); /* 8px */
+  --radius-full: 9999px;             /* pills / badges */
+  --shadow-card: 0 1px 2px rgb(2 8 23 / 0.05);
+  --shadow-float: 0 10px 30px -10px rgb(2 8 23 / 0.2);
+}

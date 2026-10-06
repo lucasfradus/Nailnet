@@ -1,4 +1,6 @@
-# Análisis de competencia · Sicurella Pilar · 2026-09-30
+# Sistema de reservas actual · Sicurella Pilar · 2026-09-30
+
+Sicurella es el cliente de NailNet (confirmado el 2026-10-05). Este análisis describe el sistema de reservas que usa hoy, como referencia para el reemplazo.
 
 ## Alcance y evidencia
 
@@ -48,7 +50,7 @@ Ingeniería inversa de https://sicurella.com.ar/calendario. Se descargaron el HT
 
 ## Contraste con el plan de NailNet
 
-| Tema | Competencia | Plan NailNet | Recomendación |
+| Tema | Sistema actual | Plan NailNet | Recomendación |
 |---|---|---|---|
 | Multi-sede/franquicia | No existe | Núcleo del modelo | Diferencial; mantener |
 | Selección de profesional | Oculta; «cualquiera» con asignación balanceada | Paso obligatorio sede → servicio → profesional | Profesional opcional con «cualquiera» por defecto; criterio de menor carga ya previsto en arquitectura |
@@ -61,7 +63,7 @@ Ingeniería inversa de https://sicurella.com.ar/calendario. Se descargaron el HT
 | Retención | ~10 min, del lado cliente | 15 min en servidor | Mantener servidor; D4 puede ser 10–15 min |
 | Confirmación de pago | El navegador llama `confirm`/`payment-status` | Solo webhook + consulta al proveedor | Mantener: no copiar confirmación desde el cliente |
 | Autogestión | Booking ID en la URL funciona como credencial | Token acotado, hasheado, con vencimiento | Mantener |
-| Políticas de cancelación | Sin límite | D5 pendiente | Definir; la competencia no ofrece referencia |
+| Políticas de cancelación | Sin límite | D5 pendiente | Definir; el sistema actual no ofrece referencia |
 | Recursos | No usados | Recursos por tipo/unidad | Mantener en modelo; permitir servicios sin requisitos para no frenar la carga del catálogo |
 | Consentimiento | Solo marketing | Consentimiento por práctica versionado | Diferencial; separar además consentimiento de marketing |
 | Cupones | Sí | No contemplado | Fuera del MVP salvo pedido del negocio |
@@ -74,6 +76,6 @@ Ninguna se considera aprobada sin confirmación del usuario.
 
 1. Reserva multi-servicio: ¿se incluye en el MVP o solo se prepara el esquema?
 2. Selección de profesional: ¿opcional con «cualquiera» por defecto?
-3. Paso de grilla: ¿60 min fijo por sede como la competencia, o derivado de la duración?
+3. Paso de grilla: ¿60 min fijo por sede como el sistema actual, o derivado de la duración?
 4. Horizonte de reserva: ¿14 días? ¿Anticipación mínima?
 5. Modo sin seña/solicitud: ¿se permite por servicio o sede, o la seña MP es siempre obligatoria (D3/D6)?

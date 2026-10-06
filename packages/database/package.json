@@ -14,7 +14,8 @@
     "./profesionales": "./src/profesionales.ts",
     "./disponibilidad": "./src/disponibilidad.ts",
     "./reservas": "./src/reservas.ts",
-    "./publico": "./src/publico.ts"
+    "./publico": "./src/publico.ts",
+    "./imagenes": "./src/imagenes.ts"
   },
   "scripts": {
     "generate": "prisma generate",
@@ -31,10 +32,11 @@
     "tsx": "4.23.13"
   },
   "dependencies": {
+    "@nailnet/contracts": "0.1.0",
     "@nailnet/domain": "0.1.0",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
     "dotenv": "17.4.2",
-    "@nailnet/contracts": "0.1.0"
+    "sharp": "0.35.4"
   }
 }

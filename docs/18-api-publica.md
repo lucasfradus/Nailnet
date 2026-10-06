@@ -55,7 +55,7 @@ Son valores técnicos propuestos en `POLITICA_PUBLICA`, para ajustar con tráfic
 
 - **Variables:**
   - `PORTAL_ORIGIN`: único origen con CORS. En desarrollo, `http://localhost:5173`. En producción, sin esta variable no hay CORS.
-  - `TRUST_PROXY=true`: solo detrás de un proxy propio que fije `X-Forwarded-For`.
+  - `TRUST_PROXY=true`: solo detrás de un proxy propio. `CLIENTE_IP_HEADER` elige la cabecera con la IP real (en Railway, `x-real-ip`; ver doc 22).
 - **Límites de la protección:** CORS no autoriza nada; cada operación valida igual en el servidor. El cuerpo JSON tiene tope de 10 KB.
 
 ## Pendiente

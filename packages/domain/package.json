@@ -11,7 +11,8 @@
     "./clientes": "./src/clientes.ts",
     "./catalogo": "./src/catalogo.ts",
     "./agenda": "./src/agenda.ts",
-    "./disponibilidad": "./src/disponibilidad.ts"
+    "./disponibilidad": "./src/disponibilidad.ts",
+    "./red": "./src/red.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

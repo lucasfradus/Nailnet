@@ -17,7 +17,7 @@ Calendario relativo, pendiente de confirmar días corridos/hábiles, equipo y ta
 | F01 | Monorepo, Next, Vite, TypeScript, Prisma/PostgreSQL | Builds independientes, lint/typecheck y CI; dependencias fijadas; no secretos en bundle |
 | F02 | Organización, franquiciado, sede, usuarios | Migración reproducible y seed sintético; relaciones entre organizaciones inválidas rechazadas |
 | F03 | Login, logout y recuperación · hecho 2026-09-30, ver 09-autenticacion.md | Hash de contraseña, token de un uso, límites de intentos, usuario inactivo rechazado; sin rol implícito |
-| F04 | Staging, worker y outbox base · cola y outbox hechos 2026-10-05 (staging pendiente), ver 21-cola-trabajos.md | Job persiste/reanuda tras reinicio; health checks y documentación de variables |
+| F04 | Staging, worker y outbox base · cola y outbox hechos 2026-10-05, ver 21-cola-trabajos.md; configuración de Railway 2026-10-06, ver 22-despliegue-railway.md (falta aplicarla al proyecto) | Job persiste/reanuda tras reinicio; health checks y documentación de variables |
 | F05 | Prueba temprana MP/Facturante | Contratos y credenciales de prueba funcionan; documentar deduplicación/consulta de resultados ambiguos |
 
 Dependencias: D01–D03. Si falla el acceso a proveedores, completar base local y elevar ese bloqueo del calendario, sin simular integración como terminada.

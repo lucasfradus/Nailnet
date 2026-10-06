@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { validarSesion } from "@nailnet/database/auth";
 import { db } from "./db";
+import { ipDesdeCabeceras } from "./red";
 
 const produccion = process.env.NODE_ENV === "production";
 // __Host- exige Secure, Path=/ y sin Domain: la cookie no se comparte con subdominios.
@@ -30,8 +31,7 @@ export async function requerirSesion() {
   return sesion;
 }
 
-/** Solo confía en X-Forwarded-For si el despliegue lo declara (proxy propio delante). */
+/** IP del cliente según la configuración del proxy (ver red.ts). */
 export async function ipCliente(): Promise<string | null> {
-  if (process.env.TRUST_PROXY !== "true") return null;
-  return (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  return ipDesdeCabeceras(await headers());
 }

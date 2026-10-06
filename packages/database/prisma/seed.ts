@@ -2,7 +2,11 @@ import "dotenv/config";
 import { createDatabase } from "../src/client.ts";
 import { cargarImagenesDemo, crearCatalogoDemo } from "./demo-catalogo.ts";
 import { crearFixture } from "./fixture.ts";
-if (process.env.NODE_ENV === "production" || process.env.ALLOW_DEMO_SEED !== "true") throw new Error("Seed demo deshabilitado; requiere ALLOW_DEMO_SEED=true fuera de producción");
+// Datos sintéticos: nunca en producción. Staging corre con NODE_ENV=production (builds reales), así
+// que debe declararse con NAILNET_AMBIENTE=staging además de ALLOW_DEMO_SEED=true.
+const ambiente = process.env.NAILNET_AMBIENTE;
+const permitido = process.env.ALLOW_DEMO_SEED === "true" && ambiente !== "produccion" && (process.env.NODE_ENV !== "production" || ambiente === "staging");
+if (!permitido) throw new Error("Seed demo deshabilitado: requiere ALLOW_DEMO_SEED=true y, si NODE_ENV=production, NAILNET_AMBIENTE=staging. Nunca en NAILNET_AMBIENTE=produccion.");
 const db = createDatabase();
 try {
   const id = "00000000-0000-4000-8000-000000000001";

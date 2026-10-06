@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import type { ErrorPublico, ProfesionalPublico, ReservaPublicaEstado, ReservaPublicaRespuesta, ReservaPublicaSolicitud, SedePublica, ServicioPublico, TerminoPublico, TurnoPublico } from "@nailnet/contracts/publico";
 
-const ORIGEN_API = (import.meta.env.VITE_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
+// Origen completo o solo el dominio (la referencia de Railway a RAILWAY_PUBLIC_DOMAIN no trae esquema).
+const crudo = (import.meta.env.VITE_API_URL ?? "http://localhost:3000").trim().replace(/\/+$/, "");
+const ORIGEN_API = /^https?:\/\//.test(crudo) ? crudo : `https://${crudo}`;
 const BASE = `${ORIGEN_API}/api/public/v1`;
 /** Las imágenes llegan como rutas relativas al origen de la API. */
 export const urlImagen = (ruta: string | null) => (ruta ? `${ORIGEN_API}${ruta}` : null);

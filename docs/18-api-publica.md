@@ -63,7 +63,7 @@ Son valores técnicos propuestos en `POLITICA_PUBLICA`, para ajustar con tráfic
 - **Seña:** cobro por Mercado Pago, confirmación por webhook y pago que llega tarde (R04, requiere credenciales sandbox).
 - **Gestión del invitado:** cancelar o reprogramar con el token, sujeto a D5.
 - **Emails:** confirmación con el enlace del token (P03).
-- **Limpieza:** de `EventoPublico` y claves de idempotencia vencidas, como tarea del worker.
+- **Limpieza:** hecha con F04: trabajo `mantenimiento.limpieza` del worker (doc 21).
 
 ## Verificación
 

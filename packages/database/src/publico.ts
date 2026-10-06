@@ -3,11 +3,10 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { aCentavos, importe, servicioEfectivo, type Sena } from "@nailnet/domain/catalogo";
 import { normalizarTelefono, validarCliente } from "@nailnet/domain/clientes";
 import { generarToken, hashToken, normalizarEmail } from "@nailnet/domain/credenciales";
-import type { ReservaPublicaEstado, ReservaPublicaRespuesta, ReservaPublicaSolicitud, ServicioPublico, TerminoPublico, TurnoPublico } from "@nailnet/contracts/publico";
+import { rutaImagen, type ReservaPublicaEstado, type ReservaPublicaRespuesta, type ReservaPublicaSolicitud, type ServicioPublico, type TerminoPublico, type TurnoPublico } from "@nailnet/contracts/publico";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds } from "./access.ts";
-import { rutaImagen } from "./imagenes.ts";
 import { ConfiguracionIncompleta, consultarDisponibilidad } from "./disponibilidad.ts";
 import { TurnoNoDisponible, tomarTurno, type Tx } from "./reservas.ts";
 
@@ -191,4 +190,19 @@ export async function consultarReservaPublica(db: Database, token: string | null
     sena: importe(r.items.reduce((s, i) => s + (aCentavos(i.sena?.toFixed(2) ?? "0") ?? 0n), 0n)),
     items: r.items.map(i => ({ servicio: i.servicio.nombre, imagenUrl: rutaImagen(i.servicio.imagenId), profesional: i.profesional.nombre, fotoUrl: rutaImagen(i.profesional.fotoId), inicio: i.inicio.toISOString(), fin: i.fin.toISOString() })),
   };
+}
+
+/**
+ * Limpieza de datos técnicos del portal: claves de idempotencia vencidas (24 h), eventos anti-abuso
+ * fuera de toda ventana (se guardan 1 día) y tokens de invitado vencidos o revocados hace más de 30
+ * días. Idempotente: correrla dos veces no cambia nada.
+ */
+export async function limpiarDatosPublicos(db: Database, ahora = new Date()) {
+  const dia = 86_400_000;
+  const [claves, eventos, tokens] = await Promise.all([
+    db.claveIdempotencia.deleteMany({ where: { expiraEn: { lt: ahora } } }),
+    db.eventoPublico.deleteMany({ where: { createdAt: { lt: new Date(ahora.getTime() - dia) } } }),
+    db.tokenReserva.deleteMany({ where: { OR: [{ expiraEn: { lt: new Date(ahora.getTime() - 30 * dia) } }, { revocadoEn: { lt: new Date(ahora.getTime() - 30 * dia) } }] } }),
+  ]);
+  return { claves: claves.count, eventos: eventos.count, tokens: tokens.count };
 }

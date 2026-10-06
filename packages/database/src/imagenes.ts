@@ -56,8 +56,6 @@ export async function borrarImagenHuerfana(tx: Tx, imagenId: string | null) {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-/** Ruta pública de una imagen, relativa al origen del backoffice. */
-export const rutaImagen = (imagenId: string | null) => (imagenId ? `/api/public/v1/imagenes/${imagenId}` : null);
 
 /**
  * Imagen para el portal: solo si está en uso por un servicio o profesional de una organización activa.

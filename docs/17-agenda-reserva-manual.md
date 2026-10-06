@@ -77,7 +77,7 @@ Implementa R01 con las decisiones del 2026-10-01: D3, D4 y D6 confirmadas; D5 si
   - En desarrollo el worker corre con `tsx watch`.
   - El build valida tipos y empaqueta con `esbuild` en `dist/index.js` (≈250 KB), con los paquetes del monorepo incluidos y Prisma, `pg` y `dotenv` como dependencias externas.
 - **Verificado contra PostgreSQL embebido:** el bundle arrancó, expiró una retención vencida con un evento y respondió el chequeo de vida.
-- **Pendiente (F04):** cola durable de trabajos y outbox (emails, reconciliación de pagos) sobre la misma base.
+- **F04:** la cola durable de trabajos y el outbox están en el doc 21.
 
 ## Operación del turno (R03) · 2026-10-01
 

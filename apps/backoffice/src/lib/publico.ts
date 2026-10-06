@@ -5,9 +5,11 @@ import { ConfiguracionIncompleta } from "@nailnet/database/disponibilidad";
 import { ConflictoIdempotencia, LimiteExcedido } from "@nailnet/database/publico";
 import { TurnoNoDisponible } from "@nailnet/database/reservas";
 import type { ErrorPublico } from "@nailnet/contracts/publico";
+import { ipDesdeCabeceras, origen as normalizarOrigen } from "./red";
 
 // CORS acotado al portal. CORS no autoriza nada: cada operación valida igual en el servidor.
-const ORIGEN_PORTAL = process.env.PORTAL_ORIGIN ?? (process.env.NODE_ENV === "production" ? null : "http://localhost:5173");
+// Acepta el origen completo o solo el dominio (referencia de Railway a RAILWAY_PUBLIC_DOMAIN del portal).
+const ORIGEN_PORTAL = normalizarOrigen(process.env.PORTAL_ORIGIN) ?? (process.env.NODE_ENV === "production" ? null : "http://localhost:5173");
 
 export function cabeceras(request: Request, extra: Record<string, string> = {}): HeadersInit {
   const origen = request.headers.get("origin");
@@ -40,11 +42,8 @@ export function responderError(request: Request, e: unknown) {
 }
 export const invalido = (request: Request, mensaje: string) => error(request, 422, "INVALIDO", mensaje);
 
-/** Solo confía en X-Forwarded-For si el despliegue lo declara (proxy propio delante). */
-export function ipDe(request: Request) {
-  if (process.env.TRUST_PROXY !== "true") return null;
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
-}
+/** IP del cliente según la configuración del proxy (ver red.ts). */
+export const ipDe = (request: Request) => ipDesdeCabeceras(request.headers);
 
 /** Lee JSON con tope de tamaño: el portal nunca necesita más de unos pocos KB. */
 export async function leerJson(request: Request, maximo = 10_000): Promise<unknown> {

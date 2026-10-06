@@ -2,6 +2,7 @@
 import { redirect } from "next/navigation";
 import { CredencialesInvalidas, DemasiadosIntentos, PasswordInvalida, TokenInvalido, cerrarSesion, iniciarSesion, restablecerPassword, solicitarRecuperacion } from "@nailnet/database/auth";
 import { db } from "@/lib/db";
+import { urlBackoffice } from "@/lib/red";
 import { borrarCookieSesion, guardarCookieSesion, ipCliente, leerTokenSesion } from "@/lib/sesion";
 
 export type EstadoFormulario = { error?: string; ok?: string } | undefined;
@@ -32,7 +33,7 @@ export async function recuperar(_: EstadoFormulario, form: FormData): Promise<Es
   // El envío por email llega con Resend y el outbox del worker (P03/F04). Hasta entonces el enlace
   // solo se muestra en la consola de desarrollo; en producción la página no ofrece este formulario.
   if (resultado && process.env.NODE_ENV !== "production") {
-    const base = process.env.BACKOFFICE_URL ?? "http://localhost:3000";
+    const base = urlBackoffice();
     console.info(`[desarrollo] Enlace de recuperación para ${resultado.email}: ${base}/restablecer#${resultado.token}`);
   }
   return { ok: MENSAJE_RECUPERACION };

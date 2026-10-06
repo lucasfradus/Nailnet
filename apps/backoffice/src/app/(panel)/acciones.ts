@@ -17,6 +17,7 @@ import { actualizarProfesional, guardarFotoProfesional, cambiarEstadoRecurso, cr
 import { ConfiguracionIncompleta } from "@nailnet/database/disponibilidad";
 import { TurnoNoDisponible, cancelarReserva, marcarAtendida, marcarAusente, reprogramarReserva, tomarTurno } from "@nailnet/database/reservas";
 import { db } from "@/lib/db";
+import { urlBackoffice } from "@/lib/red";
 import { COOKIE_ORGANIZACION, COOKIE_SEDE, requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
 
@@ -100,7 +101,7 @@ export async function accionEstadoUsuario(_: Estado, form: FormData) {
 export async function accionInvitar(_: Estado, form: FormData) {
   return ejecutar("/usuarios", async (actor, org) => {
     const { token, expiraEn } = await emitirInvitacion(db(), actor, org, texto(form, "usuarioId"));
-    const base = process.env.BACKOFFICE_URL ?? "http://localhost:3000";
+    const base = urlBackoffice();
     // Se muestra una sola vez a quien lo generó; no se guarda ni se registra.
     return `Enlace de activación (vence ${expiraEn.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}): ${base}/restablecer#${token}`;
   }, "");

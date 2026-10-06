@@ -15,6 +15,7 @@
     "./disponibilidad": "./src/disponibilidad.ts",
     "./reservas": "./src/reservas.ts",
     "./publico": "./src/publico.ts",
+    "./jobs": "./src/jobs.ts",
     "./imagenes": "./src/imagenes.ts"
   },
   "scripts": {

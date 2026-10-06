@@ -26,6 +26,9 @@ export type ReservaPublicaEstado = {
   estado: EstadoReservaPublico; expiraEn: string | null; sede: string; sena: string;
   items: { servicio: string; imagenUrl: string | null; profesional: string; fotoUrl: string | null; inicio: string; fin: string }[];
 };
+/** Ruta pública de una imagen, relativa al origen de la API. */
+export const rutaImagen = (imagenId: string | null) => (imagenId ? `/api/public/v1/imagenes/${imagenId}` : null);
+
 export type ErrorPublico = { error: { codigo: "INVALIDO" | "NO_DISPONIBLE" | "CONFLICTO_IDEMPOTENCIA" | "LIMITE" | "NO_ENCONTRADO" | "INTERNO"; mensaje: string } };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

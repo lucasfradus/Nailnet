@@ -1,6 +1,6 @@
 # Cola durable de trabajos (outbox) · 2026-10-05
 
-Implementa la parte de cola de F04. Migración `202610050012_jobs`. Lógica en `packages/database/src/jobs.ts`; el worker solo la conecta (`apps/worker`). Es la base para los emails (P03), el webhook de Mercado Pago (R04) y Facturante (M02). El staging de F04 sigue pendiente.
+Implementa la parte de cola de F04. Migración `202610050012_jobs`. Lógica en `packages/database/src/jobs.ts`; el worker solo la conecta (`apps/worker`). Es la base para los emails (P03), el webhook de Mercado Pago (R04) y Facturante (M02). El staging de F04 está en [22-despliegue-railway.md](22-despliegue-railway.md).
 
 ## Modelo
 

@@ -108,9 +108,23 @@ Los límites de intentos (login, recuperación, reservas del portal) dependen de
 - **Emails (P03):** sin proveedor, la recuperación de contraseña en producción la gestiona un administrador.
 - **Aplicar desde CI:** el action `railwayapp/config` puede planificar en cada PR y aplicar al mergear. Requiere un token de proyecto (`RAILWAY_TOKEN`) y queda para cuando el IaC esté probado contra el proyecto real.
 
+## Staging desplegado
+
+Proyecto `Nailnet`, ambiente `staging`, desplegado desde `main` el 2026-10-06.
+
+- Backoffice: https://backoffice-staging-d26b.up.railway.app
+- Portal: https://booking-staging-d764.up.railway.app
+
+Verificado el 2026-10-12:
+- `/api/health` responde `ok`, y `/login` y el portal dan 200;
+- `GET /api/public/v1/organizaciones/demo/terminos` devuelve los términos del seed demo;
+- `..%2f` en el portal da 404;
+- el worker completa la limpieza cada hora, sin fallidos;
+- los cuatro servicios están online, sin deploys fallidos en la última semana.
+
 ## Verificación hecha
 
-- **IaC:** `.railway/railway.ts` se evaluó con el SDK (`railway@3.13.0`) para `staging` y `production`: tres servicios y Postgres 18, con las diferencias esperadas de pre-deploy y variables. No se aplicó a ningún proyecto.
+- **IaC:** `.railway/railway.ts` se evaluó con el SDK (`railway@3.13.0`) para `staging` y `production`: tres servicios y Postgres 18, con las diferencias esperadas de pre-deploy y variables. Después se aplicó al ambiente `staging` (ver arriba).
 - **Portal (`servidor.mjs`) con el build real:**
   - `/` y rutas de la SPA → `index.html` con `no-cache`;
   - `assets/` → caché inmutable;

@@ -25,6 +25,11 @@ export function cabeceras(request: Request, extra: Record<string, string> = {}):
     ...extra,
   };
 }
+/** Origen del portal para los retornos desde Mercado Pago. Sin portal configurado no hay a dónde volver. */
+export function urlPortal() {
+  if (!ORIGEN_PORTAL) throw new Error("Falta PORTAL_ORIGIN");
+  return ORIGEN_PORTAL;
+}
 export const opciones = (request: Request) => new NextResponse(null, { status: 204, headers: cabeceras(request) });
 export const json = (request: Request, cuerpo: unknown, status = 200, extra: Record<string, string> = {}) => NextResponse.json(cuerpo, { status, headers: cabeceras(request, extra) });
 

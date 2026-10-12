@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 const config: NextConfig = {
-  transpilePackages: ["@nailnet/contracts", "@nailnet/database", "@nailnet/domain"],
+  transpilePackages: ["@nailnet/contracts", "@nailnet/database", "@nailnet/domain", "@nailnet/integrations"],
   serverExternalPackages: ["@prisma/adapter-pg", "pg"],
   poweredByHeader: false,
   // Fotos de servicios y profesionales (8 MB de imagen más el resto del formulario).

@@ -10,7 +10,7 @@ Las propuestas siguen pendientes salvo donde se registra una confirmación expl�
 | D4 | Retención | Confirmado el 2026-10-01: 15 minutos por defecto, sin extensión por reintento; configurable por organización/sede (`retencionMinutos`) | Resuelto |
 | D5 | Cancelación/reprogramación | Pendiente (2026-10-01: «lo definimos después»). Se implementan cancelar y reprogramar sin reembolso automático; devoluciones manuales hasta definir horas y porcentaje | Reembolsos automáticos |
 | D6 | Reservas de recepción | Confirmado el 2026-10-01: configurable por sede, por defecto confirma directo sin seña; la sede puede exigir seña por Mercado Pago | Resuelto |
-| D7 | Reembolsos | Propuesta: aprobación manual por rol autorizado, ejecución por sistema y seguimiento; definir pago tardío | Circuito financiero |
+| D7 | Reembolsos | Propuesta: aprobación manual por rol autorizado, ejecución por sistema y seguimiento. Pago tardío confirmado el 2026-10-12: si el horario sigue libre se confirma; si no, el pago queda a devolver con revisión manual (ver 23-pagos-mercadopago.md) | Circuito financiero; pago tardío resuelto |
 | D8 | Cuenta receptora y emisor | Confirmado: cada sede tiene sus propias cuentas de proveedores. Varias sedes pueden usar el mismo CUIT, con puntos de venta diferentes | Resuelto; credenciales pendientes |
 | D9 | Facturación | ¿Cada cobro, venta completada, manual o posterior? Definir tratamiento de anticipo/saldo con responsable contable | ComprobanteAplicacion y disparador |
 | D10 | Comisiones | Propuesta: servicios atendidos y totalmente cobrados, después de descuento, sin productos/propinas, mensual. Confirmar bruto/neto impositivo y porcentaje | Devengamiento y liquidación |

@@ -74,6 +74,10 @@ export default defineRailway((ctx) => {
       DATABASE_URL: db.env.DATABASE_URL,
       // Railway llega al healthcheck por la red del contenedor; localmente el default sigue siendo 127.0.0.1.
       HOST: "0.0.0.0",
+      // R04: el worker consulta pagos con las credenciales de cada sede. Mismo llavero que el
+      // backoffice, por referencia: se carga una sola vez y nunca se copia.
+      NAILNET_CLAVES_CIFRADO: "${{backoffice.NAILNET_CLAVES_CIFRADO}}",
+      NAILNET_CLAVE_ACTIVA: "${{backoffice.NAILNET_CLAVE_ACTIVA}}",
     },
   });
 

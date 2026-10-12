@@ -22,6 +22,7 @@
     "db:migrate": "npm run migrate -w @nailnet/database",
     "db:seed": "npm run seed -w @nailnet/database",
     "test:domain": "npm run test -w @nailnet/domain",
+    "test:integrations": "npm run test -w @nailnet/integrations",
     "test:database": "node scripts/test-database.mjs"
   },
   "devDependencies": {

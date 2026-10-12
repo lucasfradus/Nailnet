@@ -16,6 +16,7 @@
     "./reservas": "./src/reservas.ts",
     "./publico": "./src/publico.ts",
     "./jobs": "./src/jobs.ts",
+    "./pagos": "./src/pagos.ts",
     "./imagenes": "./src/imagenes.ts"
   },
   "scripts": {

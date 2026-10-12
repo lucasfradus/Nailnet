@@ -69,6 +69,7 @@ Las variables `VITE_` terminan en el bundle público: nunca poner secretos.
 | `DATABASE_URL` | Referencia a `Postgres.DATABASE_URL` |
 | `HOST` | `0.0.0.0` |
 | `WORKER_INTERVALO_SEGUNDOS`, `WORKER_JOBS_SEGUNDOS` | Opcionales (30 y 5) |
+| `NAILNET_CLAVES_CIFRADO`, `NAILNET_CLAVE_ACTIVA` | Referencias a las del backoffice (`${{backoffice.…}}`). Para consultar pagos con las credenciales de cada sede (R04) |
 
 ## IP del cliente
 

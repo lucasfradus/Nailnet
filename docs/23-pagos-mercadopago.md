@@ -1,0 +1,102 @@
+# Seña con Mercado Pago · 2026-10-12
+
+Implementa R04 (Checkout Pro y webhook). Migración `202610120013_pagos`. Lógica en `packages/database/src/pagos.ts`; el cliente HTTP en `packages/integrations/src/mercadopago.ts`; la firma del webhook en `packages/domain/src/mercadopago.ts`.
+
+**Estado:** probado contra una pasarela falsa y Postgres real. **Falta validarlo en el sandbox de Mercado Pago**: no hay credenciales de prueba (D03). Hasta entonces, R04 y F05 no están terminados.
+
+## Decisiones (2026-10-12)
+
+- **Checkout Pro**, no Bricks: Mercado Pago muestra el formulario de pago y nosotros nunca tocamos datos de tarjeta.
+- **Pago tardío** (llega con la retención vencida): se confirma si el horario sigue libre; si no, el pago queda `A_DEVOLVER` para revisión manual. Es parte de D7; el resto de la política de reembolsos sigue pendiente.
+
+## Recorrido
+
+1. El portal muestra «Pagar seña» mientras la reserva está `PENDIENTE_PAGO` y la retención vigente.
+2. `POST /api/public/v1/reservas/actual/pago` (token en `Authorization`) crea un `CheckoutPago` y la preferencia, y devuelve la URL de Mercado Pago.
+   - Una preferencia por retención: varios clics devuelven la misma.
+   - Si la llamada a Mercado Pago falla, el próximo intento reusa el id del checkout como clave de idempotencia.
+3. El cliente paga en Mercado Pago y vuelve a `/?pago=retorno&payment_id=…`.
+4. Mercado Pago notifica a `POST /api/webhooks/mercadopago/{sedeId}`. Se valida la firma con la clave secreta de la sede y se encola un trabajo `pagos.mercadopago`. Se responde enseguida.
+5. El worker consulta el pago a la API con el access token de la sede y lo aplica (ver abajo).
+6. Al volver, el portal llama a `POST …/reservas/actual/pago/verificar` con el `payment_id`. Encola la misma consulta y adelanta la confirmación si la notificación se demora. En local, sin webhook, es la única vía. Después consulta el estado cada 3 s durante un minuto.
+
+**El retorno y el cuerpo de la notificación nunca confirman nada.** El estado sale siempre de `GET /v1/payments/{id}`. Un retorno manipulado o una notificación inventada solo hacen que consultemos la API.
+
+## Preferencia
+
+- `external_reference` = id del `CheckoutPago`. Así un pago se vincula a su reserva.
+- `binary_mode`: el pago se aprueba o se rechaza en el momento, sin quedar pendiente.
+- Se excluyen los pagos en efectivo (`ticket`, `atm`), que se acreditan días después de vencida la retención. Una sola cuota.
+- Vence junto con la retención (`expiration_date_to`).
+- `notification_url` solo con HTTPS; en local no se envía.
+- Con credenciales de prueba se usa `sandbox_init_point` si la API lo devuelve.
+
+## Aplicación del pago
+
+| Pago en Mercado Pago | Reserva | Resultado |
+|---|---|---|
+| `approved` | `PENDIENTE_PAGO` vigente | Reserva `CONFIRMADA`, pago `APROBADO`, evento `CONFIRMADA` con `origen: mercadopago` |
+| `approved` | Retención vencida (`EXPIRADA` o pendiente vencida) y horario libre | Igual, con `tardio: true`. Los recursos se vuelven a asignar con el motor |
+| `approved` | Vencida y horario ocupado | Pago `A_DEVOLVER`; la reserva no cambia |
+| `approved` | `CANCELADA` | `A_DEVOLVER` |
+| `approved` | Ya tenía otro pago aprobado | `A_DEVOLVER` (pago duplicado) |
+| `approved` | `CONFIRMADA` sin pago (p. ej. por recepción) | `APROBADO`, se registra contra el turno |
+| `approved` con cuenta, moneda o monto distintos | Cualquiera | `A_DEVOLVER`; nunca confirma |
+| `rejected` / `cancelled` | Sin cambios | `RECHAZADO`; el cliente puede reintentar mientras dure la retención |
+| `pending` / `in_process` / desconocido | Sin cambios | `EN_PROCESO`; nunca confirma |
+| `refunded` / `charged_back` | Sin cambios | `REEMBOLSADO`. El turno lo resuelve una persona (M01) |
+
+- **Idempotencia:** el pago se identifica por su id externo. Procesarlo otra vez no hace nada. Un pago `APROBADO` o `A_DEVOLVER` solo puede pasar a `REEMBOLSADO`. Un índice único parcial impide dos pagos `APROBADO` para la misma reserva.
+- **Concurrencia:** se bloquean los profesionales y recursos (mismo protocolo que el doc 16) y después la fila de la reserva. Eso serializa con el worker que vence retenciones, con otra notificación del mismo pago y con una reserva nueva sobre el mismo horario. Probado con cuatro notificaciones simultáneas: una sola confirmación.
+- **Pago tardío:** el horario se revalida con el motor y las reglas de recepción, para los mismos profesionales e intervalos. Si el servicio cambió de duración o el turno ya empezó, no se confirma solo.
+- **Pagos ajenos:** un pago sin referencia, o con la referencia de un checkout de otra sede, se ignora (`AJENO`). Puede ser otra venta de la misma cuenta.
+
+## Webhook
+
+- **URL:** `/api/webhooks/mercadopago/{sedeId}`. La sede identifica qué clave secreta y qué access token usar (D8: cuentas propias por sede).
+- **Firma:** `x-signature: ts=…,v1=…`. Manifiesto `id:{data.id};request-id:{x-request-id};ts:{ts};`, HMAC-SHA256 en hexadecimal ([documentación](https://www.mercadopago.com.ar/developers/es/docs/your-integrations/notifications/webhooks)).
+- **Respuestas:**
+  - 200: encolado o ignorado (otro tipo de evento);
+  - 401: firma inválida, falta `x-request-id` o la sede no tiene credenciales. Las tres son iguales a propósito, para no revelar qué sedes cobran online;
+  - 500: no se pudo encolar; Mercado Pago reintenta.
+- **Deduplicación:** el trabajo tiene clave `mp:{ambiente}:{pagoId}:req:{x-request-id}`. Un reenvío de la misma notificación no duplica la consulta.
+- **Errores del worker:** 400, 401 y 403 (credenciales o pedido inválidos) pasan a `FALLIDO` para revisión (M04). Todo lo demás se reintenta con espera creciente, incluido el 404: el pago puede no ser consultable todavía segundos después de la notificación.
+- **Rearme:** si llega otra vez una notificación cuyo trabajo había quedado `FALLIDO` (por ejemplo, después de corregir las credenciales), el trabajo vuelve a `PENDIENTE`. La deduplicación nunca deja un pago sin aplicar para siempre.
+- **Retorno del portal:** como mucho 5 ids de pago distintos por reserva (429). Así nadie usa la cola, ni la cuota de la API de la sede, como canal de abuso.
+
+## Ambiente
+
+`NAILNET_AMBIENTE=produccion` usa las credenciales `PRODUCCION` de la sede; cualquier otro valor (staging, local) usa las `PRUEBA`. El worker ahora descifra credenciales: en Railway recibe `NAILNET_CLAVES_CIFRADO` y `NAILNET_CLAVE_ACTIVA` por referencia a las del backoffice (`.railway/railway.ts`).
+
+## Pendiente
+
+- **Sandbox:** cargar credenciales de prueba en la sede demo de staging y recorrer:
+  - pago aprobado, rechazado y tardío;
+  - notificación real con firma, para confirmar el formato del manifiesto y si `ts` llega en segundos o milisegundos;
+  - retorno y `sandbox_init_point` frente a `init_point` con usuarios de prueba.
+
+  Ahí se cierran F05 y R04.
+- **Conciliación periódica (M01):** si no llegan ni la notificación ni el retorno, un pago aprobado queda sin aplicar hasta que alguien lo revise. Falta una tarea que busque por `external_reference` los checkouts de retenciones recientes.
+- **Ventana de carrera:** un pago aprobado segundos antes de vencer, pero notificado después de que otra persona tomó el horario, queda `A_DEVOLVER` aunque se pagó en término. La preferencia vence con la retención, así que la ventana es chica; se revisa con datos reales.
+- **Bandeja de pagos a devolver (M04)** y devolución desde el sistema (M01, D7). Hoy los `A_DEVOLVER` solo se ven en la base.
+- **Cancelar o reprogramar un turno pagado** no toca su `Pago`: sigue `APROBADO` contra la reserva original. La devolución o el traspaso de la seña son manuales hasta D5/M01.
+- **Reservas de recepción con seña (D6):** el link de pago es solo para el portal. Recepción todavía no puede generar uno para enviar al cliente.
+
+## Verificación
+
+- `npm run test:domain`: firma (datos alterados, cabeceras mal formadas, partes ausentes, id alfanumérico) y traducción de estados.
+- `npm run test -w @nailnet/integrations`: preferencia (cuerpo, idempotencia, sandbox o producción), clasificación de errores sin exponer el token y consulta de pago.
+- `npm run test:database`: 11 casos de pagos sobre Postgres:
+  - sin credenciales;
+  - preferencia reutilizada;
+  - rechazo y reintento;
+  - confirmación idempotente;
+  - pago duplicado;
+  - reembolso;
+  - monto, moneda o cuenta distintos;
+  - pago tardío libre y ocupado;
+  - reserva cancelada;
+  - notificaciones concurrentes;
+  - pagos ajenos;
+  - deduplicación de la cola.
+- `npm run check` y smoke.

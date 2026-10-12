@@ -22,8 +22,10 @@ export type ReservaPublicaRespuesta = {
   /** Token opaco para consultar la reserva. Se muestra una sola vez; guardarlo del lado del cliente. */
   token: string;
 };
+/** Último pago online de la seña, si hubo alguno (R04). A_DEVOLVER: cobrado sin turno que confirmar. */
+export type EstadoPagoPublico = "EN_PROCESO" | "APROBADO" | "RECHAZADO" | "A_DEVOLVER" | "REEMBOLSADO";
 export type ReservaPublicaEstado = {
-  estado: EstadoReservaPublico; expiraEn: string | null; sede: string; sena: string;
+  estado: EstadoReservaPublico; expiraEn: string | null; sede: string; sena: string; pago: EstadoPagoPublico | null;
   items: { servicio: string; imagenUrl: string | null; profesional: string; fotoUrl: string | null; inicio: string; fin: string }[];
 };
 /** Ruta pública de una imagen, relativa al origen de la API. */

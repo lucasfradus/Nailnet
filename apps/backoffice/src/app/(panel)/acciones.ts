@@ -141,7 +141,9 @@ const datosCliente = (f: FormData) => ({
 export async function accionCrearCliente(_: Estado, form: FormData) {
   let id = "";
   const r = await ejecutar("/clientes", async (actor, org) => { id = (await crearCliente(db(), actor, org, texto(form, "sedeId"), datosCliente(form))).id; }, "Cliente creado");
-  if (r?.ok && id) redirect(`/clientes/${id}`);
+  // Desde «Nuevo turno» se vuelve al flujo con el cliente ya elegido. Solo a esa ruta: no es un redirect abierto.
+  const volver = texto(form, "volver");
+  if (r?.ok && id) redirect(volver.startsWith("/agenda/nuevo?") ? `${volver}&cliente=${id}` : `/clientes/${id}`);
   return r;
 }
 export async function accionVincularCliente(_: Estado, form: FormData) {

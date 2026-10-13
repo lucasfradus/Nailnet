@@ -57,7 +57,7 @@ Para cargarlo en una base Docker existente: `docker compose run --rm setup` (o `
 
 ## Pendiente
 
-- **Seña:** el botón «Reservar» deja la reserva `PENDIENTE_PAGO`; el pago por Mercado Pago y su retorno llegan con R04. La pantalla de estado ya informa la retención y consulta el backend (base para P02).
+- **Seña:** el botón «Reservar» deja la reserva `PENDIENTE_PAGO`; la pantalla de estado ofrece «Pagar seña» con Mercado Pago y, al volver, consulta el backend hasta que se acredita (R04, ver [23-pagos-mercadopago.md](23-pagos-mercadopago.md)).
 - **Varios servicios:** el contrato y el backend admiten hasta 4 encadenados (D15); el portal ofrece uno por reserva.
 - **Términos al reservar:** se acepta la versión vigente al enviar. Si se publica una nueva entre la lectura y el envío, se registra la nueva; evaluar enviar la versión leída si el contenido legal lo exige.
 - **Captcha:** sin implementar; evaluar con tráfico real (doc 18).

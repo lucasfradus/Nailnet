@@ -98,6 +98,17 @@ enum Ambiente {
   PRODUCCION
 }
 
+// R04. Estado de un pago del proveedor, tal como lo aplicamos a la reserva.
+enum EstadoPago {
+  EN_PROCESO
+  APROBADO
+  RECHAZADO
+  // Cobrado pero sin turno que confirmar (horario ocupado, reserva cancelada, duplicado o monto distinto).
+  // La devolución es manual hasta M01/D7.
+  A_DEVOLVER
+  REEMBOLSADO
+}
+
 model Organizacion {
   id              String                     @id @default(uuid()) @db.Uuid
   nombre          String
@@ -715,6 +726,8 @@ model Reserva {
   items          ReservaItem[]
   eventos        ReservaEvento[]
   tokens         TokenReserva[]
+  checkouts      CheckoutPago[]
+  pagos          Pago[]
 
   @@unique([organizacionId, id])
   @@index([sedeId, estado])
@@ -870,4 +883,53 @@ model Job {
 
   @@index([estado, proximoIntento])
   @@index([estado, leaseHasta])
+}
+
+// R04. Preferencia de Checkout Pro creada para cobrar la seña de una reserva. Su id es la
+// external_reference en Mercado Pago: así un pago se vincula a la reserva sin confiar en el retorno.
+model CheckoutPago {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizacionId String    @db.Uuid
+  sedeId         String    @db.Uuid
+  reservaId      String    @db.Uuid
+  proveedor      Proveedor
+  ambiente       Ambiente
+  monto          Decimal   @db.Decimal(12, 2)
+  preferenciaId  String?
+  url            String?
+  expiraEn       DateTime
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  reserva        Reserva   @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+  pagos          Pago[]
+
+  @@unique([organizacionId, id])
+  @@index([reservaId])
+}
+
+// R04. Un pago del proveedor (puede haber varios por checkout: rechazado y después aprobado, o duplicado).
+// Se identifica por su id externo: notificaciones repetidas actualizan la misma fila.
+model Pago {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  sedeId         String       @db.Uuid
+  reservaId      String       @db.Uuid
+  checkoutId     String       @db.Uuid
+  proveedor      Proveedor
+  ambiente       Ambiente
+  externoId      String
+  monto          Decimal      @db.Decimal(12, 2)
+  moneda         String
+  estado         EstadoPago
+  estadoExterno  String
+  detalleExterno String?
+  motivo         String?
+  aprobadoEn     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  reserva        Reserva      @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+  checkout       CheckoutPago @relation(fields: [organizacionId, checkoutId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([proveedor, ambiente, externoId])
+  @@index([reservaId])
 }

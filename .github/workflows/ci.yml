@@ -13,5 +13,6 @@ jobs:
       - run: npm run db:generate
       - run: npm run check
       - run: npm run test:domain
+      - run: npm run test:integrations
       - run: npm run test:database
       - run: node scripts/smoke.mjs

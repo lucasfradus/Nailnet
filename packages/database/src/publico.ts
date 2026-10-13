@@ -180,7 +180,7 @@ export async function consultarReservaPublica(db: Database, token: string | null
   if (!tokenConFormato(token)) throw new AccesoDenegado();
   const t = await db.tokenReserva.findFirst({
     where: { tokenHash: hashToken(token), revocadoEn: null, expiraEn: { gt: ahora } },
-    include: { reserva: { include: { sede: { select: { nombre: true } }, items: { orderBy: { posicion: "asc" }, include: { servicio: { select: { nombre: true, imagenId: true } }, profesional: { select: { nombre: true, fotoId: true } } } } } } },
+    include: { reserva: { include: { sede: { select: { nombre: true } }, pagos: { orderBy: { updatedAt: "desc" }, take: 1, select: { estado: true } }, items:{ orderBy: { posicion: "asc" }, include: { servicio: { select: { nombre: true, imagenId: true } }, profesional: { select: { nombre: true, fotoId: true } } } } } } },
   });
   if (!t) throw new AccesoDenegado();
   const r = t.reserva;
@@ -188,6 +188,7 @@ export async function consultarReservaPublica(db: Database, token: string | null
   return {
     estado: vencida ? "EXPIRADA" : r.estado, expiraEn: r.expiraEn?.toISOString() ?? null, sede: r.sede.nombre,
     sena: importe(r.items.reduce((s, i) => s + (aCentavos(i.sena?.toFixed(2) ?? "0") ?? 0n), 0n)),
+    pago: r.pagos[0]?.estado ?? null,
     items: r.items.map(i => ({ servicio: i.servicio.nombre, imagenUrl: rutaImagen(i.servicio.imagenId), profesional: i.profesional.nombre, fotoUrl: rutaImagen(i.profesional.fotoId), inicio: i.inicio.toISOString(), fin: i.fin.toISOString() })),
   };
 }

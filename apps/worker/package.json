@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@nailnet/contracts": "0.1.0",
-    "@nailnet/database": "0.1.0"
+    "@nailnet/database": "0.1.0",
+    "@nailnet/integrations": "0.1.0"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

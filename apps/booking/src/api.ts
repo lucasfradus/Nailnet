@@ -43,6 +43,10 @@ export const api = {
     pedir<ReservaPublicaRespuesta>("/reservas", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": claveIdempotencia }, body: JSON.stringify(solicitud) }),
   /** El token va en Authorization, nunca en la URL (logs, Referer). */
   reservaActual: (token: string, signal?: AbortSignal) => pedir<ReservaPublicaEstado>("/reservas/actual", { headers: { Authorization: `Bearer ${token}` } }, signal),
+  /** Link de Mercado Pago para pagar la seña (R04). */
+  pagarSena: (token: string) => pedir<{ url: string }>("/reservas/actual/pago", { method: "POST", headers: { Authorization: `Bearer ${token}` } }),
+  /** Al volver de Mercado Pago: pide al backend que consulte el pago. No confirma nada por sí mismo. */
+  verificarPago: (token: string, pagoId: string) => pedir<{ ok: true }>("/reservas/actual/pago/verificar", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ pagoId }) }),
 };
 
 export type Carga<T> = { datos?: T; error?: ErrorApi; cargando: boolean; recargar: () => void };

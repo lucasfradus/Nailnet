@@ -17,8 +17,8 @@ Calendario relativo, pendiente de confirmar días corridos/hábiles, equipo y ta
 | F01 | Monorepo, Next, Vite, TypeScript, Prisma/PostgreSQL | Builds independientes, lint/typecheck y CI; dependencias fijadas; no secretos en bundle |
 | F02 | Organización, franquiciado, sede, usuarios | Migración reproducible y seed sintético; relaciones entre organizaciones inválidas rechazadas |
 | F03 | Login, logout y recuperación · hecho 2026-09-30, ver 09-autenticacion.md | Hash de contraseña, token de un uso, límites de intentos, usuario inactivo rechazado; sin rol implícito |
-| F04 | Staging, worker y outbox base · cola y outbox hechos 2026-10-05, ver 21-cola-trabajos.md; configuración de Railway 2026-10-06, ver 22-despliegue-railway.md (falta aplicarla al proyecto) | Job persiste/reanuda tras reinicio; health checks y documentación de variables |
-| F05 | Prueba temprana MP/Facturante | Contratos y credenciales de prueba funcionan; documentar deduplicación/consulta de resultados ambiguos |
+| F04 | Staging, worker y outbox base · cola y outbox hechos 2026-10-05, ver 21-cola-trabajos.md; staging en Railway desplegado 2026-10-06 y verificado 2026-10-12, ver 22-despliegue-railway.md | Job persiste/reanuda tras reinicio; health checks y documentación de variables |
+| F05 | Prueba temprana MP/Facturante · cliente MP listo 2026-10-12 (ver 23-pagos-mercadopago.md); bloqueado por credenciales de prueba (D03) | Contratos y credenciales de prueba funcionan; documentar deduplicación/consulta de resultados ambiguos |
 
 Dependencias: D01–D03. Si falla el acceso a proveedores, completar base local y elevar ese bloqueo del calendario, sin simular integración como terminada.
 
@@ -49,7 +49,7 @@ Dependencias: A01–A03. C05 es una puerta de salida de fase, no una prueba dife
 | R01 | Agenda y reserva manual · hecho 2026-10-01, ver 17-agenda-reserva-manual.md | Día/semana, filtros, reserva por motor común; sin sobreocupación |
 | R02 | Retenciones y vencimientos · hecho 2026-10-01 (vencimiento por worker; carrera con aprobación se cierra en R04), ver 17-agenda-reserva-manual.md | Worker reiniciado no deja retenciones perpetuas; carrera vencimiento/aprobación resuelta |
 | R03 | Cancelar/reprogramar/atender/ausente · hecho 2026-10-01 (sin reembolsos automáticos: D5 pendiente), ver 17-agenda-reserva-manual.md | Historial conservado; reprogramación atómica y política congelada |
-| R04 | Checkout MP y webhook en staging | Firma, cuenta/monto/moneda/referencia; aprobación idempotente; retorno manipulado no confirma |
+| R04 | Checkout MP y webhook en staging · implementado 2026-10-12 con pasarela falsa; falta validar en sandbox (sin credenciales de prueba), ver 23-pagos-mercadopago.md | Firma, cuenta/monto/moneda/referencia; aprobación idempotente; retorno manipulado no confirma |
 | R05 | Contrato público y protección de invitado · hecho 2026-10-01, ver 18-api-publica.md | Validación backend, claves idempotentes, límites contra acaparamiento, tokens acotados |
 
 Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación antes de construir todo el portal.
@@ -58,7 +58,7 @@ Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación ante
 
 | ID | Entrega | Criterio de aceptación |
 |---|---|---|
-| P01 | Portal separado responsive · hecho 2026-10-05 (seña pendiente de R04), ver 19-portal.md | Sede → servicio → profesional → horario → datos → seña → confirmación |
+| P01 | Portal separado responsive · hecho 2026-10-05; botón de seña con R04 (2026-10-12), ver 19-portal.md y 23-pagos-mercadopago.md | Sede → servicio → profesional → horario → datos → seña → confirmación |
 | P02 | Estado real de reserva | Consulta backend tras retorno; UX para pendiente, conflicto, rechazo y expiración |
 | P03 | Emails Resend | Confirmación/cancelación/reprogramación y recuperación; job reintentable y evidencia de entrega/resultado |
 | P04 | Cancelación por enlace y revisión de reembolso | Token válido y política aplicados; devolución no se marca completa por solicitud enviada |

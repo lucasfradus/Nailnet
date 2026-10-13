@@ -11,8 +11,9 @@ export const COOKIE_SEDE = "nailnet_sede";
 
 /**
  * Contexto del panel. Organización y sede elegidas son solo filtros visuales: se validan contra el
- * alcance en cada request y un valor que ya no corresponde se ignora (vuelve a «todas mis sedes»),
- * nunca amplía resultados. Cada operación vuelve a autorizar en el repositorio.
+ * alcance en cada request y un valor que ya no corresponde se ignora, nunca amplía resultados. Cada
+ * operación vuelve a autorizar en el repositorio. Siempre hay una sede elegida si el usuario tiene
+ * alguna: sin cookie válida se usa la primera (activas, por nombre), y todas las pantallas filtran por ella.
  */
 export const contextoPanel = cache(async () => {
   const sesion = await requerirSesion();
@@ -25,7 +26,7 @@ export const contextoPanel = cache(async () => {
 
   const actor = await asignacionesActor(db(), usuarioId, organizacion.id);
   const sedes = await listarSedes(db(), usuarioId, organizacion.id).catch(e => { if (e instanceof AccesoDenegado) return []; throw e; });
-  const sede = sedes.find(s => s.id === almacen.get(COOKIE_SEDE)?.value) ?? null;
+  const sede = sedes.find(s => s.id === almacen.get(COOKIE_SEDE)?.value) ?? sedes[0] ?? null;
   const puede = {
     verSedes: actor.some(a => tienePermiso(a, "sede:leer")),
     editarSedes: actor.some(a => tienePermiso(a, "sede:administrar")),

@@ -5,22 +5,18 @@ import { listarFranquiciados, listarSedes } from "@nailnet/database/access";
 import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
-import { ZONAS } from "@/lib/etiquetas";
-import { accionActualizarSede, accionCrearFranquiciado, accionCrearSede, accionEstadoSede } from "../acciones";
+import { SelectorZona } from "@/components/zona";
+import { accionCrearFranquiciado, accionCrearSede } from "../acciones";
 
 export const metadata: Metadata = { title: "Sedes · Sicurella" };
-
-function SelectorZona({ valor }: { valor?: string }) {
-  const zonas = valor && !ZONAS.includes(valor) ? [valor, ...ZONAS] : ZONAS;
-  return <select name="timezone" defaultValue={valor ?? ZONAS[0]} aria-label="Zona horaria">{zonas.map(z => <option key={z} value={z}>{z.replace(/_/g, " ")}</option>)}</select>;
-}
 
 export default async function Sedes() {
   const { sesion, organizacion, sede, puede } = await requerirOrganizacion();
   if (!puede.verSedes) notFound();
   const actorId = sesion.usuario.id;
   const todas = await listarSedes(db(), actorId, organizacion.id, { incluirInactivas: puede.crearSedes });
-  const sedes = sede ? todas.filter(s => s.id === sede.id) : todas;
+  // Las inactivas no se pueden elegir arriba: se listan siempre para poder entrar a reactivarlas.
+  const sedes = sede ? todas.filter(s => s.id === sede.id || !s.activo) : todas;
   const franquiciados = puede.crearSedes ? await listarFranquiciados(db(), actorId, organizacion.id) : [];
   const activos = franquiciados.filter(f => f.activo && puede.crearSedeEn(f.id));
 
@@ -29,16 +25,7 @@ export default async function Sedes() {
     <div className="tabla">
       {sedes.map(s => <article key={s.id} className={s.activo ? "fila" : "fila inactiva"}>
         <div className="fila-cabecera"><h2><Link href={`/sedes/${s.id}`}>{s.nombre}</Link></h2><span className="tag">{s.activo ? "Activa" : "Inactiva"}</span></div>
-        <p>{s.franquiciado.nombre} · {s.timezone.replace(/_/g, " ")}</p>
-        {puede.editarSedes && s.activo && <Formulario accion={accionActualizarSede} boton="Guardar" className="en-linea">
-          <input type="hidden" name="sedeId" value={s.id} />
-          <input name="nombre" defaultValue={s.nombre} required maxLength={120} aria-label="Nombre" />
-          <SelectorZona valor={s.timezone} />
-        </Formulario>}
-        {puede.crearSedeEn(s.franquiciadoId) && <Formulario accion={accionEstadoSede} boton={s.activo ? "Desactivar" : "Reactivar"} className="en-linea" secundario
-          confirmar={s.activo ? `¿Desactivar ${s.nombre}? Deja de aparecer en la operación diaria.` : undefined}>
-          <input type="hidden" name="sedeId" value={s.id} /><input type="hidden" name="activo" value={String(!s.activo)} />
-        </Formulario>}
+        <p>{s.franquiciado.nombre} · {s.timezone.replace(/_/g, " ")} · <Link href={`/sedes/${s.id}`}>Ver configuración</Link></p>
       </article>)}
       {!sedes.length && <p>No hay sedes en tu alcance.</p>}
     </div>

@@ -1,5 +1,6 @@
 import { AccesoDenegado, cubreSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type Permiso } from "@nailnet/domain";
 import { PARAMETROS, resolverConfiguracion, validarValores, type Parametro, type ValoresConfiguracion } from "@nailnet/domain/configuracion";
+import { normalizarCuit, puntoVentaValido } from "@nailnet/domain/fiscal";
 import { ESQUEMAS, cifrar, descifrar, llaveroDesde, pista, validarCredencial, versionDe, type Llavero, type Proveedor } from "@nailnet/domain/secretos";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
@@ -173,4 +174,94 @@ export async function recifrarCredenciales(db: Database, llavero: Llavero = llav
     await db.credencialProveedor.updateMany({ where: { id: f.id, secretoCifrado: f.secretoCifrado }, data: { secretoCifrado: nuevo } });
   }
   return filas.length;
+}
+
+/**
+ * Qué integraciones tiene cargadas la sede, sin datos: para el resumen de la sede, visible con
+ * solo leerla. El detalle (pistas, datos públicos) sigue exigiendo sede:credenciales.
+ */
+export async function estadoIntegraciones(db: Database, actorId: string, organizacionId: string, sedeId: string) {
+  await exigirSobreSede(db, actorId, organizacionId, sedeId, "sede:leer");
+  const [credenciales, fiscal] = await Promise.all([
+    db.credencialProveedor.findMany({ where: { organizacionId, sedeId }, select: { proveedor: true, ambiente: true } }),
+    db.configuracionFiscalSede.findMany({ where: { organizacionId, sedeId }, select: { ambiente: true } }),
+  ]);
+  return { credenciales, fiscal: fiscal.map(f => f.ambiente) };
+}
+
+// ─── Identidad fiscal (D8) ────────────────────────────────────────────────────
+
+/**
+ * Emisor y punto de venta de la sede por ambiente. `emisores` son los CUIT que el actor puede
+ * reutilizar: los que ya usan sedes que administra (todos, para el master). No se listan los de otros franquiciados.
+ */
+export async function configuracionFiscal(db: Database, actorId: string, organizacionId: string, sedeId: string) {
+  const { actor, franquiciadoDe } = await exigirSobreSede(db, actorId, organizacionId, sedeId, "sede:leer");
+  const puedeEditar = permitido(actor, "sede:credenciales", sedeId, franquiciadoDe);
+  const filas = await db.configuracionFiscalSede.findMany({ where: { organizacionId, sedeId }, include: { emisorFiscal: { select: { cuit: true, razonSocial: true } } } });
+  let emisores: { cuit: string; razonSocial: string }[] = [];
+  if (puedeEditar) {
+    const organizacional = actor.some(a => tienePermiso(a, "sede:credenciales") && a.alcance === "ORGANIZACION");
+    const sedes = (await db.sede.findMany({ where: { organizacionId }, select: { id: true } })).map(s => s.id).filter(id => permitido(actor, "sede:credenciales", id, franquiciadoDe));
+    emisores = await db.emisorFiscal.findMany({
+      where: { organizacionId, ...(organizacional ? {} : { configuraciones: { some: { sedeId: { in: sedes } } } }) },
+      select: { cuit: true, razonSocial: true }, orderBy: { razonSocial: "asc" },
+    });
+  }
+  const porAmbiente = Object.fromEntries(AMBIENTES.map(a => {
+    const f = filas.find(x => x.ambiente === a);
+    return [a, f ? { cuit: f.emisorFiscal.cuit, razonSocial: f.emisorFiscal.razonSocial, puntoVenta: f.puntoVenta } : null];
+  })) as Record<Ambiente, { cuit: string; razonSocial: string; puntoVenta: number } | null>;
+  return { puedeEditar, porAmbiente, emisores };
+}
+
+/**
+ * Asigna emisor y punto de venta a la sede en un ambiente. El emisor se busca por CUIT dentro de la
+ * organización y se crea si no existe. Su razón social es compartida por todas las sedes que lo usan:
+ * vacía = conservar la registrada; solo el master puede cambiarla y para el resto una distinta es un error.
+ */
+export async function guardarConfiguracionFiscal(db: Database, actorId: string, organizacionId: string, sedeId: string, ambiente: string, entrada: { cuit: string; razonSocial: string; puntoVenta: number }) {
+  if (!AMBIENTES.includes(ambiente as Ambiente)) throw new DatosInvalidos("Ambiente inválido");
+  const cuit = normalizarCuit(entrada.cuit);
+  if (!cuit) throw new DatosInvalidos("CUIT inválido");
+  const pedida = entrada.razonSocial.normalize("NFC").trim().replace(/\s+/g, " ");
+  if (pedida.length > 200) throw new DatosInvalidos("Razón social inválida");
+  if (!puntoVentaValido(entrada.puntoVenta)) throw new DatosInvalidos("El punto de venta es un número entre 1 y 99999");
+  try {
+    await db.$transaction(async tx => {
+      await bloquearOrganizacion(tx, organizacionId);
+      const { actor } = await exigirSobreSede(tx, actorId, organizacionId, sedeId, "sede:credenciales");
+      let emisor = await tx.emisorFiscal.findUnique({ where: { organizacionId_cuit: { organizacionId, cuit } } });
+      const razonSocial = pedida || emisor?.razonSocial;
+      if (!razonSocial) throw new DatosInvalidos("Indicá la razón social del CUIT");
+      if (!emisor) {
+        emisor = await tx.emisorFiscal.create({ data: { organizacionId, cuit, razonSocial } });
+        await auditar(tx, organizacionId, actorId, "fiscal.emisor.crear", "EmisorFiscal", emisor.id, { cuit, razonSocial });
+      } else if (emisor.razonSocial !== razonSocial) {
+        if (!actor.some(a => tienePermiso(a, "organizacion:configurar"))) throw new DatosInvalidos(`Ese CUIT ya está registrado como «${emisor.razonSocial}»`);
+        await tx.emisorFiscal.update({ where: { id: emisor.id }, data: { razonSocial } });
+        await auditar(tx, organizacionId, actorId, "fiscal.emisor.renombrar", "EmisorFiscal", emisor.id, { razonSocial });
+      }
+      const datos = { emisorFiscalId: emisor.id, puntoVenta: entrada.puntoVenta };
+      await tx.configuracionFiscalSede.upsert({
+        where: { organizacionId_sedeId_ambiente: { organizacionId, sedeId, ambiente: ambiente as Ambiente } },
+        create: { organizacionId, sedeId, ambiente: ambiente as Ambiente, ...datos }, update: datos,
+      });
+      await auditar(tx, organizacionId, actorId, "fiscal.sede.guardar", "Sede", sedeId, { ambiente, cuit, puntoVenta: entrada.puntoVenta });
+    });
+  } catch (e) {
+    // El único conflicto posible es (emisor, ambiente, punto de venta): el emisor se resuelve bajo el lock.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new DatosInvalidos("Ese punto de venta ya lo usa otra sede con el mismo CUIT");
+    throw e;
+  }
+}
+
+export async function eliminarConfiguracionFiscal(db: Database, actorId: string, organizacionId: string, sedeId: string, ambiente: string) {
+  if (!AMBIENTES.includes(ambiente as Ambiente)) throw new DatosInvalidos("Ambiente inválido");
+  await db.$transaction(async tx => {
+    await bloquearOrganizacion(tx, organizacionId);
+    await exigirSobreSede(tx, actorId, organizacionId, sedeId, "sede:credenciales");
+    const { count } = await tx.configuracionFiscalSede.deleteMany({ where: { organizacionId, sedeId, ambiente: ambiente as Ambiente } });
+    if (count) await auditar(tx, organizacionId, actorId, "fiscal.sede.eliminar", "Sede", sedeId, { ambiente });
+  });
 }

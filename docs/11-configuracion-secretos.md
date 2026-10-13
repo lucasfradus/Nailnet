@@ -35,6 +35,15 @@ Cada sede tiene sus credenciales por proveedor (Mercado Pago, Facturante) y ambi
 - **Lectura interna:** `leerCredencial` descifra solo para adaptadores de servidor (worker y webhooks). No recibe actor y nunca debe usarse con datos de un formulario.
 - **Redacción:** `auditar()` pasa todo por `redactar()`. Claves con nombres como token, secret, password o key quedan como `[redactado]`, aunque alguien las incluya por error.
 
+## Datos fiscales de la sede
+
+Pestaña *Pagos y facturación* de la ficha de sede. Por ambiente, la sede define el CUIT emisor (`EmisorFiscal`, único por CUIT dentro de la organización) y su punto de venta (`ConfiguracionFiscalSede`).
+
+- **Quién:** el mismo permiso que las credenciales (`sede:credenciales`). Cualquiera que vea la sede ve CUIT, razón social y punto de venta, porque figuran en los comprobantes.
+- **CUIT:** se valida el dígito verificador (`packages/domain/src/fiscal.ts`). Si el CUIT no existe, se crea el emisor con la razón social cargada. Si ya existe, se reutiliza: la razón social vacía conserva la registrada y solo el master puede cambiarla, porque la comparten todas las sedes que usan ese CUIT.
+- **Punto de venta:** entre 1 y 99999, y no se puede repetir con el mismo CUIT y ambiente (lo impide un único en la base).
+- **Sugerencias:** el formulario solo sugiere CUITs que ya usan sedes que el actor administra. No se listan los de otros franquiciados.
+
 ## Claves y rotación
 
 Variables solo de servidor (backoffice y worker; nunca con prefijo `VITE_`):

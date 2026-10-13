@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { AccesoDenegado, type Asignacion } from "@nailnet/domain";
 import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes, zonaHorariaValida } from "@nailnet/database/access";
 import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol } from "@nailnet/database/usuarios";
-import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configurarSenaRecepcion, eliminarCredencial, guardarCredencial } from "@nailnet/database/configuracion";
+import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configurarSenaRecepcion, eliminarConfiguracionFiscal, eliminarCredencial, guardarConfiguracionFiscal, guardarCredencial } from "@nailnet/database/configuracion";
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
 import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
@@ -26,11 +26,12 @@ import type { Estado } from "@/components/formulario";
 const texto = (f: FormData, k: string) => { const v = f.get(k); return typeof v === "string" ? v : ""; };
 const produccion = process.env.NODE_ENV === "production";
 
-async function ejecutar(ruta: string, fn: (actorId: string, organizacionId: string) => Promise<string | void>, exito: string): Promise<Estado> {
+async function ejecutar(rutas: string | string[], fn: (actorId: string, organizacionId: string) => Promise<string | void>, exito: string): Promise<Estado> {
   try {
     const { sesion, organizacion } = await requerirOrganizacion();
     const mensaje = await fn(sesion.usuario.id, organizacion.id);
-    revalidatePath(ruta);
+    // "layout" alcanza también las sub-rutas (p. ej. todas las pestañas de una sede).
+    for (const r of [rutas].flat()) revalidatePath(r, "layout");
     return { ok: mensaje || exito };
   } catch (e) {
     if (e instanceof AccesoDenegado) return { error: "No tenés permiso para esa operación" };
@@ -214,7 +215,8 @@ export async function accionImagenServicio(_: Estado, form: FormData) {
 }
 export async function accionServicioSede(_: Estado, form: FormData) {
   const duracion = entero(form, "duracionMinutos");
-  return ejecutar("/catalogo", (actor, org) => guardarServicioSede(db(), actor, org, texto(form, "sedeId"), texto(form, "servicioId"), {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(["/catalogo", `/sedes/${sedeId}`], (actor, org) => guardarServicioSede(db(), actor, org, sedeId, texto(form, "servicioId"), {
     habilitado: marcado(form, "habilitado"), precio: texto(form, "precio") || null, duracionMinutos: Number.isNaN(duracion) ? null : duracion,
     sena: senaForm(form), reservableOnline: marcado(form, "reservableOnline"),
   }), "Condiciones de la sede guardadas");
@@ -232,8 +234,11 @@ function instante(f: FormData, k: string): Date {
 }
 export async function accionCrearProfesional(_: Estado, form: FormData) {
   let id = "";
-  const r = await ejecutar("/profesionales", async (actor, org) => { id = (await crearProfesional(db(), actor, org, texto(form, "sedeId"), { nombre: texto(form, "nombre"), apellido: texto(form, "apellido") })).id; }, "Profesional creado");
-  if (r?.ok && id) redirect(`/profesionales/${id}`);
+  const sedeId = texto(form, "sedeId");
+  const r = await ejecutar(["/profesionales", `/sedes/${sedeId}`], async (actor, org) => { id = (await crearProfesional(db(), actor, org, sedeId, { nombre: texto(form, "nombre"), apellido: texto(form, "apellido") })).id; }, "Profesional creado");
+  // Desde el equipo de una sede se vuelve a esa pestaña. Solo a esa ruta: no es un redirect abierto.
+  const volver = texto(form, "volver");
+  if (r?.ok && id) redirect(volver === `/sedes/${sedeId}/equipo` ? volver : `/profesionales/${id}`);
   return r;
 }
 export async function accionActualizarProfesional(_: Estado, form: FormData) {
@@ -246,7 +251,8 @@ export async function accionFotoProfesional(_: Estado, form: FormData) {
 }
 export async function accionVincularSedeProfesional(_: Estado, form: FormData) {
   const id = texto(form, "profesionalId");
-  return ejecutar(`/profesionales/${id}`, (actor, org) => vincularSede(db(), actor, org, id, texto(form, "sedeId"), texto(form, "activo") !== "false"), "Sede actualizada");
+  const sedeId = texto(form, "sedeId");
+  return ejecutar([`/profesionales/${id}`, `/sedes/${sedeId}`], (actor, org) => vincularSede(db(), actor, org, id, sedeId, texto(form, "activo") !== "false"), "Sede actualizada");
 }
 export async function accionHabilidades(_: Estado, form: FormData) {
   const id = texto(form, "profesionalId");
@@ -254,7 +260,8 @@ export async function accionHabilidades(_: Estado, form: FormData) {
 }
 export async function accionHorarioProfesional(_: Estado, form: FormData) {
   const id = texto(form, "profesionalId");
-  return ejecutar(`/profesionales/${id}`, (actor, org) => guardarHorarioProfesional(db(), actor, org, id, texto(form, "sedeId"), semanaForm(form)), "Jornada guardada");
+  const sedeId = texto(form, "sedeId");
+  return ejecutar([`/profesionales/${id}`, `/sedes/${sedeId}`], (actor, org) => guardarHorarioProfesional(db(), actor, org, id, sedeId, semanaForm(form)), "Jornada guardada");
 }
 export async function accionCrearBloqueo(_: Estado, form: FormData) {
   const id = texto(form, "profesionalId");
@@ -340,4 +347,16 @@ export async function accionReprogramar(_: Estado, form: FormData) {
   }, "Turno reprogramado");
   if (!ok) return r;
   redirect(`/agenda?${new URLSearchParams({ fecha, ok: "reprogramado" })}`);
+}
+
+// Identidad fiscal de la sede (D8).
+export async function accionGuardarFiscal(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => guardarConfiguracionFiscal(db(), actor, org, sedeId, texto(form, "ambiente"), {
+    cuit: texto(form, "cuit"), razonSocial: texto(form, "razonSocial"), puntoVenta: entero(form, "puntoVenta"),
+  }), "Datos fiscales guardados");
+}
+export async function accionEliminarFiscal(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => eliminarConfiguracionFiscal(db(), actor, org, sedeId, texto(form, "ambiente")), "Datos fiscales quitados");
 }

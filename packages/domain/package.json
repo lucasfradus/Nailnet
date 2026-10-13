@@ -12,7 +12,8 @@
     "./catalogo": "./src/catalogo.ts",
     "./agenda": "./src/agenda.ts",
     "./disponibilidad": "./src/disponibilidad.ts",
-    "./red": "./src/red.ts"
+    "./red": "./src/red.ts",
+    "./fiscal": "./src/fiscal.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

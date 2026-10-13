@@ -5,7 +5,7 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { createDatabase } from "../src/client.ts";
 import { DatosInvalidos } from "../src/access.ts";
 import { crearCategoria, crearSkill, crearTipoRecurso, guardarServicio } from "../src/catalogo.ts";
-import { actualizarProfesional, calendarioSede, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, equipoSede, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, listarProfesionales, obtenerProfesional, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
+import { actualizarProfesional, calendarioSede, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, equipoSede, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, listarProfesionales, obtenerProfesional, ocupacionProfesionales, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
 test("profesionales, jornadas, calendario y recursos", async (t) => {
@@ -37,6 +37,8 @@ test("profesionales, jornadas, calendario y recursos", async (t) => {
     });
 
     await t.test("jornadas: no puede estar en dos sedes a la vez; contiguas valen", async () => {
+      const amplio = semanaDesdeTextos({ 1: "08:00-20:00", 2: "08:00-20:00", 3: "08:00-20:00", 4: "08:00-20:00" });
+      for (const s of [a.centro, a.norte, a.sur]) await guardarHorarioSede(db, a.master.id, a.org.id, s.id, amplio);
       await guardarHorarioProfesional(db, a.admin.id, a.org.id, profId, a.centro.id, semanaDesdeTextos({ 1: "09:00-13:00", 2: "09:00-18:00" }));
       await assert.rejects(guardarHorarioProfesional(db, a.franquiciado.id, a.org.id, profId, a.norte.id, semanaDesdeTextos({ 1: "12:00-16:00" })), /Se superpone con su jornada en Centro/);
       await guardarHorarioProfesional(db, a.franquiciado.id, a.org.id, profId, a.norte.id, semanaDesdeTextos({ 1: "13:00-20:00" }));
@@ -47,6 +49,30 @@ test("profesionales, jornadas, calendario y recursos", async (t) => {
       assert.deepEqual(p.sedes.find(s => s.sedeId === a.centro.id)?.semana[1], [{ inicio: 540, fin: 780 }]);
       // Reemplazar la propia jornada en la misma sede no choca consigo misma.
       await guardarHorarioProfesional(db, a.admin.id, a.org.id, profId, a.centro.id, semanaDesdeTextos({ 1: "08:00-13:00" }));
+    });
+
+    await t.test("la jornada cae dentro del horario de la sede, también en el alta", async () => {
+      await assert.rejects(guardarHorarioProfesional(db, a.admin.id, a.org.id, profId, a.centro.id, semanaDesdeTextos({ 1: "07:00-12:00" })), /Lunes: 07:00-08:00 queda fuera del horario de la sede \(08:00-20:00\)/);
+      await assert.rejects(guardarHorarioProfesional(db, a.admin.id, a.org.id, profId, a.centro.id, semanaDesdeTextos({ 5: "09:00-12:00" })), /Viernes: la sede no atiende ese día/);
+      const semana = semanaDesdeTextos({ 1: "09:00-13:00, 14:00-18:00" });
+      const nueva = await crearProfesional(db, a.admin.id, a.org.id, a.centro.id, { nombre: "Eva", semana });
+      const vista = await obtenerProfesional(db, a.admin.id, a.org.id, nueva.id);
+      assert.deepEqual(vista.sedes[0]?.semana, semana);
+      assert.deepEqual(vista.sedes[0]?.horarioSede[1], [{ inicio: 480, fin: 1200 }], "la ficha trae el horario de la sede");
+      const antes = await db.profesional.count({ where: { organizacionId: a.org.id } });
+      await assert.rejects(crearProfesional(db, a.admin.id, a.org.id, a.centro.id, { nombre: "Fede", semana: semanaDesdeTextos({ 0: "10:00-12:00" }) }), /Domingo/);
+      assert.equal(await db.profesional.count({ where: { organizacionId: a.org.id } }), antes, "un alta rechazada no deja la ficha creada");
+    });
+
+    await t.test("ocupación: disponible según jornada y horario de la sede, menos ausencias", async () => {
+      const ahora = new Date("2099-03-02T03:00:00Z"); // lunes 2099-03-02 00:00 en Buenos Aires
+      const vacia = await crearProfesional(db, a.admin.id, a.org.id, a.centro.id, { nombre: "Gabi", semana: semanaDesdeTextos({ 1: "09:00-13:00", 2: "10:00-12:00" }) });
+      await crearBloqueo(db, a.admin.id, a.org.id, vacia.id, { inicio: new Date("2099-03-03T13:00:00Z"), fin: new Date("2099-03-03T14:00:00Z") }); // martes 10-11
+      const o = await ocupacionProfesionales(db, a.recepcion.id, a.org.id, a.centro.id, 3, ahora);
+      assert.deepEqual(o.fechas, ["2099-03-02", "2099-03-03", "2099-03-04"]);
+      const gabi = o.profesionales.find(p => p.id === vacia.id)!;
+      assert.deepEqual(gabi.dias.map(d => [d.disponibleMinutos, d.ocupadoMinutos, d.turnos]), [[240, 0, 0], [60, 0, 0], [0, 0, 0]]);
+      await assert.rejects(ocupacionProfesionales(db, b.master.id, b.org.id, a.centro.id), AccesoDenegado);
     });
 
     await t.test("jornadas concurrentes en dos sedes: solo una gana", async () => {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { aUtc } from "../src/agenda.ts";
-import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, jornadaDelDia, type Consulta, type DatosProfesional, type ItemPedido } from "../src/disponibilidad.ts";
+import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, jornadaDelDia, ocupacionDelDia, type Consulta, type DatosProfesional, type ItemPedido } from "../src/disponibilidad.ts";
 
 const TZ = "America/Argentina/Buenos_Aires";
 const FECHA = "2099-10-13"; // martes
@@ -24,6 +24,14 @@ test("apertura: fecha especial de sede > feriado de organización > semanal", ()
   assert.deepEqual(aperturaDelDia(semanal, [{ cerrado: false, inicioMinutos: 600, finMinutos: 840 }], [{ cerrado: true, inicioMinutos: null, finMinutos: null }], FECHA), [{ inicio: 600, fin: 840 }]);
   assert.deepEqual(jornadaDelDia([{ ...semanal[0]!, vigenteHasta: "2099-01-01" }], FECHA), [], "vigencia vencida");
   assert.deepEqual(aIntervalos([{ inicio: 540, fin: 600 }], FECHA, TZ), [iv("09:00", "10:00")]);
+});
+
+test("ocupación del día: jornada dentro de la apertura, menos ausencias, contra turnos", () => {
+  const base = { apertura: [iv("10:00", "20:00")], jornada: [iv("09:00", "13:00"), iv("14:00", "18:00")], bloqueos: [], turnos: [] };
+  assert.deepEqual(ocupacionDelDia(base), { disponibleMinutos: 420, ocupadoMinutos: 0 }, "09-10 queda fuera de la apertura");
+  assert.deepEqual(ocupacionDelDia({ ...base, bloqueos: [iv("15:00", "16:00")], turnos: [iv("10:00", "11:00"), iv("15:30", "17:00")] }),
+    { disponibleMinutos: 360, ocupadoMinutos: 120 }, "la ausencia no cuenta como disponible ni como ocupada");
+  assert.deepEqual(ocupacionDelDia({ ...base, apertura: [] }), { disponibleMinutos: 0, ocupadoMinutos: 0 }, "sede cerrada");
 });
 
 test("grilla configurable y servicio dentro de jornada y apertura", () => {

@@ -269,9 +269,12 @@ export async function renovarTokensPorVencer(db: Database, renovar: RenovadorTok
   return { renovadas, fallidas };
 }
 
-/** Rotación: reescribe con la versión activa todo lo cifrado con versiones anteriores. Idempotente. */
-export async function recifrarCredenciales(db: Database, llavero: Llavero = llaveroEntorno()) {
-  const filas = await db.credencialProveedor.findMany({ where: { NOT: { secretoCifrado: { startsWith: `gcm.${llavero.activa}.` } } } });
+/**
+ * Rotación: reescribe con la versión activa todo lo cifrado con versiones anteriores. Idempotente.
+ * `organizacionId` la acota a una organización (los tests comparten la base con otros llaveros).
+ */
+export async function recifrarCredenciales(db: Database, llavero: Llavero = llaveroEntorno(), organizacionId?: string) {
+  const filas = await db.credencialProveedor.findMany({ where: { organizacionId, NOT: { secretoCifrado: { startsWith: `gcm.${llavero.activa}.` } } } });
   for (const f of filas) {
     const ctx = contexto(f.sedeId, f.proveedor, f.ambiente);
     const nuevo = cifrar(llavero, descifrar(llavero, f.secretoCifrado, ctx), ctx);

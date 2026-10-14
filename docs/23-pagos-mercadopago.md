@@ -2,7 +2,18 @@
 
 Implementa R04 (Checkout Pro y webhook). Migración `202610120013_pagos`. Lógica en `packages/database/src/pagos.ts`; el cliente HTTP en `packages/integrations/src/mercadopago.ts`; la firma del webhook en `packages/domain/src/mercadopago.ts`.
 
-**Estado:** probado contra una pasarela falsa y Postgres real. **Falta validarlo en el sandbox de Mercado Pago**: no hay credenciales de prueba (D03). Hasta entonces, R04 y F05 no están terminados.
+**Estado:** validado en staging el 2026-10-14 con un cobro real. La sede Lomada tenía una cuenta real vinculada por OAuth; se reservó un servicio de prueba con seña de $ 200 y se pagó desde otra cuenta. Resultado:
+- Mercado Pago aprobó y acreditó el pago.
+- Se registró `APROBADO` y la reserva quedó `CONFIRMADA`.
+- Llegaron las dos vías: el Webhook firmado y el retorno al portal. Cada una encoló su consulta y no hubo doble confirmación.
+
+Con eso se cierra R04 y la parte de Mercado Pago de F05.
+
+Las pruebas con usuarios de prueba de Mercado Pago no funcionaron con la aplicación productiva:
+- el checkout de sandbox falla con tokens `APP_USR-` (ver «Preferencia»);
+- un pago directo por API entre un vendedor de prueba vinculado a la aplicación productiva y un comprador cualquiera devolvió `2034 Invalid users involved`.
+
+Por eso la validación se hizo con dinero real y un monto chico.
 
 ## Decisiones (2026-10-12)
 
@@ -56,7 +67,7 @@ Implementa R04 (Checkout Pro y webhook). Migración `202610120013_pagos`. Lógic
 - **URL:** `/api/webhooks/mercadopago/{sedeId}`. La sede identifica qué access token usar (D8: cuentas propias por sede).
 - **Firma:** con la clave secreta de la aplicación de NailNet (`MP_WEBHOOK_SECRET`). Las cuentas de las sedes están vinculadas por OAuth a esa aplicación, así que Mercado Pago firma con su clave, no con una de cada sede. La sede de la URL no entra en la firma: una notificación válida reenviada a otra sede solo provoca una consulta que esa cuenta no puede ver (y un pago de otro cobrador queda `AJENO` o `A_DEVOLVER`). Formato `x-signature: ts=…,v1=…`. Manifiesto `id:{data.id};request-id:{x-request-id};ts:{ts};`, HMAC-SHA256 en hexadecimal ([documentación](https://www.mercadopago.com.ar/developers/es/docs/your-integrations/notifications/webhooks)).
 - **Respuestas:**
-  - 200: encolado o ignorado (otro tipo de evento);
+  - 200: encolado o ignorado. Se ignora sin verificar la firma el formato IPN (`?topic=…&id=…`) y los eventos que no son `payment` (por ejemplo `merchant_order`). IPN no viene firmado y Mercado Pago lo está discontinuando; para el mismo pago también llega el Webhook firmado. Antes se respondía 401 y Mercado Pago reintentaba esas notificaciones durante horas;
   - 401: firma inválida, falta `x-request-id` o la sede no tiene credenciales. Las tres son iguales a propósito, para no revelar qué sedes cobran online;
   - 500: no se pudo encolar; Mercado Pago reintenta.
 - **Deduplicación:** el trabajo tiene clave `mp:{ambiente}:{pagoId}:req:{x-request-id}`. Un reenvío de la misma notificación no duplica la consulta.
@@ -100,12 +111,7 @@ La redirect URI tiene que estar registrada tal cual en la aplicación de Mercado
 
 ## Pendiente
 
-- **Sandbox:** vincular un usuario vendedor de prueba a la sede demo de staging con «Conectar con Mercado Pago» y recorrer:
-  - pago aprobado, rechazado y tardío;
-  - notificación real con firma, para confirmar el formato del manifiesto y si `ts` llega en segundos o milisegundos;
-  - retorno y `sandbox_init_point` frente a `init_point` con usuarios de prueba.
-
-  Ahí se cierran F05 y R04.
+- **Casos sin probar con Mercado Pago real:** pago rechazado, pago tardío (retención vencida) y reembolso hecho desde el panel de Mercado Pago. El formato de la firma (manifiesto y `ts`) quedó confirmado con la notificación real del 2026-10-14.
 - **Conciliación periódica (M01):** si no llegan ni la notificación ni el retorno, un pago aprobado queda sin aplicar hasta que alguien lo revise. Falta una tarea que busque por `external_reference` los checkouts de retenciones recientes.
 - **Ventana de carrera:** un pago aprobado segundos antes de vencer, pero notificado después de que otra persona tomó el horario, queda `A_DEVOLVER` aunque se pagó en término. La preferencia vence con la retención, así que la ventana es chica; se revisa con datos reales.
 - **Bandeja de pagos a devolver (M04)** y devolución desde el sistema (M01, D7). Hoy los `A_DEVOLVER` solo se ven en la base.

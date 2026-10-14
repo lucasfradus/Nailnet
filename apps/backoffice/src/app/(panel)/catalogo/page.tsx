@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AccesoDenegado } from "@nailnet/domain";
 import type { Sena } from "@nailnet/domain/catalogo";
@@ -48,22 +47,20 @@ function FormServicio({ cat, servicio }: { cat: Catalogo; servicio?: ServicioCat
   </Formulario>;
 }
 
-export default async function Catalogo({ searchParams }: { searchParams: Promise<{ sede?: string }> }) {
-  const { sede: sedeParam } = await searchParams;
-  const { sesion, organizacion, sede, sedes, puede } = await requerirOrganizacion();
+export default async function Catalogo() {
+  const { sesion, organizacion, sede, puede } = await requerirOrganizacion();
   if (!puede.verSedes) notFound();
   const actorId = sesion.usuario.id;
-  const sedeId = sedeParam ?? sede?.id ?? (sedes.length === 1 ? sedes[0]!.id : undefined);
+  const sedeId = sede?.id;
   const enSede = sedeId ? await catalogoSede(db(), actorId, organizacion.id, sedeId).catch(e => { if (e instanceof AccesoDenegado) return null; throw e; }) : null;
   if (sedeId && !enSede) notFound();
   const cat = puede.administrarCatalogo ? await listarCatalogo(db(), actorId, organizacion.id) : null;
-  const nombreSede = sedes.find(s => s.id === sedeId)?.nombre;
+  const nombreSede = sede?.nombre;
 
   return <section className="panel">
     <p className="eyebrow">CATÁLOGO{nombreSede ? ` · ${nombreSede.toUpperCase()}` : ""}</p><h1>Servicios</h1>
 
-    {!sedeId && <><p className="intro">Elegí una sede para ver precios y condiciones:</p>
-      <ul className="lista">{sedes.map(s => <li key={s.id}><Link href={`/catalogo?sede=${s.id}`}>{s.nombre}</Link></li>)}</ul></>}
+    {!sedeId && <p className="intro">No tenés sedes asignadas: abajo está el catálogo común de la organización.</p>}
 
     {enSede && <div className="tabla">
       {enSede.servicios.map(s => <article key={s.id} className={s.efectivo.habilitado ? "fila" : "fila inactiva"}>

@@ -11,19 +11,17 @@ import { requerirOrganizacion } from "@/lib/contexto";
 import { accionAtendida, accionAusente, accionCancelarReserva } from "../acciones";
 
 export const metadata: Metadata = { title: "Agenda · Sicurella" };
-type Params = { sede?: string; fecha?: string; vista?: string; profesional?: string; cerrados?: string; ok?: string };
+type Params = { fecha?: string; vista?: string; profesional?: string; cerrados?: string; ok?: string };
 const ESTADOS: Record<string, string> = { PENDIENTE_PAGO: "Pendiente de seña", PAGO_EN_REVISION: "Pago en revisión", CONFIRMADA: "Confirmado", ATENDIDA: "Atendido", AUSENTE: "Ausente", CANCELADA: "Cancelado", EXPIRADA: "Vencido" };
 const sumar = (f: string, n: number) => new Date(Date.parse(`${f}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
 export default async function Agenda({ searchParams }: { searchParams: Promise<Params> }) {
   const q = await searchParams;
-  const { sesion, organizacion, sede, sedes, puede } = await requerirOrganizacion();
+  const { sesion, organizacion, sede: sedeActual, puede } = await requerirOrganizacion();
   if (!puede.verSedes) notFound();
   const actorId = sesion.usuario.id;
-  const sedeId = q.sede ?? sede?.id ?? (sedes.length === 1 ? sedes[0]!.id : undefined);
-  const sedeActual = sedes.find(s => s.id === sedeId);
-  if (!sedeId || !sedeActual) return <section className="panel"><h1>Agenda</h1><p className="intro">Elegí una sede:</p>
-    <ul className="lista">{sedes.map(s => <li key={s.id}><Link href={`/agenda?sede=${s.id}`}>{s.nombre}</Link></li>)}</ul></section>;
+  if (!sedeActual) return <section className="panel"><h1>Agenda</h1><p className="intro">No tenés sedes asignadas.</p></section>;
+  const sedeId = sedeActual.id;
 
   const tz = sedeActual.timezone;
   const hoy = aLocal(new Date(), tz).fecha;
@@ -37,12 +35,12 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
   const dia = (d: Date) => d.toLocaleDateString("es-AR", { timeZone: tz, weekday: "long", day: "numeric", month: "long" });
   const porDia = new Map<string, typeof agenda.items>();
   for (const i of agenda.items) { const k = aLocal(i.inicio, tz).fecha; porDia.set(k, [...(porDia.get(k) ?? []), i]); }
-  const enlace = (extra: Record<string, string>) => `/agenda?${new URLSearchParams({ sede: sedeId, fecha, vista: semana ? "semana" : "dia", ...(q.profesional ? { profesional: q.profesional } : {}), ...extra })}`;
+  const enlace = (extra: Record<string, string>) => `/agenda?${new URLSearchParams({ fecha, vista: semana ? "semana" : "dia", ...(q.profesional ? { profesional: q.profesional } : {}), ...extra })}`;
 
   return <section className="panel">
     <p className="eyebrow">AGENDA · {sedeActual.nombre.toUpperCase()}</p>
     <div className="fila-cabecera"><h1>{semana ? `Semana del ${fecha}` : dia(new Date(`${fecha}T12:00:00Z`))}</h1>
-      {puede.verSedes && <Link className="boton" href={`/agenda/nuevo?sede=${sedeId}&fecha=${fecha}`}>Nuevo turno</Link>}</div>
+      {puede.verSedes && <Link className="boton" href={`/agenda/nuevo?fecha=${fecha}`}>Nuevo turno</Link>}</div>
     {q.ok && <p className="alerta ok">{q.ok === "reprogramado" ? "Turno reprogramado." : "Turno reservado."}</p>}
     <nav className="en-linea">
       <Link href={enlace({ fecha: sumar(fecha, semana ? -7 : -1) })}>← Anterior</Link>
@@ -51,7 +49,7 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
       <Link href={enlace({ vista: semana ? "dia" : "semana" })}>{semana ? "Ver día" : "Ver semana"}</Link>
     </nav>
     <form className="en-linea">
-      <input type="hidden" name="sede" value={sedeId} /><input type="hidden" name="fecha" value={fecha} /><input type="hidden" name="vista" value={semana ? "semana" : "dia"} />
+      <input type="hidden" name="fecha" value={fecha} /><input type="hidden" name="vista" value={semana ? "semana" : "dia"} />
       <select name="profesional" defaultValue={q.profesional ?? ""} aria-label="Profesional"><option value="">Todos los profesionales</option>{profesionales.map(p => <option key={p.id} value={p.id}>{p.nombre} {p.apellido}</option>)}</select>
       <label className="check"><input type="checkbox" name="cerrados" value="1" defaultChecked={q.cerrados === "1"} />Incluir cancelados y vencidos</label>
       <button className="secundario">Filtrar</button>
@@ -70,7 +68,7 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
           {i.estado === "CONFIRMADA" && <>
             <Formulario accion={accionAtendida} boton="Atendido" className="en-linea" secundario><input type="hidden" name="reservaId" value={i.reservaId} /></Formulario>
             <Formulario accion={accionAusente} boton="Ausente" className="en-linea" secundario confirmar="¿Marcar ausente?"><input type="hidden" name="reservaId" value={i.reservaId} /></Formulario>
-            <Link className="boton secundario" href={`/agenda/nuevo?sede=${sedeId}&fecha=${aLocal(i.inicio, tz).fecha}&reprogramar=${i.reservaId}`}>Reprogramar</Link>
+            <Link className="boton secundario" href={`/agenda/nuevo?fecha=${aLocal(i.inicio, tz).fecha}&reprogramar=${i.reservaId}`}>Reprogramar</Link>
           </>}
           <details><summary>Cancelar</summary>
             <Formulario accion={accionCancelarReserva} boton="Cancelar turno" className="en-linea" secundario confirmar="¿Cancelar el turno? El horario se libera en el acto.">

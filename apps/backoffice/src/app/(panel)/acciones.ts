@@ -141,7 +141,9 @@ const datosCliente = (f: FormData) => ({
 export async function accionCrearCliente(_: Estado, form: FormData) {
   let id = "";
   const r = await ejecutar("/clientes", async (actor, org) => { id = (await crearCliente(db(), actor, org, texto(form, "sedeId"), datosCliente(form))).id; }, "Cliente creado");
-  if (r?.ok && id) redirect(`/clientes/${id}`);
+  // Desde «Nuevo turno» se vuelve al flujo con el cliente ya elegido. Solo a esa ruta: no es un redirect abierto.
+  const volver = texto(form, "volver");
+  if (r?.ok && id) redirect(volver.startsWith("/agenda/nuevo?") ? `${volver}&cliente=${id}` : `/clientes/${id}`);
   return r;
 }
 export async function accionVincularCliente(_: Estado, form: FormData) {
@@ -303,7 +305,7 @@ export async function accionReservar(_: Estado, form: FormData) {
     if (e instanceof ConfiguracionIncompleta) return { error: e.message };
     throw e;
   }
-  redirect(`/agenda?${new URLSearchParams({ sede: sedeId, fecha, ok: "1" })}`);
+  redirect(`/agenda?${new URLSearchParams({ fecha, ok: "1" })}`);
 }
 export async function accionSenaRecepcion(_: Estado, form: FormData) {
   const sedeId = texto(form, "sedeId");
@@ -330,12 +332,12 @@ export async function accionAusente(_: Estado, form: FormData) {
   return operar(form, (actor, org, id) => marcarAusente(db(), actor, org, id), "Marcado como ausente");
 }
 export async function accionReprogramar(_: Estado, form: FormData) {
-  const sedeId = texto(form, "sedeId"), fecha = texto(form, "fecha");
+  const fecha = texto(form, "fecha");
   let ok = false;
   const r = await operar(form, async (actor, org, id) => {
     await reprogramarReserva(db(), actor, org, id, { fecha, inicio: new Date(texto(form, "inicio")), profesionales: form.getAll("p").map(String).map(p => p || null) });
     ok = true;
   }, "Turno reprogramado");
   if (!ok) return r;
-  redirect(`/agenda?${new URLSearchParams({ sede: sedeId, fecha, ok: "reprogramado" })}`);
+  redirect(`/agenda?${new URLSearchParams({ fecha, ok: "reprogramado" })}`);
 }

@@ -16,7 +16,8 @@
     "./mercadopago": "./src/mercadopago.ts",
     "./emails": "./src/emails.ts",
     "./resend": "./src/resend.ts",
-    "./stock": "./src/stock.ts"
+    "./stock": "./src/stock.ts",
+    "./incidencias": "./src/incidencias.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

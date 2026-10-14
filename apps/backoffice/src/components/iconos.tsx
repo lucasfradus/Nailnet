@@ -13,6 +13,7 @@ export const ICONOS = {
   flecha: "m9 18 6-6-6-6",
   menu: "M4 6h16M4 12h16M4 18h16",
   cerrar: "M18 6 6 18M6 6l12 12",
+  incidencias: "M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01",
 };
 export type Icono = keyof typeof ICONOS;
 

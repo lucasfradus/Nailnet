@@ -5,14 +5,16 @@ import { useEffect, useId, useState } from "react";
 import { Svg, type Icono } from "./iconos";
 import { Marca } from "./marca";
 
-type Item = { href: string; etiqueta: string; icono: Icono };
+/** `aviso`: contador junto a la etiqueta (p. ej. incidencias sin revisar); 0 o ausente no se muestra. */
+type Item = { href: string; etiqueta: string; icono: Icono; aviso?: number };
 /** Un grupo con `icono` se muestra como ítem desplegable (submenú); sin icono, sus ítems van sueltos. */
 export type GrupoMenu = { titulo?: string; icono?: Icono; items: Item[] };
 
 const activo = (ruta: string, href: string) => href === "/" ? ruta === "/" : ruta === href || ruta.startsWith(href + "/");
 
 function Enlace({ item, ruta }: { item: Item; ruta: string }) {
-  return <Link href={item.href} aria-current={activo(ruta, item.href) ? "page" : undefined}><Svg icono={item.icono} />{item.etiqueta}</Link>;
+  return <Link href={item.href} aria-current={activo(ruta, item.href) ? "page" : undefined}><Svg icono={item.icono} />{item.etiqueta}
+    {!!item.aviso && <span className="aviso" aria-label={`${item.aviso} sin revisar`}>{item.aviso > 99 ? "99+" : item.aviso}</span>}</Link>;
 }
 
 /** Submenú plegable. Arranca abierto si la pantalla actual es una de sus secciones y se abre al entrar a una. */

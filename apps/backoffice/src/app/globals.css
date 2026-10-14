@@ -191,6 +191,8 @@ a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-
 .atajo{display:flex;gap:12px;align-items:flex-start;padding:16px;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);box-shadow:var(--shadow-card);color:inherit;text-decoration:none}
 .atajo:hover{border-color:var(--teal-200);background:var(--gris-50)}
 .atajo svg{width:20px;height:20px;flex:none;color:var(--color-primary);margin-top:1px}
+/* Contador del lateral (incidencias sin revisar, M04). */
+.menu a .aviso{margin-left:auto;min-width:20px;padding:0 6px;border-radius:10px;background:var(--fondo-error);color:var(--texto-error);font-size:11.5px;font-weight:600;line-height:20px;text-align:center}
 .atajo strong{display:block;font-size:14px;font-weight:600}.atajo span{display:block;font-size:13px;color:var(--color-muted-foreground);margin-top:2px}
 
 /* Acceso (login, recuperación) */

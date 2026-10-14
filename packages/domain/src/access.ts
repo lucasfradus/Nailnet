@@ -1,5 +1,7 @@
 export type Rol = "MASTER_FRANQUICIADOR" | "FRANQUICIADO" | "ADMIN_SEDE" | "RECEPCIONISTA" | "PROFESIONAL";
 export type Permiso = "sede:leer" | "sede:administrar" | "sede:crear" | "sede:credenciales" | "franquiciado:administrar" | "organizacion:configurar" | "usuario:leer" | "usuario:administrar" | "cliente:leer" | "cliente:editar" | "consentimiento:administrar" | "catalogo:administrar" | "catalogo:precios" | "profesional:administrar" | "reserva:gestionar"
+  // Incidencias (M04): bandeja de trabajos, pagos y emails con problemas, y acciones sobre ellos.
+  | "incidencia:gestionar"
   // Stock (O03): productos globales; saldos y movimientos por sede.
   | "producto:administrar" | "stock:leer" | "stock:consumir" | "stock:gestionar";
 export type Asignacion = {
@@ -18,6 +20,12 @@ const permisos: Record<Rol, readonly Permiso[]> = {
   RECEPCIONISTA: ["sede:leer", "cliente:leer", "cliente:editar", "reserva:gestionar", "stock:leer", "stock:consumir"],
   PROFESIONAL: [],
 };
+// Incidencias (M04, doc 28): master, franquiciado y administración de sede, cada uno en su alcance.
+// Recepción y profesional no: es revisión de dinero y de la cola, no operación del día. Va aparte de
+// la tabla principal para que sumar permisos de otros módulos no la toque.
+const permisosIncidencias: Partial<Record<Rol, readonly Permiso[]>> = {
+  MASTER_FRANQUICIADOR: ["incidencia:gestionar"], FRANQUICIADO: ["incidencia:gestionar"], ADMIN_SEDE: ["incidencia:gestionar"],
+};
 export function asignacionValida(a: Asignacion): boolean {
   switch (a.rol) {
     case "MASTER_FRANQUICIADOR": return a.alcance === "ORGANIZACION" && a.franquiciadoId === null && a.sedeId === null;
@@ -29,7 +37,7 @@ export function asignacionValida(a: Asignacion): boolean {
   }
 }
 export function tienePermiso(a: Asignacion, permiso: Permiso): boolean {
-  return asignacionValida(a) && (permisos[a.rol]?.includes(permiso) ?? false);
+  return asignacionValida(a) && !!(permisos[a.rol]?.includes(permiso) || permisosIncidencias[a.rol]?.includes(permiso));
 }
 export class AccesoDenegado extends Error {
   constructor() { super("Acceso denegado"); this.name = "AccesoDenegado"; }

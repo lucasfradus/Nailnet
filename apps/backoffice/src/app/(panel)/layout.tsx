@@ -1,6 +1,7 @@
 import { Lateral, type GrupoMenu } from "@/components/lateral";
 import { SelectorContexto } from "@/components/selector-contexto";
 import { contextoPanel } from "@/lib/contexto";
+import { incidenciasAbiertas } from "@/lib/incidencias";
 import { ROLES } from "@/lib/etiquetas";
 import { salir } from "../acceso/actions";
 import { elegirContexto } from "./acciones";
@@ -9,6 +10,7 @@ const iniciales = (nombre: string) => nombre.split(/\s+/).filter(Boolean).slice(
 
 export default async function Panel({ children }: { children: React.ReactNode }) {
   const { sesion, organizaciones, organizacion, sedes, sede, puede, asignaciones } = await contextoPanel();
+  const incidencias = await incidenciasAbiertas();
   const rol = asignaciones?.[0] ? ROLES[asignaciones[0].rol] ?? asignaciones[0].rol : sesion.usuario.email;
   const grupos: GrupoMenu[] = [
     { items: [
@@ -26,6 +28,8 @@ export default async function Panel({ children }: { children: React.ReactNode })
       ...puede.verUsuarios ? [{ href: "/usuarios", etiqueta: "Usuarios", icono: "usuarios" } as const] : [],
       ...puede.administrarConsentimientos ? [{ href: "/consentimientos", etiqueta: "Consentimientos", icono: "consentimientos" } as const] : [],
     ] },
+    // Incidencias (M04): null si el rol no accede; el número es lo que nadie revisó todavía.
+    { items: incidencias === null ? [] : [{ href: "/incidencias", etiqueta: "Incidencias", icono: "incidencias", aviso: incidencias }] },
   ];
   return <div className="app">
     <Lateral grupos={grupos}>

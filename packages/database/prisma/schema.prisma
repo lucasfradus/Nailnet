@@ -1130,3 +1130,46 @@ model CompraItem {
   @@unique([organizacionId, id])
   @@unique([compraId, posicion])
 }
+
+// ─── Incidencias ─────────────────────────────────────────────────────────────
+// M04 (doc 28). La incidencia se deriva del estado de su fuente (Job, Pago, EnvioEmail; comprobantes
+// con M02); acá solo queda lo que hizo una persona sobre ella: quién, cuándo, qué y con qué nota.
+// Solo inserción (trigger). Sin claves foráneas a propósito, como EnvioEmail: es auditoría sobre
+// fuentes distintas y tiene que sobrevivir a la purga de trabajos.
+
+enum FuenteIncidencia {
+  TRABAJO
+  PAGO
+  EMAIL
+}
+
+enum TipoAccionIncidencia {
+  REVISADA
+  RESUELTA
+  REABIERTA
+  // El trabajo FALLIDO volvió a PENDIENTE (mismo id y clave: el manejador es idempotente).
+  REINTENTADA
+  // La devolución se pidió o se hizo fuera del sistema. No la da por completa (M01, D5).
+  DEVOLUCION_GESTIONADA
+}
+
+model AccionIncidencia {
+  id             String               @id @default(uuid()) @db.Uuid
+  // Organización del actor: la de la fuente o, para trabajos del sistema (sin organización), la del master.
+  organizacionId String               @db.Uuid
+  fuente         FuenteIncidencia
+  entidadId      String               @db.Uuid
+  // Tipo de incidencia al momento de la acción (TRABAJO_FALLIDO, PAGO_A_DEVOLVER…).
+  incidencia     String
+  sedeId         String?              @db.Uuid
+  accion         TipoAccionIncidencia
+  nota           String
+  // Estado de la fuente y su último cambio al actuar: separa ocurrencias (un trabajo que vuelve a fallar).
+  estadoFuente   String
+  marcaFuente    DateTime
+  actorId        String               @db.Uuid
+  createdAt      DateTime             @default(now())
+
+  @@index([fuente, entidadId, createdAt])
+  @@index([organizacionId, createdAt])
+}

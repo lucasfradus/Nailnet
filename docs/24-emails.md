@@ -115,7 +115,7 @@ Todas solo de servidor; nunca con prefijo `VITE_`.
 ## Pendiente
 
 - **Envío real y webhook** contra Resend (puesta en marcha, arriba). No se probó con la API real: el cuerpo, los códigos de error y la firma siguen la documentación y el vector de ejemplo de Svix.
-- **Bandeja de revisión (M04):** hoy los envíos `FALLIDO`, `REBOTADO` o `QUEJA` y los trabajos fallidos solo se ven en la base. Falta mostrarlos en la ficha del turno y en una bandeja, y poder rearmar un trabajo (un `FALLIDO` propio, sin id de Resend, se vuelve a intentar si se rearma).
+- **Bandeja de revisión (M04):** hecha, ver [28-incidencias.md](28-incidencias.md). Los envíos `FALLIDO`, `REBOTADO` o `QUEJA` y los trabajos fallidos se ven en la bandeja, y un trabajo fallido se puede rearmar. Falta mostrarlos en la ficha del turno.
 - **Rebotes:** un email que rebota no marca al cliente. Falta decidir si se deja de enviarle o se avisa a la sede.
 - **Invitaciones de usuario:** el enlace de activación (doc 10) se sigue mostrando a quien lo genera; se puede pasar a este mismo mecanismo.
 - **Más emails:** cancelación por enlace (P04), pago o reembolso (M01), recordatorio previo al turno. Cancelación y reprogramación todavía no incluyen enlace para gestionar el turno: el token del invitado solo se guarda hasheado y no se puede reenviar.

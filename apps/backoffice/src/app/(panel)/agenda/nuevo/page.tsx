@@ -145,7 +145,7 @@ export default async function NuevoTurno({ searchParams }: { searchParams: Promi
               <button className="secundario">Ir</button>
             </Form>
 
-            {aviso && <p className="alerta error">{aviso} {aviso.startsWith("Falta") && <Link href={`/sedes/${sedeId}`}>Configurar la sede</Link>}</p>}
+            {aviso && <p className="alerta error">{aviso} {aviso.startsWith("Falta") && <Link href={`/sedes/${sedeId}?seccion=reservas`}>Configurar la sede</Link>}</p>}
             {q.inicio && !turno && !aviso && <p className="alerta error">El horario elegido ya no está libre. Elegí otro.</p>}
             {!aviso && !turnos.length && <p className="sin-turnos">Sin horarios libres el {diaLargo(fecha)}.{" "}
               {proximo ? <Link href={url({ fecha: proximo, inicio: undefined })}>Próximo día con lugar: {diaLargo(proximo)} →</Link> : `Tampoco en los ${DIAS_BUSQUEDA} días siguientes.`}

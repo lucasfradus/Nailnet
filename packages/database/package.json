@@ -19,7 +19,10 @@
     "./pagos": "./src/pagos.ts",
     "./emails": "./src/emails.ts",
     "./imagenes": "./src/imagenes.ts",
-    "./stock": "./src/stock.ts"
+    "./stock": "./src/stock.ts",
+    "./gastos": "./src/gastos.ts",
+    "./ventas": "./src/ventas.ts",
+    "./caja": "./src/caja.ts"
   },
   "scripts": {
     "generate": "prisma generate",

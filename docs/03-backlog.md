@@ -69,17 +69,17 @@ Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación ante
 |---|---|---|
 | M01 | Reembolsos y reconciliación | Parcial/total, callback duplicado/desordenado, pago tardío y duplicado; saldo no excedido |
 | M02 | Facturante completo según política | Emisión, consulta, PDF/referencia, nota de crédito y reintentos; timeout ambiguo no reemite a ciegas |
-| M03 | Aplicación seña/saldo | Ejemplo $30.000/$9.000/$21.000 produce venta y cobros correctos sin doble ingreso |
+| M03 | Aplicación seña/saldo · parte operativa hecha 2026-10-14 (seña de MP aplicada como anticipo en la venta, sin doble ingreso; probado el ejemplo); falta la parte fiscal, que depende de D9, ver 27-ventas-caja.md | Ejemplo $30.000/$9.000/$21.000 produce venta y cobros correctos sin doble ingreso |
 | M04 | Operación de incidencias | Roles habilitados pueden revisar jobs/pagos/comprobantes fallidos con trazabilidad |
 
 ## Fase 7 · días 37–42 · operación de sede
 
 | ID | Entrega | Criterio de aceptación |
 |---|---|---|
-| O01 | Cobros manuales y ventas mixtas | Efectivo/transferencia/tarjeta/MP; productos con servicios; anticipo aplicado |
-| O02 | Caja y cierres | Apertura, entradas/salidas, diferencia y reversos; digitales no inflan efectivo esperado |
+| O01 | Cobros manuales y ventas mixtas · hecho 2026-10-14, ver 27-ventas-caja.md | Efectivo/transferencia/tarjeta/MP; productos con servicios; anticipo aplicado |
+| O02 | Caja y cierres · hecho 2026-10-14, ver 27-ventas-caja.md | Apertura, entradas/salidas, diferencia y reversos; digitales no inflan efectivo esperado |
 | O03 | Compras, stock y consumo interno · hecho 2026-10-14, ver 26-stock.md | Stock por sede, cantidades fraccionarias, movimientos; venta concurrente no produce negativo |
-| O04 | Gastos | Categorías y sede, egreso trazable, anulación por reverso |
+| O04 | Gastos · hecho 2026-10-14, ver 25-gastos.md | Categorías y sede, egreso trazable, anulación por reverso |
 
 ## Fase 8 · días 43–46 · liquidaciones e informes
 

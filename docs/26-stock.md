@@ -74,7 +74,7 @@ La ficha muestra el saldo de otras sedes solo si el actor tiene `stock:leer` en 
 
 ## Pendiente y a confirmar con Sicurella
 
-- **Venta de productos (O01):** el egreso ya existe, pero no hay venta ni anulación de venta. La anulación deberá generar un movimiento de ingreso con referencia a la venta.
+- ~~**Venta de productos (O01):** el egreso ya existe, pero no hay venta ni anulación de venta. La anulación deberá generar un movimiento de ingreso con referencia a la venta.~~ Hecho el 2026-10-14 (27-ventas-caja.md): la venta usa `egresarPorVenta` en su transacción, `MovimientoStock.ventaId` ya tiene FK a `Venta`, y la anulación repone con un `REVERSO` por cada egreso (`reponerPorAnulacionVenta`), solo si se indica que los productos volvieron.
 - **Quién hace qué:** propuesta de que recepción vea el stock y registre consumos (y ventas), pero no compras, ajustes ni transferencias. Confirmar.
 - **Transferencias entre franquiciados:** hoy solo las hace quien tiene alcance en las dos sedes (el franquiciado entre sus sedes; el master entre cualquiera). Entre franquiciados distintos implican una operación comercial que no está modelada. Tampoco hay estado «en tránsito» ni confirmación de recepción.
 - **Proveedores:** texto libre en la compra. Un maestro de proveedores queda para cuando haga falta (reportes, cuentas a pagar).

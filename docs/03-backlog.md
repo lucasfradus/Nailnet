@@ -18,7 +18,7 @@ Calendario relativo, pendiente de confirmar días corridos/hábiles, equipo y ta
 | F02 | Organización, franquiciado, sede, usuarios | Migración reproducible y seed sintético; relaciones entre organizaciones inválidas rechazadas |
 | F03 | Login, logout y recuperación · hecho 2026-09-30, ver 09-autenticacion.md | Hash de contraseña, token de un uso, límites de intentos, usuario inactivo rechazado; sin rol implícito |
 | F04 | Staging, worker y outbox base · cola y outbox hechos 2026-10-05, ver 21-cola-trabajos.md; staging en Railway desplegado 2026-10-06 y verificado 2026-10-12, ver 22-despliegue-railway.md | Job persiste/reanuda tras reinicio; health checks y documentación de variables |
-| F05 | Prueba temprana MP/Facturante · cliente MP listo 2026-10-12 (ver 23-pagos-mercadopago.md); bloqueado por credenciales de prueba (D03) | Contratos y credenciales de prueba funcionan; documentar deduplicación/consulta de resultados ambiguos |
+| F05 | Prueba temprana MP/Facturante · Mercado Pago hecho 2026-10-14: cuenta vinculada por OAuth y cobro real en staging (ver 23-pagos-mercadopago.md). Falta Facturante | Contratos y credenciales de prueba funcionan; documentar deduplicación/consulta de resultados ambiguos |
 
 Dependencias: D01–D03. Si falla el acceso a proveedores, completar base local y elevar ese bloqueo del calendario, sin simular integración como terminada.
 
@@ -49,7 +49,7 @@ Dependencias: A01–A03. C05 es una puerta de salida de fase, no una prueba dife
 | R01 | Agenda y reserva manual · hecho 2026-10-01, ver 17-agenda-reserva-manual.md | Día/semana, filtros, reserva por motor común; sin sobreocupación |
 | R02 | Retenciones y vencimientos · hecho 2026-10-01 (vencimiento por worker; carrera con aprobación se cierra en R04), ver 17-agenda-reserva-manual.md | Worker reiniciado no deja retenciones perpetuas; carrera vencimiento/aprobación resuelta |
 | R03 | Cancelar/reprogramar/atender/ausente · hecho 2026-10-01 (sin reembolsos automáticos: D5 pendiente), ver 17-agenda-reserva-manual.md | Historial conservado; reprogramación atómica y política congelada |
-| R04 | Checkout MP y webhook en staging · implementado 2026-10-12 con pasarela falsa; falta validar en sandbox (sin credenciales de prueba), ver 23-pagos-mercadopago.md | Firma, cuenta/monto/moneda/referencia; aprobación idempotente; retorno manipulado no confirma |
+| R04 | Checkout MP y webhook en staging · hecho 2026-10-14: pago real de $ 200 aprobado, reserva confirmada por webhook firmado y por retorno, sin duplicar (ver 23-pagos-mercadopago.md) | Firma, cuenta/monto/moneda/referencia; aprobación idempotente; retorno manipulado no confirma |
 | R05 | Contrato público y protección de invitado · hecho 2026-10-01, ver 18-api-publica.md | Validación backend, claves idempotentes, límites contra acaparamiento, tokens acotados |
 
 Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación antes de construir todo el portal.

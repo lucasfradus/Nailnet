@@ -5,7 +5,7 @@
 // ventas y caja: venta → saldos de stock → caja, para no generar deadlocks entre operaciones.
 import { AccesoDenegado, cubreSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type PermisoVenta } from "@nailnet/domain";
 import { importe } from "@nailnet/domain/catalogo";
-import { dejaNegativo, diferenciaArqueo, importeNoNegativo, resumirCaja, revertibleDesdeCaja, signoValidoCaja, validarManual, type TipoMovimientoCaja } from "@nailnet/domain/caja";
+import { dejaNegativo, diferenciaArqueo, importeNoNegativo, resumirCaja, revertibleDesdeCaja, signoValidoCaja, validarManual, validarObservacionesCierre, type TipoMovimientoCaja } from "@nailnet/domain/caja";
 import { normalizarTexto } from "@nailnet/domain/gastos";
 import { resumirCobros, validarMotivo, type MedioCobro } from "@nailnet/domain/ventas";
 import type { Database } from "./client.ts";
@@ -150,6 +150,9 @@ export async function cerrarCaja(db: Database, actorId: string, organizacionId: 
     const caja = await cajaAbiertaBloqueada(tx, organizacionId, actual.sedeId);
     if (!caja || caja.id !== datos.cajaId) throw new DatosInvalidos("La caja ya está cerrada");
     const diferencia = diferenciaArqueo(contado, caja.esperado);
+    // Arqueo no ciego: con diferencia, la observación es obligatoria (se valida contra el esperado bajo lock).
+    const errorObs = validarObservacionesCierre(diferencia, observaciones);
+    if (errorObs) throw new DatosInvalidos(errorObs);
     await tx.caja.update({ where: { id: caja.id }, data: {
       estado: "CERRADA", cerradaPorId: actorId, cerradaEn: new Date(), esperado: importe(caja.esperado), contado: importe(contado), diferencia: importe(diferencia), observaciones: observaciones || null,
     } });
@@ -194,11 +197,12 @@ async function detalle(db: Cliente, organizacionId: string, cajaId: string) {
 }
 
 /** Pantalla de caja de la sede: la caja abierta (si hay) y el historial de cierres. */
-export async function estadoCaja(db: Database, actorId: string, organizacionId: string, sedeId: string, limiteHistorial = 30) {
+export async function estadoCaja(db: Database, actorId: string, organizacionId: string, sedeId: string, opciones: { limiteHistorial?: number; soloConDiferencia?: boolean } = {}) {
+  const limiteHistorial = opciones.limiteHistorial ?? 30;
   const { puede } = await exigirSedeVenta(db, actorId, organizacionId, sedeId, "caja:leer");
   const abierta = await db.caja.findFirst({ where: { organizacionId, sedeId, estado: "ABIERTA" }, select: { id: true } });
   const cerradas = await db.caja.findMany({
-    where: { organizacionId, sedeId, estado: "CERRADA" }, orderBy: { cerradaEn: "desc" }, take: Math.min(Math.max(1, limiteHistorial), 200),
+    where: { organizacionId, sedeId, estado: "CERRADA", ...(opciones.soloConDiferencia ? { diferencia: { not: 0 } } : {}) }, orderBy: { cerradaEn: "desc" }, take: Math.min(Math.max(1, limiteHistorial), 200),
     select: { id: true, abiertaEn: true, cerradaEn: true, montoInicial: true, esperado: true, contado: true, diferencia: true, cerradaPorId: true, observaciones: true },
   });
   const usuarios = await db.usuario.findMany({ where: { id: { in: [...new Set(cerradas.map(c => c.cerradaPorId!))] } }, select: { id: true, nombre: true } });

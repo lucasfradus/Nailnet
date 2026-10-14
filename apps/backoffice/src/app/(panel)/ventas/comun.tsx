@@ -5,6 +5,8 @@ export { pesos } from "../gastos/comun";
 
 export const FILAS_PRODUCTO = 6;
 export const FILAS_COBRO = 3;
+/** Filas de la comanda: las del turno más algunas vacías para agregar servicios. */
+export const FILAS_SERVICIO = 8;
 
 export const MEDIOS_COBRO_ETIQUETA: Record<MedioCobro, string> = {
   EFECTIVO: "Efectivo", TRANSFERENCIA: "Transferencia", TARJETA_DEBITO: "Tarjeta de débito", TARJETA_CREDITO: "Tarjeta de crédito", MERCADO_PAGO: "Mercado Pago", OTRO: "Otro",

@@ -50,7 +50,8 @@ export async function encolarEmailReserva(tx: Tx, ev: EventoReserva) {
   let tipo: string;
   let payload: { reservaId: string; anteriorId?: string };
   if (ev.tipo === "REPROGRAMADA" && typeof d.nuevaReservaId === "string") { tipo = TIPO_EMAIL.reprogramada; payload = { reservaId: d.nuevaReservaId, anteriorId: ev.reservaId }; }
-  else if ((ev.tipo === "CREADA" && ev.estadoNuevo === "CONFIRMADA" && !d.reprogramadaDesde) || ev.tipo === "CONFIRMADA") { tipo = TIPO_EMAIL.confirmada; payload = { reservaId: ev.reservaId }; }
+  // Un cliente atendido en el momento (sin turno previo) no recibe confirmación: ya está en la sede.
+  else if ((ev.tipo === "CREADA" && ev.estadoNuevo === "CONFIRMADA" && !d.reprogramadaDesde && !d.sinTurnoPrevio) || ev.tipo === "CONFIRMADA") { tipo = TIPO_EMAIL.confirmada; payload = { reservaId: ev.reservaId }; }
   else if (ev.tipo === "CANCELADA") { tipo = TIPO_EMAIL.cancelada; payload = { reservaId: ev.reservaId }; }
   else return null;
   const destino = await tx.reserva.findUnique({ where: { id: payload.reservaId }, select: { cliente: { select: { email: true } } } });

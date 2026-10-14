@@ -1,12 +1,12 @@
 import { AccesoDenegado } from "@nailnet/domain";
-import { aUtc, validarFecha } from "@nailnet/domain/agenda";
+import { aLocal, aUtc, validarFecha } from "@nailnet/domain/agenda";
 import { aCentavos } from "@nailnet/domain/catalogo";
 import { asignarEn } from "@nailnet/domain/disponibilidad";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds, sedesConPermiso } from "./access.ts";
 import { configuracionEfectiva } from "./configuracion.ts";
-import { cargarConsulta, reservaActiva, type Pedido } from "./disponibilidad.ts";
+import { ConfiguracionIncompleta, cargarConsulta, reservaActiva, type Pedido } from "./disponibilidad.ts";
 import { encolarEmailReserva } from "./emails.ts";
 
 type Tx = Prisma.TransactionClient;
@@ -67,7 +67,7 @@ export type TurnoTomado = { reservaId: string; estado: Estado; expiraEn: Date | 
  * cliente a asignar.
  */
 export type AntesDeTomar = (tx: Tx) => Promise<{ clienteId?: string } | void>;
-export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; notas?: string | null }, ahora = new Date(), opciones: { antes?: AntesDeTomar } = {}): Promise<TurnoTomado> {
+export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; notas?: string | null; sinTurnoPrevio?: boolean }, ahora = new Date(), opciones: { antes?: AntesDeTomar } = {}): Promise<TurnoTomado> {
   if (actorId) {
     exigirIds(pedido.sedeId);
     const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
@@ -96,21 +96,54 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
     if (!turno) throw new TurnoNoDisponible();
 
     const senaTotal = turno.items.reduce((t, i) => t + (aCentavos(efectivos.get(i.servicioId)!.sena ?? "0") ?? 0n), 0n);
-    const exigeSena = senaTotal > 0n && (pedido.canal === "ONLINE" || config.recepcionExigeSena);
+    // Un cliente atendido en el momento (sin turno previo) no deja seña: ya está en la sede.
+    const exigeSena = senaTotal > 0n && !pedido.sinTurnoPrevio && (pedido.canal === "ONLINE" || config.recepcionExigeSena);
     const estado: Estado = exigeSena ? "PENDIENTE_PAGO" : "CONFIRMADA";
     const expiraEn = exigeSena ? new Date(ahora.getTime() + config.retencionMinutos.valor! * 60_000) : null;
 
-    const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId }, turno, efectivos);
-    await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena });
+    const sinTurnoPrevio = !!pedido.sinTurnoPrevio;
+    const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId, sinTurnoPrevio }, turno, efectivos);
+    await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena, ...(sinTurnoPrevio ? { sinTurnoPrevio } : {}) });
     return r;
   }, { maxWait: 10_000, timeout: 20_000 }));
+}
+
+/** La profesional elegida no está libre ahora: otro turno, un bloqueo o fuera de su horario. */
+export const PROFESIONAL_OCUPADA = "La profesional no está libre ahora (tiene otro turno o un bloqueo, o está fuera de su horario). Elegí otra profesional o reservá un turno para más tarde.";
+
+/**
+ * O01 · «Atender ahora» (confirmado por Sicurella el 2026-10-14): un cliente llega sin turno, recepción
+ * elige profesional y servicios, y se crea un turno de recepción que arranca en este minuto y ocupa la
+ * agenda de la profesional (el portal deja de ofrecer ese horario). Es el mismo camino que la reserva
+ * manual (R01): mismos locks y el mismo motor, sin grilla porque el inicio es «ahora». Queda confirmado,
+ * sin seña y marcado `sinTurnoPrevio` para reportes. No manda email de confirmación.
+ */
+export async function atenderAhora(db: Database, actorId: string, organizacionId: string, datos: { sedeId: string; clienteId: string; items: { servicioId: string; profesionalId: string }[]; notas?: string | null }, ahora = new Date()) {
+  if (!datos.items.length) throw new DatosInvalidos("Elegí al menos un servicio");
+  if (datos.items.some(i => !i.profesionalId)) throw new DatosInvalidos("Elegí la profesional de cada servicio");
+  if (!datos.clienteId) throw new DatosInvalidos("Elegí o creá el cliente");
+  exigirIds(datos.sedeId, datos.clienteId, ...datos.items.flatMap(i => [i.servicioId, i.profesionalId]));
+  const sede = await db.sede.findFirst({ where: { id: datos.sedeId, organizacionId }, select: { timezone: true } });
+  if (!sede) throw new AccesoDenegado();
+  // Al minuto: el turno empieza ahora y el motor lo valida con «ahora» como límite inferior.
+  const inicio = new Date(Math.floor(ahora.getTime() / 60_000) * 60_000);
+  try {
+    return await tomarTurno(db, actorId, organizacionId, {
+      sedeId: datos.sedeId, fecha: aLocal(inicio, sede.timezone).fecha, canal: "RECEPCION", clienteId: datos.clienteId, notas: datos.notas,
+      items: datos.items.map(i => ({ servicioId: i.servicioId, profesionalId: i.profesionalId })), inicio, sinTurnoPrevio: true,
+    }, inicio);
+  } catch (e) {
+    if (e instanceof TurnoNoDisponible) throw new DatosInvalidos(PROFESIONAL_OCUPADA);
+    if (e instanceof ConfiguracionIncompleta) throw new DatosInvalidos(`Falta definir en la sede: ${e.faltantes.join(", ")}`);
+    throw e;
+  }
 }
 
 
 type Asignado = NonNullable<ReturnType<typeof asignarEn>>;
 type Efectivos = Awaited<ReturnType<typeof cargarConsulta>>["efectivos"];
 /** Escribe reserva, ítems y recursos. `congelados` (por posición) conserva precio y seña de una reserva anterior. */
-async function escribirTurno(tx: Tx, organizacionId: string, base: { sedeId: string; clienteId: string | null; canal: "ONLINE" | "RECEPCION"; estado: Estado; expiraEn: Date | null; notas: string | null; creadoPor: string | null; reemplazaId?: string }, turno: Asignado, efectivos: Efectivos, congelados?: Map<number, { precio: string; sena: string | null }>): Promise<TurnoTomado> {
+async function escribirTurno(tx: Tx, organizacionId: string, base: { sedeId: string; clienteId: string | null; canal: "ONLINE" | "RECEPCION"; estado: Estado; expiraEn: Date | null; notas: string | null; creadoPor: string | null; reemplazaId?: string; sinTurnoPrevio?: boolean }, turno: Asignado, efectivos: Efectivos, congelados?: Map<number, { precio: string; sena: string | null }>): Promise<TurnoTomado> {
   const reserva = await tx.reserva.create({ data: { organizacionId, ...base }, select: { id: true } });
   if (base.clienteId) await tx.clienteSede.upsert({ where: { clienteId_sedeId: { clienteId: base.clienteId, sedeId: base.sedeId } }, create: { organizacionId, clienteId: base.clienteId, sedeId: base.sedeId }, update: {} });
   const items: TurnoTomado["items"] = [];
@@ -151,7 +184,7 @@ export async function agendaSede(db: Database, actorId: string, organizacionId: 
       ...(filtro.profesionalId ? { profesionalId: filtro.profesionalId } : {}),
     },
     include: {
-      reserva: { select: { id: true, estado: true, canal: true, expiraEn: true, notas: true, cliente: { select: { id: true, nombre: true, apellido: true, telefono: true } } } },
+      reserva: { select: { id: true, estado: true, canal: true, sinTurnoPrevio: true, expiraEn: true, notas: true, cliente: { select: { id: true, nombre: true, apellido: true, telefono: true } } } },
       servicio: { select: { nombre: true } }, profesional: { select: { id: true, nombre: true, apellido: true } },
       recursos: { select: { recurso: { select: { nombre: true } } } },
     },
@@ -159,7 +192,7 @@ export async function agendaSede(db: Database, actorId: string, organizacionId: 
   });
   return { timezone: sede.timezone, items: items.map(i => ({
     itemId: i.id, reservaId: i.reservaId, posicion: i.posicion, inicio: i.inicio, fin: i.fin,
-    estado: i.reserva.estado, canal: i.reserva.canal, expiraEn: i.reserva.expiraEn, notas: i.reserva.notas,
+    estado: i.reserva.estado, canal: i.reserva.canal, sinTurnoPrevio: i.reserva.sinTurnoPrevio, expiraEn: i.reserva.expiraEn, notas: i.reserva.notas,
     cliente: i.reserva.cliente, servicio: i.servicio.nombre, profesional: i.profesional, recursos: i.recursos.map(r => r.recurso.nombre),
     precio: i.precio.toFixed(2), sena: i.sena?.toFixed(2) ?? null,
   })) };
@@ -284,7 +317,7 @@ export async function reprogramarReserva(db: Database, actorId: string, organiza
     const turno = asignarEn(consulta, destino.inicio.getTime());
     if (!turno) throw new TurnoNoDisponible();
     const congelados = new Map(original.items.map(i => [i.posicion, { precio: i.precio.toFixed(2), sena: i.sena?.toFixed(2) ?? null }]));
-    const nueva = await escribirTurno(tx, organizacionId, { sedeId: original.sedeId, clienteId: original.clienteId, canal: original.canal, estado: "CONFIRMADA", expiraEn: null, notas: original.notas, creadoPor: actorId, reemplazaId: original.id }, turno, efectivos, congelados);
+    const nueva = await escribirTurno(tx, organizacionId, { sedeId: original.sedeId, clienteId: original.clienteId, canal: original.canal, estado: "CONFIRMADA", expiraEn: null, notas: original.notas, creadoPor: actorId, reemplazaId: original.id, sinTurnoPrevio: original.sinTurnoPrevio }, turno, efectivos, congelados);
     await registrarEvento(tx, organizacionId, original.id, "REPROGRAMADA", "CONFIRMADA", "CANCELADA", actorId, { nuevaReservaId: nueva.reservaId });
     await registrarEvento(tx, organizacionId, nueva.reservaId, "CREADA", null, "CONFIRMADA", actorId, { reprogramadaDesde: original.id });
     return nueva;

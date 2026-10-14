@@ -82,6 +82,20 @@ export function validarCobros(cobros: readonly CobroEntrada[], saldo: bigint): {
   return { cobros: validos, total };
 }
 
+/**
+ * Precio cobrado de un servicio de la comanda (confirmado por Sicurella el 2026-10-14): recepción
+ * puede editarlo. Vacío = el precio de lista propuesto. Cero se admite (cortesía). Se guardan los dos.
+ */
+export function precioCobrado(texto: string | null | undefined, lista: bigint | null): { error: string } | { precio: bigint } {
+  const t = (texto ?? "").trim();
+  if (!t) return lista === null ? { error: "El servicio no tiene precio en la sede: indicá el precio cobrado" } : { precio: lista };
+  const c = aCentavos(t);
+  return c === null ? { error: "Precio inválido: pesos con hasta 2 decimales" } : { precio: c };
+}
+
+/** Máximo de servicios en una comanda. */
+export const MAX_SERVICIOS_COMANDA = 12;
+
 /** Descuento opcional: vacío = 0. */
 export function descuentoDe(texto: string | null | undefined): bigint | null {
   const t = (texto ?? "").trim();

@@ -20,22 +20,23 @@ const permisos: Record<Rol, readonly Permiso[]> = {
 };
 /**
  * O04 · Gastos de sede. Tabla propia para no mezclar el módulo con los permisos de estructura.
- * Recepción no ve ni registra gastos hasta definir su papel en la caja (O02); ver 25-gastos.md.
+ * Recepción (confirmado por Sicurella el 2026-10-14, D19): ve los gastos de su sede y registra solo
+ * gastos pagados en efectivo con la caja abierta (`gasto:registrar_caja`); no los anula ni administra
+ * categorías. Ver 25-gastos.md y 27-ventas-caja.md.
  * Las categorías globales (sin sede) son solo del alcance de organización: ver puedeAdministrarCategoriaGasto.
  */
-export type PermisoGasto = "gasto:leer" | "gasto:registrar" | "gasto:anular" | "gasto:categorias";
-const GASTOS_COMPLETO: readonly PermisoGasto[] = ["gasto:leer", "gasto:registrar", "gasto:anular", "gasto:categorias"];
+export type PermisoGasto = "gasto:leer" | "gasto:registrar" | "gasto:registrar_caja" | "gasto:anular" | "gasto:categorias";
+const GASTOS_COMPLETO: readonly PermisoGasto[] = ["gasto:leer", "gasto:registrar", "gasto:registrar_caja", "gasto:anular", "gasto:categorias"];
 const permisosGasto: Record<Rol, readonly PermisoGasto[]> = {
   MASTER_FRANQUICIADOR: GASTOS_COMPLETO,
   FRANQUICIADO: GASTOS_COMPLETO,
   ADMIN_SEDE: GASTOS_COMPLETO,
-  RECEPCIONISTA: [],
+  RECEPCIONISTA: ["gasto:leer", "gasto:registrar_caja"],
   PROFESIONAL: [],
 };
 /**
- * O01/O02 · Ventas y caja. Tabla propia, como gastos. Recepción registra ventas, cobra y opera la caja
- * de sus sedes (abrir, entradas/salidas, cerrar), pero no anula ventas: la anulación devuelve dinero y
- * stock, así que queda para administración de sede, franquiciado o master. Ver 27-ventas-caja.md.
+ * O01/O02 · Ventas y caja. Tabla propia, como gastos. Recepción registra ventas, cobra, anula ventas
+ * (confirmado por Sicurella el 2026-10-14) y opera la caja de sus sedes. Ver 27-ventas-caja.md.
  */
 export type PermisoVenta = "venta:leer" | "venta:registrar" | "venta:anular" | "caja:leer" | "caja:operar";
 const VENTAS_COMPLETO: readonly PermisoVenta[] = ["venta:leer", "venta:registrar", "venta:anular", "caja:leer", "caja:operar"];
@@ -43,7 +44,7 @@ const permisosVenta: Record<Rol, readonly PermisoVenta[]> = {
   MASTER_FRANQUICIADOR: VENTAS_COMPLETO,
   FRANQUICIADO: VENTAS_COMPLETO,
   ADMIN_SEDE: VENTAS_COMPLETO,
-  RECEPCIONISTA: ["venta:leer", "venta:registrar", "caja:leer", "caja:operar"],
+  RECEPCIONISTA: VENTAS_COMPLETO,
   PROFESIONAL: [],
 };
 export function asignacionValida(a: Asignacion): boolean {

@@ -12,7 +12,7 @@ Implementa O04. Migración `202610140030_gastos`. Reglas puras en `packages/doma
 | | Master | Crear, renombrar, desactivar y reactivar categorías globales |
 | | Master, franquiciado, admin de sede | Lo mismo con las categorías locales de las sedes de su alcance |
 
-**Recepción y profesionales no ven gastos.** Los permisos nuevos (`gasto:leer`, `gasto:registrar`, `gasto:anular`, `gasto:categorias`) están en una tabla aparte en `packages/domain/src/access.ts`. Se evalúan con el mismo `cubreSede` que el resto del panel.
+**Profesionales no ven gastos. Recepción** (actualizado el 2026-10-14, confirmado por Sicurella) ve los de su sede y registra solo los pagados en efectivo con la caja abierta (`gasto:registrar_caja`); no anula ni administra categorías. Ver 27-ventas-caja.md. Los permisos nuevos (`gasto:leer`, `gasto:registrar`, `gasto:anular`, `gasto:categorias`) están en una tabla aparte en `packages/domain/src/access.ts`. Se evalúan con el mismo `cubreSede` que el resto del panel.
 
 Como en las demás pantallas, la sede elegida arriba es solo un filtro. Cada operación vuelve a autorizar en el repositorio. Si un ID de sede, gasto o categoría está fuera del alcance (o está mal formado), el repositorio responde acceso denegado, lo mismo que si el recurso no existiera. Las pruebas cubren lectura y escritura por ID.
 
@@ -84,7 +84,7 @@ Los anulados siguen a la vista, tachados, con quién, cuándo y por qué. El per
 
 ## A confirmar con Sicurella
 
-- **Recepción:** ¿registra gastos menores (artículos de limpieza, café) o solo el admin? Hoy no tiene acceso. Si la respuesta es sí, se le da `gasto:registrar` (y probablemente `gasto:leer` limitado), en línea con su papel en la caja.
+- ~~**Recepción:** ¿registra gastos menores (artículos de limpieza, café) o solo el admin? Hoy no tiene acceso. Si la respuesta es sí, se le da `gasto:registrar` (y probablemente `gasto:leer` limitado), en línea con su papel en la caja.~~ Respondido el 2026-10-14: registra y ve los gastos de su sede pagados desde la caja; la anulación sigue en administración.
 - **Período del reverso:** hoy el reverso lleva la fecha del gasto original. Si la contabilidad cierra meses, quizá prefieran imputarlo al mes de la anulación.
 - **Lista inicial de categorías globales:** por ejemplo alquiler, expensas, servicios, limpieza, insumos no inventariables, mantenimiento, publicidad local, honorarios e impuestos.
 - **Antigüedad máxima** de un gasto (hoy 366 días) y si hace falta adjuntar el archivo del comprobante (hoy es una referencia de texto).

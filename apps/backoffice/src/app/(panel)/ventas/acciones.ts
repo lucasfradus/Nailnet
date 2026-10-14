@@ -7,7 +7,7 @@ import { anularVenta, registrarCobro, registrarVenta } from "@nailnet/database/v
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
-import { FILAS_COBRO, FILAS_PRODUCTO } from "./comun";
+import { FILAS_COBRO, FILAS_PRODUCTO, FILAS_SERVICIO } from "./comun";
 
 // O01. Acciones delgadas: actor y organización salen de la sesión validada; los IDs del formulario
 // solo indican el objetivo y el repositorio vuelve a autorizarlos contra el alcance.
@@ -46,9 +46,24 @@ function cobros(form: FormData) {
   return lista;
 }
 
+/**
+ * Comanda (filas servicio_N, profesional_N, precio_N, reservaItem_N). Una fila sin servicio es un servicio
+ * que no se hizo (se quita); las filas con reservaItem vienen del turno.
+ */
+function servicios(form: FormData) {
+  const lista: { servicioId: string; profesionalId: string; precio: string; reservaItemId: string | null }[] = [];
+  for (let i = 0; i < FILAS_SERVICIO; i++) {
+    const servicioId = texto(form, `servicio_${i}`);
+    if (servicioId) lista.push({ servicioId, profesionalId: texto(form, `profesional_${i}`), precio: texto(form, `precio_${i}`), reservaItemId: texto(form, `reservaItem_${i}`) || null });
+  }
+  return lista;
+}
+
 export async function accionRegistrarVenta(_: Estado, form: FormData): Promise<Estado> {
+  const reservaId = texto(form, "reservaId") || null;
+  if (reservaId && servicios(form).some(s => !s.profesionalId)) return { error: "Elegí la profesional de cada servicio" };
   const r = await ejecutar((actor, org) => registrarVenta(db(), actor, org, {
-    sedeId: texto(form, "sedeId"), reservaId: texto(form, "reservaId") || null, productos: productos(form),
+    sedeId: texto(form, "sedeId"), reservaId, servicios: reservaId ? servicios(form) : undefined, productos: productos(form),
     descuento: texto(form, "descuento"), cobros: cobros(form), claveIdempotencia: texto(form, "clave"),
   }));
   if ("error" in r) return r;

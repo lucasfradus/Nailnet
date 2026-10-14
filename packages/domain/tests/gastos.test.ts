@@ -63,12 +63,13 @@ const franA: Asignacion = { rol: "FRANQUICIADO", alcance: "FRANQUICIADO", franqu
 const admin: Asignacion = { rol: "ADMIN_SEDE", alcance: "SEDE", franquiciadoId: null, sedeId: "centro" };
 const recepcion: Asignacion = { rol: "RECEPCIONISTA", alcance: "SEDE", franquiciadoId: null, sedeId: "centro" };
 
-test("permisos de gastos por rol; recepción y profesional sin acceso", () => {
-  for (const p of ["gasto:leer", "gasto:registrar", "gasto:anular", "gasto:categorias"] as const) {
+test("permisos de gastos por rol; recepción solo ve y registra desde la caja; profesional sin acceso", () => {
+  for (const p of ["gasto:leer", "gasto:registrar", "gasto:registrar_caja", "gasto:anular", "gasto:categorias"] as const) {
     assert.equal(tienePermiso(master, p), true);
     assert.equal(tienePermiso(franA, p), true);
     assert.equal(tienePermiso(admin, p), true);
-    assert.equal(tienePermiso(recepcion, p), false);
+    // Confirmado por Sicurella el 2026-10-14: recepción ve los gastos y carga los pagados con la caja.
+    assert.equal(tienePermiso(recepcion, p), p === "gasto:leer" || p === "gasto:registrar_caja", p);
     assert.equal(tienePermiso({ rol: "PROFESIONAL", alcance: "PROPIO", franquiciadoId: null, sedeId: null }, p), false);
   }
   assert.equal(tienePermiso({ ...admin, alcance: "ORGANIZACION", sedeId: null }, "gasto:leer"), false, "alcance inválido");

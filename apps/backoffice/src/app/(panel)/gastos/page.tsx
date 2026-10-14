@@ -65,17 +65,20 @@ export default async function Gastos({ searchParams }: { searchParams: Promise<P
 
     {lista.puedeRegistrar && <details className="desplegable">
       <summary>+ Registrar gasto</summary>
-      {activas.length ? <Formulario accion={accionRegistrarGasto} boton="Registrar gasto">
+      {lista.soloDesdeCaja && !cajaAbierta ? <p className="ayuda">Recepción carga los gastos pagados en efectivo con la caja: abrí la caja para registrar uno.</p>
+      : activas.length ? <Formulario accion={accionRegistrarGasto} boton="Registrar gasto">
         <input type="hidden" name="sedeId" value={sede.id} />
         <div className="grilla">
           <label>Fecha<input type="date" name="fecha" required defaultValue={hoy} max={hoy} /></label>
           <label>Monto ($)<input name="monto" required inputMode="decimal" placeholder="12500,50" pattern="\d{1,10}([.,]\d{1,2})?" title="Pesos, con hasta 2 decimales y sin separador de miles" /></label>
           <label>Categoría<select name="categoriaId" required>{activas.map(c => <option key={c.id} value={c.id}>{c.nombre}{c.global ? "" : " (de la sede)"}</option>)}</select></label>
-          <label>Medio de pago<select name="medioPago" defaultValue="EFECTIVO">{MEDIOS_PAGO_GASTO.map(m => <option key={m} value={m}>{MEDIOS[m]}</option>)}</select></label>
+          {lista.soloDesdeCaja ? <><input type="hidden" name="medioPago" value="EFECTIVO" /><p className="ayuda">Efectivo, sale de la caja abierta.</p></>
+            : <label>Medio de pago<select name="medioPago" defaultValue="EFECTIVO">{MEDIOS_PAGO_GASTO.map(m => <option key={m} value={m}>{MEDIOS[m]}</option>)}</select></label>}
         </div>
         <label>Descripción<input name="descripcion" required minLength={3} maxLength={500} placeholder="Qué se pagó y a quién" /></label>
         <label>Comprobante (opcional)<input name="comprobante" maxLength={120} placeholder="Tipo y número, p. ej. Factura B 0003-00012345" /></label>
-        {cajaAbierta ? <><input type="hidden" name="conCaja" value="1" /><label className="check"><input type="checkbox" name="desdeCaja" defaultChecked />Si es en efectivo, sale de la caja abierta</label></>
+        {lista.soloDesdeCaja ? <><input type="hidden" name="conCaja" value="1" /><input type="hidden" name="desdeCaja" value="on" /></>
+          : cajaAbierta ? <><input type="hidden" name="conCaja" value="1" /><label className="check"><input type="checkbox" name="desdeCaja" defaultChecked />Si es en efectivo, sale de la caja abierta</label></>
           : <p className="ayuda">La caja de la sede está cerrada: un gasto en efectivo no se descuenta de ninguna caja.</p>}
         <p className="ayuda">Un gasto no se edita ni se borra. Si te equivocaste, anulalo (queda registrado quién, cuándo y por qué) y cargalo de nuevo.</p>
       </Formulario> : <p className="ayuda">No hay categorías activas para esta sede. Creá una en la pestaña Categorías.</p>}

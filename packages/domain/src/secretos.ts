@@ -70,8 +70,11 @@ type Campo = { nombre: string; etiqueta: string; formato: RegExp; ayuda?: string
  * Campos por proveedor. Los públicos se guardan en claro y pueden mostrarse; los secretos, cifrados
  * y nunca vuelven al navegador. cuentaExterna identifica la cuenta en el proveedor para impedir
  * que dos sedes compartan la misma cuenta receptora (D8).
+ *
+ * `oauth`: la cuenta se vincula autorizando en el proveedor, no pegando datos. Los campos solo
+ * describen lo que se guarda; no se aceptan desde un formulario.
  */
-export const ESQUEMAS: Record<Proveedor, { publicos: Campo[]; secretos: Campo[]; cuentaExterna?: string }> = {
+export const ESQUEMAS: Record<Proveedor, { publicos: Campo[]; secretos: Campo[]; cuentaExterna?: string; oauth?: true }> = {
   MERCADO_PAGO: {
     publicos: [
       { nombre: "cuentaId", etiqueta: "ID de cuenta (user_id)", formato: /^\d{3,20}$/ },
@@ -79,9 +82,10 @@ export const ESQUEMAS: Record<Proveedor, { publicos: Campo[]; secretos: Campo[];
     ],
     secretos: [
       { nombre: "accessToken", etiqueta: "Access token", formato: /^(APP_USR|TEST)-\S{20,400}$/ },
-      { nombre: "webhookSecret", etiqueta: "Clave secreta de notificaciones", formato: /^\S{16,256}$/ },
+      { nombre: "refreshToken", etiqueta: "Refresh token", formato: /^\S{10,400}$/ },
     ],
     cuentaExterna: "cuentaId",
+    oauth: true,
   },
   FACTURANTE: {
     publicos: [
@@ -99,6 +103,7 @@ export const ESQUEMAS: Record<Proveedor, { publicos: Campo[]; secretos: Campo[];
 export function validarCredencial(proveedor: Proveedor, entrada: Record<string, string>): { error: string } | { publicos: Record<string, string>; secretos: Record<string, string>; cuentaExterna: string | null } {
   const esquema = ESQUEMAS[proveedor];
   if (!esquema) return { error: "Proveedor desconocido" };
+  if (esquema.oauth) return { error: "Esta cuenta se vincula desde el proveedor con «Conectar», no cargando los datos" };
   const leer = (campos: Campo[]) => {
     const out: Record<string, string> = {};
     for (const c of campos) {

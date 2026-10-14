@@ -10,7 +10,7 @@ import { createDatabase } from "../src/client.ts";
 import { DatosInvalidos } from "../src/access.ts";
 import { crearCategoria, crearSkill, guardarServicio, guardarServicioSede } from "../src/catalogo.ts";
 import { publicarConsentimiento } from "../src/clientes.ts";
-import { actualizarConfiguracionOrganizacion, guardarCredencial } from "../src/configuracion.ts";
+import { actualizarConfiguracionOrganizacion, vincularMercadoPago } from "../src/configuracion.ts";
 import { ErrorPermanente } from "../src/jobs.ts";
 import { aplicarPago, encolarConsultaPago, iniciarPagoPublico, procesarPagoMercadoPago, verificarPagoPublico, type PagoExterno, type PasarelaMercadoPago } from "../src/pagos.ts";
 import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
@@ -75,7 +75,7 @@ test("seña con Mercado Pago (R04)", async (t) => {
       await assert.rejects(iniciarPagoPublico(db, pasarela, { token: r.token, ...urls }, mas(1), llavero), (e: unknown) => e instanceof DatosInvalidos && /no está habilitado/.test(e.message));
     });
 
-    await guardarCredencial(db, M, O, a.centro.id, "MERCADO_PAGO", "PRUEBA", { cuentaId: CUENTA, publicKey: "TEST-public-key-123", accessToken: ACCESS, webhookSecret: "secreto-del-webhook-123" }, llavero);
+    await vincularMercadoPago(db, M, O, a.centro.id, "PRUEBA", { cuentaId: CUENTA, publicKey: "TEST-public-key-123", accessToken: ACCESS, refreshToken: "TG-refresh-inicial", expiraEn: new Date(ahora.getTime() + 180 * 86_400_000) }, llavero);
 
     await t.test("link de pago: una preferencia por retención, con monto, vencimiento y notificación", async () => {
       const r = await reservar("10:00");
@@ -214,6 +214,19 @@ test("seña con Mercado Pago (R04)", async (t) => {
 
       await assert.rejects(procesarPagoMercadoPago(db, pasarela, { sedeId: "x" }, ahora, llavero), ErrorPermanente);
       await assert.rejects(procesarPagoMercadoPago(db, pasarela, { sedeId: a.norte.id, ambiente: "PRUEBA", pagoId: "1" }, ahora, llavero), ErrorPermanente);
+    });
+
+    await t.test("token por vencer: se renueva antes de consultar el pago", async () => {
+      const nuevo = `APP_USR-${"n".repeat(30)}`, cuando = new Date(ahora.getTime() + 170 * 86_400_000);
+      let pedidos = 0;
+      const conRenovacion: PasarelaMercadoPago = {
+        ...pasarela,
+        obtenerPago: async (token, id) => { assert.equal(token, nuevo, "consulta con el token renovado"); return { id, status: "rejected", statusDetail: null, monto: "1.00", moneda: "ARS", referenciaExterna: null, cobradorId: CUENTA, aprobadoEn: null }; },
+        renovarTokens: async refreshToken => { pedidos++; assert.equal(refreshToken, "TG-refresh-inicial"); return { cuentaId: CUENTA, publicKey: null, accessToken: nuevo, refreshToken: "TG-refresh-2", expiraEn: new Date(cuando.getTime() + 180 * 86_400_000) }; },
+      };
+      assert.equal((await procesarPagoMercadoPago(db, conRenovacion, { sedeId: a.centro.id, ambiente: "PRUEBA", pagoId: "424242" }, cuando, llavero)).resultado, "AJENO");
+      await procesarPagoMercadoPago(db, conRenovacion, { sedeId: a.centro.id, ambiente: "PRUEBA", pagoId: "424243" }, cuando, llavero);
+      assert.equal(pedidos, 1, "la segunda consulta ya usa el token renovado");
     });
 
     await t.test("notificación y retorno encolan una consulta deduplicada", async () => {

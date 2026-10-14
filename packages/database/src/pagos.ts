@@ -7,7 +7,7 @@ import { estadoPagoMercadoPago } from "@nailnet/domain/mercadopago";
 import type { Llavero } from "@nailnet/domain/secretos";
 import type { Database } from "./client.ts";
 import { DatosInvalidos } from "./access.ts";
-import { leerCredencial } from "./configuracion.ts";
+import { tokenMercadoPago, type RenovadorTokens } from "./configuracion.ts";
 import { ConfiguracionIncompleta, cargarConsulta, type Pedido } from "./disponibilidad.ts";
 import { ErrorPermanente, encolarJob } from "./jobs.ts";
 import { LimiteExcedido, tokenConFormato } from "./publico.ts";
@@ -35,6 +35,8 @@ export type PagoExterno = {
 export type PasarelaMercadoPago = {
   crearPreferencia(accessToken: string, p: { claveIdempotencia: string; titulo: string; monto: string; referenciaExterna: string; urlNotificacion: string | null; urlRetorno: string; expiraEn: Date; ahora: Date }, ambiente: Ambiente): Promise<{ id: string; url: string }>;
   obtenerPago(accessToken: string, id: string): Promise<PagoExterno>;
+  /** Renovación de los tokens OAuth de la sede. Sin ella se usa el token guardado tal cual. */
+  renovarTokens?: RenovadorTokens;
 };
 
 /** Staging y local cobran con credenciales de prueba; solo producción usa las reales. */
@@ -61,8 +63,8 @@ export async function iniciarPagoPublico(db: Database, pasarela: PasarelaMercado
   const monto = sumarSenas(r.items);
   if (monto <= 0n) throw new DatosInvalidos("Esta reserva no tiene seña para pagar");
   const ambiente = ambientePagos();
-  const credencial = await leerCredencial(db, r.sedeId, "MERCADO_PAGO", ambiente, llavero);
-  if (!credencial?.secretos.accessToken) throw new DatosInvalidos("El pago online todavía no está habilitado en esta sede. Comunicate con la sede para confirmar el turno.");
+  const cuenta = await tokenMercadoPago(db, r.sedeId, ambiente, pasarela.renovarTokens ?? null, ahora, llavero);
+  if (!cuenta) throw new DatosInvalidos("El pago online todavía no está habilitado en esta sede. Comunicate con la sede para confirmar el turno.");
 
   const expiraEn = r.expiraEn;
   const checkout = await db.$transaction(async tx => {
@@ -74,7 +76,7 @@ export async function iniciarPagoPublico(db: Database, pasarela: PasarelaMercado
 
   // Mercado Pago exige HTTPS para notificar; en local no hay webhook y la confirmación llega por el retorno.
   const urlNotificacion = entrada.urlApi.startsWith("https://") ? `${entrada.urlApi}/api/webhooks/mercadopago/${r.sedeId}` : null;
-  const preferencia = await pasarela.crearPreferencia(credencial.secretos.accessToken, {
+  const preferencia = await pasarela.crearPreferencia(cuenta.accessToken, {
     claveIdempotencia: checkout.id, referenciaExterna: checkout.id, monto: importe(monto),
     titulo: `Seña · ${r.items.map(i => i.servicio.nombre).join(" + ")} · ${r.sede.nombre}`,
     urlNotificacion, urlRetorno: `${entrada.urlPortal}/?pago=retorno`, expiraEn, ahora,
@@ -128,10 +130,10 @@ export async function verificarPagoPublico(db: Database, token: string | null, p
 export async function procesarPagoMercadoPago(db: Database, pasarela: PasarelaMercadoPago, payload: unknown, ahora = new Date(), llavero?: Llavero) {
   const p = payload as Partial<PayloadPago> | null;
   if (!p || typeof p.sedeId !== "string" || !UUID.test(p.sedeId) || (p.ambiente !== "PRUEBA" && p.ambiente !== "PRODUCCION") || typeof p.pagoId !== "string") throw new ErrorPermanente("Payload de pago inválido");
-  const credencial = await leerCredencial(db, p.sedeId, "MERCADO_PAGO", p.ambiente, llavero);
-  if (!credencial?.secretos.accessToken) throw new ErrorPermanente("La sede no tiene credenciales de Mercado Pago para este ambiente");
-  const pago = await pasarela.obtenerPago(credencial.secretos.accessToken, p.pagoId);
-  return aplicarPago(db, { sedeId: p.sedeId, ambiente: p.ambiente, cuentaId: credencial.publicos.cuentaId ?? null }, pago, ahora);
+  const cuenta = await tokenMercadoPago(db, p.sedeId, p.ambiente, pasarela.renovarTokens ?? null, ahora, llavero);
+  if (!cuenta) throw new ErrorPermanente("La sede no tiene una cuenta de Mercado Pago vinculada para este ambiente");
+  const pago = await pasarela.obtenerPago(cuenta.accessToken, p.pagoId);
+  return aplicarPago(db, { sedeId: p.sedeId, ambiente: p.ambiente, cuentaId: cuenta.cuentaId }, pago, ahora);
 }
 
 type EstadoGuardado = "EN_PROCESO" | "APROBADO" | "RECHAZADO" | "A_DEVOLVER" | "REEMBOLSADO";

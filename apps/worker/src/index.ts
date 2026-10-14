@@ -5,7 +5,7 @@ import type { HealthResponse } from "@nailnet/contracts";
 import { createDatabase } from "@nailnet/database";
 import { encolarJob, estadoCola, procesarJobs, resumenError } from "@nailnet/database/jobs";
 import { expirarRetenciones } from "@nailnet/database/reservas";
-import { claveLimpieza, manejadores } from "./manejadores.ts";
+import { TIPO_RENOVACION_MP, claveLimpieza, claveRenovacion, manejadores, renovacionHabilitada } from "./manejadores.ts";
 
 const port = Number(process.env.PORT ?? 3001);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT debe ser un puerto válido");
@@ -67,6 +67,7 @@ server.listen(port, process.env.HOST ?? "127.0.0.1", () => {
     if (r.expiradas) console.info(`Retenciones vencidas liberadas: ${r.expiradas}`);
     const ahora = new Date();
     await encolarJob(db, { tipo: "mantenimiento.limpieza", clave: claveLimpieza(ahora), payload: {} });
+    if (renovacionHabilitada) await encolarJob(db, { tipo: TIPO_RENOVACION_MP, clave: claveRenovacion(ahora), payload: {} });
   }));
   detener.push(ciclo("trabajos", intervaloJobsMs, async () => {
     const r = await procesarJobs(db, { workerId, manejadores: tipos });

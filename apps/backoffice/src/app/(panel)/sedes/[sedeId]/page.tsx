@@ -6,6 +6,7 @@ import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import { ESQUEMAS, type Proveedor } from "@nailnet/domain/secretos";
 import { listarSedes } from "@nailnet/database/access";
 import { listarCredenciales, obtenerConfiguracion } from "@nailnet/database/configuracion";
+import { ambientePagos } from "@nailnet/database/pagos";
 import { aHora } from "@nailnet/domain/agenda";
 import { listarCatalogo } from "@nailnet/database/catalogo";
 import { calendarioSede } from "@nailnet/database/profesionales";
@@ -13,7 +14,8 @@ import { Formulario } from "@/components/formulario";
 import { CamposSemana, textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
-import { accionConfiguracionOrganizacion, accionConfiguracionSede, accionCrearExcepcion, accionCrearRecurso, accionEliminarCredencial, accionEliminarExcepcion, accionEstadoRecurso, accionGuardarCredencial, accionHorarioSede, accionSenaRecepcion } from "../../acciones";
+import { aplicacionMercadoPago } from "@/lib/mercadopago";
+import { accionConectarMercadoPago, accionConfiguracionOrganizacion, accionConfiguracionSede, accionCrearExcepcion, accionCrearRecurso, accionEliminarCredencial, accionEliminarExcepcion, accionEstadoRecurso, accionGuardarCredencial, accionHorarioSede, accionSenaRecepcion } from "../../acciones";
 
 export const metadata: Metadata = { title: "Configuración de sede · Sicurella" };
 const PROVEEDORES: Record<Proveedor, string> = { MERCADO_PAGO: "Mercado Pago", FACTURANTE: "Facturante" };
@@ -26,8 +28,21 @@ function CamposParametros({ valores }: { valores: Partial<Record<Parametro, numb
   </label>)}</>;
 }
 
-export default async function ConfiguracionSede({ params }: { params: Promise<{ sedeId: string }> }) {
+// Resultado de la vinculación con Mercado Pago (lo informa el callback de OAuth con ?mp=…).
+const RESULTADO_MP: Record<string, [tipo: "ok" | "error", mensaje: string]> = {
+  vinculada: ["ok", "Cuenta de Mercado Pago vinculada."],
+  cancelado: ["error", "Se canceló la autorización en Mercado Pago. La cuenta no se vinculó."],
+  duplicada: ["error", "Esa cuenta de Mercado Pago ya está vinculada a otra sede."],
+  "sin-permiso": ["error", "No tenés permiso para vincular cuentas en esta sede."],
+  "sin-configurar": ["error", "La integración con Mercado Pago no está configurada en este entorno."],
+  error: ["error", "No se pudo vincular la cuenta. Volvé a intentar en unos minutos."],
+};
+const vencida = (venceEn: Date | null) => venceEn !== null && venceEn <= new Date();
+
+export default async function ConfiguracionSede({ params, searchParams }: { params: Promise<{ sedeId: string }>; searchParams: Promise<{ mp?: string }> }) {
   const { sedeId } = await params;
+  const resultadoMp = RESULTADO_MP[(await searchParams).mp ?? ""];
+  const ambienteMp = ambientePagos(), mpConfigurado = aplicacionMercadoPago() !== null;
   const { sesion, organizacion } = await requerirOrganizacion();
   const actorId = sesion.usuario.id;
   const cargar = async () => {
@@ -115,9 +130,28 @@ export default async function ConfiguracionSede({ params }: { params: Promise<{ 
     {config.puedeCredenciales && <>
       <h2 className="subtitulo">Credenciales de proveedores</h2>
       <p className="ayuda">Cada sede usa sus propias cuentas (D8). Los secretos se guardan cifrados y no se vuelven a mostrar: para cambiarlos, cargalos completos de nuevo.</p>
+      {resultadoMp && <p className={`alerta ${resultadoMp[0]}`} role="status">{resultadoMp[1]}</p>}
       <div className="tabla">{(Object.keys(ESQUEMAS) as Proveedor[]).flatMap(proveedor => (Object.keys(AMBIENTES) as (keyof typeof AMBIENTES)[]).map(ambiente => {
         const actual = credenciales.find(c => c.proveedor === proveedor && c.ambiente === ambiente);
         const esquema = ESQUEMAS[proveedor];
+        // Las cuentas por OAuth se vinculan para el ambiente de este despliegue: staging no puede tocar la real.
+        if (esquema.oauth) return ambiente !== ambienteMp ? [] : <article key={proveedor + ambiente} className="fila">
+          <div className="fila-cabecera"><h2>{PROVEEDORES[proveedor]} · {AMBIENTES[ambiente]}</h2>
+            <span className={`tag${actual && !vencida(actual.tokenVenceEn) ? " estado-confirmada" : ""}`}>{!actual ? "Sin vincular" : vencida(actual.tokenVenceEn) ? "Vencida" : "Vinculada"}</span></div>
+          {actual ? <p>Cuenta {actual.publicos.cuentaId ?? "—"}
+            {actual.tokenVenceEn ? ` · el acceso se renueva solo; vence el ${actual.tokenVenceEn.toLocaleDateString("es-AR")}` : " · cargada a mano: volvé a conectarla para que se renueve sola"}
+            {actual.requiereRecifrado ? " · pendiente de rotación de clave" : ""}</p>
+            : <p>Para cobrar señas online, quien administra la cuenta de Mercado Pago de la sede inicia sesión y autoriza a Sicurella.{ambiente === "PRUEBA" ? " En este entorno vinculá un usuario de prueba de Mercado Pago, no la cuenta real." : ""}</p>}
+          <div className="acciones">
+            {mpConfigurado ? <form action={accionConectarMercadoPago}>
+              <input type="hidden" name="sedeId" value={sede.id} />
+              <button className={actual ? "secundario" : undefined}>{actual ? "Volver a conectar" : "Conectar con Mercado Pago"}</button>
+            </form> : <p className="ayuda">La integración con Mercado Pago no está configurada en este entorno (MP_APP_ID y MP_CLIENT_SECRET).</p>}
+            {actual && <Formulario accion={accionEliminarCredencial} boton="Desvincular" className="en-linea" secundario confirmar="¿Desvincular la cuenta de Mercado Pago? La sede deja de cobrar señas online hasta que se vuelva a conectar.">
+              <input type="hidden" name="sedeId" value={sede.id} /><input type="hidden" name="proveedor" value={proveedor} /><input type="hidden" name="ambiente" value={ambiente} />
+            </Formulario>}
+          </div>
+        </article>;
         return <article key={proveedor + ambiente} className="fila">
           <div className="fila-cabecera"><h2>{PROVEEDORES[proveedor]} · {AMBIENTES[ambiente]}</h2>
             <span className="tag">{actual ? `Configurada ${actual.pista}` : "Sin configurar"}</span></div>

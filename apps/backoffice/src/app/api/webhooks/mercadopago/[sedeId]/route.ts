@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { leerCredencial } from "@nailnet/database/configuracion";
+import { tieneCuentaMercadoPago } from "@nailnet/database/configuracion";
 import { ambientePagos, encolarConsultaPago } from "@nailnet/database/pagos";
 import { verificarFirmaMercadoPago } from "@nailnet/domain/mercadopago";
 import { db } from "@/lib/db";
@@ -9,7 +9,7 @@ const respuesta = (status: number) => new NextResponse(null, { status, headers: 
 
 /**
  * Notificaciones de Mercado Pago de una sede (R04). La URL la fija la preferencia; la firma se valida
- * con la clave secreta de esa sede. Solo encola la consulta del pago y responde enseguida: el estado
+ * con la clave secreta de la aplicación (MP_WEBHOOK_SECRET). Solo encola la consulta del pago y responde enseguida: el estado
  * siempre sale de la API, nunca del cuerpo de la notificación.
  *
  * 200 también para lo que no nos interesa (otros tipos de evento), para que Mercado Pago no reintente.
@@ -34,10 +34,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ sed
     // Sin x-request-id no hay deduplicación posible: una notificación capturada se podría repetir.
     const requestId = request.headers.get("x-request-id");
     if (!requestId) return respuesta(401);
-    const credencial = await leerCredencial(db(), sedeId, "MERCADO_PAGO", ambiente);
-    // Misma respuesta que una firma inválida: no revela qué sedes tienen Mercado Pago configurado.
-    if (!credencial) return respuesta(401);
-    if (!verificarFirmaMercadoPago({ firma: request.headers.get("x-signature"), requestId, dataId, secreto: credencial.secretos.webhookSecret ?? "" })) return respuesta(401);
+    // Las cuentas se vinculan por OAuth a la aplicación de NailNet: Mercado Pago firma con la clave
+    // de la aplicación, no con una de cada sede.
+    const secreto = process.env.MP_WEBHOOK_SECRET;
+    if (!secreto) { console.error("Webhook de Mercado Pago: falta MP_WEBHOOK_SECRET"); return respuesta(401); }
+    if (!verificarFirmaMercadoPago({ firma: request.headers.get("x-signature"), requestId, dataId, secreto })) return respuesta(401);
+    // Misma respuesta que una firma inválida: no revela qué sedes tienen Mercado Pago vinculado.
+    if (!await tieneCuentaMercadoPago(db(), sedeId, ambiente)) return respuesta(401);
     if (tipo !== "payment" || !dataId || !/^\d{1,30}$/.test(dataId)) return respuesta(200);
     await encolarConsultaPago(db(), { sedeId, ambiente, pagoId: dataId, origen: `req:${requestId.slice(0, 100)}` });
     return respuesta(200);

@@ -16,7 +16,7 @@ Implementa R04 (Checkout Pro y webhook). Migración `202610120013_pagos`. Lógic
    - Una preferencia por retención: varios clics devuelven la misma.
    - Si la llamada a Mercado Pago falla, el próximo intento reusa el id del checkout como clave de idempotencia.
 3. El cliente paga en Mercado Pago y vuelve a `/?pago=retorno&payment_id=…`.
-4. Mercado Pago notifica a `POST /api/webhooks/mercadopago/{sedeId}`. Se valida la firma con la clave secreta de la sede y se encola un trabajo `pagos.mercadopago`. Se responde enseguida.
+4. Mercado Pago notifica a `POST /api/webhooks/mercadopago/{sedeId}`. Se valida la firma con la clave secreta de la aplicación (`MP_WEBHOOK_SECRET`) y se encola un trabajo `pagos.mercadopago`. Se responde enseguida.
 5. El worker consulta el pago a la API con el access token de la sede y lo aplica (ver abajo).
 6. Al volver, el portal llama a `POST …/reservas/actual/pago/verificar` con el `payment_id`. Encola la misma consulta y adelanta la confirmación si la notificación se demora. En local, sin webhook, es la única vía. Después consulta el estado cada 3 s durante un minuto.
 
@@ -53,8 +53,8 @@ Implementa R04 (Checkout Pro y webhook). Migración `202610120013_pagos`. Lógic
 
 ## Webhook
 
-- **URL:** `/api/webhooks/mercadopago/{sedeId}`. La sede identifica qué clave secreta y qué access token usar (D8: cuentas propias por sede).
-- **Firma:** `x-signature: ts=…,v1=…`. Manifiesto `id:{data.id};request-id:{x-request-id};ts:{ts};`, HMAC-SHA256 en hexadecimal ([documentación](https://www.mercadopago.com.ar/developers/es/docs/your-integrations/notifications/webhooks)).
+- **URL:** `/api/webhooks/mercadopago/{sedeId}`. La sede identifica qué access token usar (D8: cuentas propias por sede).
+- **Firma:** con la clave secreta de la aplicación de NailNet (`MP_WEBHOOK_SECRET`). Las cuentas de las sedes están vinculadas por OAuth a esa aplicación, así que Mercado Pago firma con su clave, no con una de cada sede. La sede de la URL no entra en la firma: una notificación válida reenviada a otra sede solo provoca una consulta que esa cuenta no puede ver (y un pago de otro cobrador queda `AJENO` o `A_DEVOLVER`). Formato `x-signature: ts=…,v1=…`. Manifiesto `id:{data.id};request-id:{x-request-id};ts:{ts};`, HMAC-SHA256 en hexadecimal ([documentación](https://www.mercadopago.com.ar/developers/es/docs/your-integrations/notifications/webhooks)).
 - **Respuestas:**
   - 200: encolado o ignorado (otro tipo de evento);
   - 401: firma inválida, falta `x-request-id` o la sede no tiene credenciales. Las tres son iguales a propósito, para no revelar qué sedes cobran online;
@@ -68,9 +68,39 @@ Implementa R04 (Checkout Pro y webhook). Migración `202610120013_pagos`. Lógic
 
 `NAILNET_AMBIENTE=produccion` usa las credenciales `PRODUCCION` de la sede; cualquier otro valor (staging, local) usa las `PRUEBA`. El worker ahora descifra credenciales: en Railway recibe `NAILNET_CLAVES_CIFRADO` y `NAILNET_CLAVE_ACTIVA` por referencia a las del backoffice (`.railway/railway.ts`).
 
+## Vinculación de cuentas (OAuth) · 2026-10-13
+
+Cada sede conecta su propia cuenta de Mercado Pago autorizando a la aplicación de NailNet, en lugar de pegar tokens. Mismo esquema que Clicnet, con dos diferencias: el `state` está atado al navegador y la renovación manda el refresh token.
+
+1. En Configuración → la sede → «Conectar con Mercado Pago» (permiso `sede:credenciales`). La acción guarda en una cookie cifrada y httpOnly (10 minutos) quién vincula qué sede y un `state` al azar, y redirige a `auth.mercadopago.com.ar/authorization`.
+2. Quien administra la cuenta inicia sesión en Mercado Pago y autoriza.
+3. Mercado Pago vuelve a `GET /api/mercadopago/callback?code=…&state=…`:
+   - el `state` tiene que coincidir con la cookie (tiempo constante) y la sesión tiene que ser la misma persona; si no, no se vincula nada. Un link de autorización armado por otro no trae la cookie, así que no puede vincular su cuenta a una sede ajena;
+   - se canjea el `code` en `POST /oauth/token` y se guardan access token, refresh token, `user_id` (cuenta receptora) y vencimiento, cifrados como el resto de las credenciales (doc 11). El permiso se vuelve a exigir al guardar;
+   - el resultado vuelve a la página de la sede como `?mp=vinculada|cancelado|duplicada|error`.
+- **Ambiente:** se vincula el del despliegue (`NAILNET_AMBIENTE`): en staging, un usuario vendedor de prueba de Mercado Pago; en producción, la cuenta real. La pantalla solo ofrece ese.
+- **Una cuenta, una sede:** el `user_id` sigue siendo único por ambiente (doc 11). Volver a conectar la misma cuenta en la misma sede reemplaza los tokens.
+- **Renovación:** los tokens duran 180 días; el refresh token es de un solo uso. Se renuevan cuando les quedan menos de 30 días:
+  - al usarlos (link de pago, consulta del worker), bajo lock de la fila para que dos procesos no gasten el mismo refresh token;
+  - y con una tarea horaria del worker (`mercadopago.renovacion`), para sedes que no están cobrando.
+  - Si la renovación falla pero el token todavía sirve, se usa igual. Una renovación nunca cambia la cuenta receptora.
+- **Desvincular:** borra la credencial. No revoca la autorización en Mercado Pago; eso lo hace la sede desde su cuenta.
+- **Carga manual:** ya no se acepta para Mercado Pago. Una fila cargada a mano antes de este cambio sigue cobrando, pero no se renueva y la pantalla pide volver a conectarla.
+
+**Variables** (backoffice; el worker recibe las dos primeras por referencia):
+
+| Variable | Uso |
+|---|---|
+| `MP_APP_ID` | Client ID de la aplicación de Mercado Pago de NailNet |
+| `MP_CLIENT_SECRET` | Client secret. Canje del `code` y renovación |
+| `MP_WEBHOOK_SECRET` | Clave secreta de notificaciones de la aplicación |
+| `MP_REDIRECT_URI` | Opcional. Por defecto `{BACKOFFICE_URL o dominio público}/api/mercadopago/callback` |
+
+La redirect URI tiene que estar registrada tal cual en la aplicación de Mercado Pago (una por entorno: staging y producción). Sin `MP_APP_ID` y `MP_CLIENT_SECRET`, la pantalla avisa que la integración no está configurada.
+
 ## Pendiente
 
-- **Sandbox:** cargar credenciales de prueba en la sede demo de staging y recorrer:
+- **Sandbox:** vincular un usuario vendedor de prueba a la sede demo de staging con «Conectar con Mercado Pago» y recorrer:
   - pago aprobado, rechazado y tardío;
   - notificación real con firma, para confirmar el formato del manifiesto y si `ts` llega en segundos o milisegundos;
   - retorno y `sandbox_init_point` frente a `init_point` con usuarios de prueba.

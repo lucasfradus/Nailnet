@@ -85,6 +85,59 @@ export async function crearPreferencia(accessToken: string, p: PreferenciaMercad
   return { id: r.id, url };
 }
 
+// ─── Vinculación de cuentas (OAuth) ──────────────────────────────────────────
+
+/** Aplicación de Mercado Pago de NailNet: cada sede autoriza su cuenta contra ella. */
+export type AplicacionMercadoPago = { clientId: string; clientSecret: string; redirectUri: string };
+/** Tokens de la cuenta de una sede. Duran 180 días y se renuevan con el refresh token (de un solo uso). */
+export type TokensMercadoPago = { accessToken: string; refreshToken: string; publicKey: string | null; cuentaId: string; expiraEn: Date };
+
+const AUTORIZACION = "https://auth.mercadopago.com.ar/authorization";
+
+/** Pantalla de Mercado Pago donde la sede inicia sesión y autoriza. `state` vuelve intacto al callback. */
+export function urlAutorizacion(app: Pick<AplicacionMercadoPago, "clientId" | "redirectUri">, state: string): string {
+  return `${AUTORIZACION}?${new URLSearchParams({ client_id: app.clientId, response_type: "code", platform_id: "mp", state, redirect_uri: app.redirectUri })}`;
+}
+
+async function pedirTokens(fetchImpl: Fetch, cuerpo: Record<string, string>, ahora: Date): Promise<TokensMercadoPago> {
+  let respuesta: Response;
+  try {
+    respuesta = await fetchImpl(`${API}/oauth/token`, {
+      method: "POST", body: JSON.stringify(cuerpo), signal: AbortSignal.timeout(TIEMPO_LIMITE_MS),
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+    });
+  } catch (e) {
+    throw new ErrorTransitorio(`Mercado Pago no respondió: ${e instanceof Error ? e.name : "error de red"}`);
+  }
+  const r = await respuesta.json().catch(() => null) as Record<string, unknown> | null;
+  if (!respuesta.ok) {
+    // Solo el código de error: la respuesta puede repetir el code o el refresh token enviados.
+    const codigo = typeof r?.error === "string" ? `: ${r.error.slice(0, 60)}` : "";
+    const mensaje = `Mercado Pago respondió ${respuesta.status}${codigo}`;
+    if (respuesta.status === 429 || respuesta.status >= 500) throw new ErrorTransitorio(mensaje);
+    throw new ErrorProveedor(respuesta.status, mensaje);
+  }
+  const usuario = r?.user_id;
+  if (typeof r?.access_token !== "string" || typeof r.refresh_token !== "string" || (typeof usuario !== "number" && typeof usuario !== "string") || typeof r.expires_in !== "number") {
+    throw new ErrorTransitorio("Respuesta de autorización inesperada");
+  }
+  return {
+    accessToken: r.access_token, refreshToken: r.refresh_token, cuentaId: String(usuario),
+    publicKey: typeof r.public_key === "string" ? r.public_key : null,
+    expiraEn: new Date(ahora.getTime() + r.expires_in * 1000),
+  };
+}
+
+/** Canjea el code que Mercado Pago devolvió al callback por los tokens de la cuenta. */
+export function canjearCodigo(app: AplicacionMercadoPago, code: string, ahora = new Date(), fetchImpl: Fetch = fetch): Promise<TokensMercadoPago> {
+  return pedirTokens(fetchImpl, { client_id: app.clientId, client_secret: app.clientSecret, grant_type: "authorization_code", code, redirect_uri: app.redirectUri }, ahora);
+}
+
+/** Renueva los tokens. El refresh token anterior deja de servir: guardar siempre el nuevo. */
+export function refrescarTokens(app: Pick<AplicacionMercadoPago, "clientId" | "clientSecret">, refreshToken: string, ahora = new Date(), fetchImpl: Fetch = fetch): Promise<TokensMercadoPago> {
+  return pedirTokens(fetchImpl, { client_id: app.clientId, client_secret: app.clientSecret, grant_type: "refresh_token", refresh_token: refreshToken }, ahora);
+}
+
 /** Consulta un pago por id. Es la única fuente del estado: las notificaciones solo avisan que cambió. */
 export async function obtenerPago(accessToken: string, id: string, fetchImpl: Fetch = fetch): Promise<PagoMercadoPago> {
   if (!/^\d{1,30}$/.test(id)) throw new ErrorProveedor(400, "Id de pago inválido");

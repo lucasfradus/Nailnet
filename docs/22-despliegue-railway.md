@@ -51,7 +51,9 @@ Las que no figuran las pone Railway (`PORT`, `RAILWAY_PUBLIC_DOMAIN`, etc.).
 | `TRUST_PROXY` | `true` | Detrás del edge de Railway |
 | `CLIENTE_IP_HEADER` | `x-real-ip` | Ver «IP del cliente» |
 | `ALLOW_DEMO_SEED` | `true` | Solo en `staging` |
-| `BACKOFFICE_URL` | (opcional) | Para enlaces de invitación. Si falta, se usa el dominio público del propio servicio |
+| `BACKOFFICE_URL` | (opcional) | Para enlaces de invitación y la redirect URI de Mercado Pago. Si falta, se usa el dominio público del propio servicio |
+| `MP_APP_ID`, `MP_CLIENT_SECRET` | Aplicación de Mercado Pago | **Secretos: cargar a mano.** Vinculación de cuentas por OAuth y renovación de tokens (doc 23) |
+| `MP_WEBHOOK_SECRET` | Clave de notificaciones de la aplicación | **Secreto: cargar a mano.** Firma del webhook |
 
 ### booking
 
@@ -70,6 +72,7 @@ Las variables `VITE_` terminan en el bundle público: nunca poner secretos.
 | `HOST` | `0.0.0.0` |
 | `WORKER_INTERVALO_SEGUNDOS`, `WORKER_JOBS_SEGUNDOS` | Opcionales (30 y 5) |
 | `NAILNET_CLAVES_CIFRADO`, `NAILNET_CLAVE_ACTIVA` | Referencias a las del backoffice (`${{backoffice.…}}`). Para consultar pagos con las credenciales de cada sede (R04) |
+| `MP_APP_ID`, `MP_CLIENT_SECRET` | Referencias a las del backoffice. Renovación de los tokens OAuth de las sedes |
 
 ## IP del cliente
 
@@ -84,7 +87,7 @@ Los límites de intentos (login, recuperación, reservas del portal) dependen de
 
 1. **Crear el proyecto** en Railway (o usar el que ya está), con un ambiente `staging`. Agregar Postgres y los tres servicios desde el repo de GitHub.
 2. **Generar el dominio público** de `backoffice` y de `booking` (Settings → Networking). Los dominios generados no se manejan desde el IaC.
-3. **Cargar los secretos** del backoffice: `NAILNET_CLAVES_CIFRADO` y `NAILNET_CLAVE_ACTIVA`.
+3. **Cargar los secretos** del backoffice: `NAILNET_CLAVES_CIFRADO` y `NAILNET_CLAVE_ACTIVA`; para cobrar con Mercado Pago, también `MP_APP_ID`, `MP_CLIENT_SECRET` y `MP_WEBHOOK_SECRET`, y registrar `https://<dominio del backoffice>/api/mercadopago/callback` como redirect URI en la aplicación de Mercado Pago.
 4. **Aplicar la configuración.** Opciones:
    - **Con el CLI:**
      - Requiere Railway CLI ≥ 5.42.1; en esta máquina hay 5.26.2, así que hay que actualizarlo.

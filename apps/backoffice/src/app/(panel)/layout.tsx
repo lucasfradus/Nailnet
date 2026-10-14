@@ -16,6 +16,7 @@ export default async function Panel({ children }: { children: React.ReactNode })
       ...puede.verSedes ? [{ href: "/agenda", etiqueta: "Agenda", icono: "agenda" } as const] : [],
       ...puede.verClientes ? [{ href: "/clientes", etiqueta: "Clientes", icono: "clientes" } as const] : [],
       ...puede.verGastos ? [{ href: "/gastos", etiqueta: "Gastos", icono: "gastos" } as const] : [],
+      ...puede.verStock ? [{ href: "/stock", etiqueta: "Stock", icono: "stock" } as const] : [],
     ] },
     { titulo: "Configuración", icono: "configuracion", items: [
       ...puede.verSedes ? [

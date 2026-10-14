@@ -23,6 +23,24 @@ export function verificarFirmaMercadoPago(entrada: { firma: string | null; reque
   return timingSafeEqual(esperado, Buffer.from(v1, "hex"));
 }
 
+/**
+ * Qué hacer con una notificación que llegó a la URL de una preferencia. Mercado Pago manda dos
+ * formatos para el mismo evento:
+ * - Webhooks (`?type=payment&data.id=…`, firmado con x-signature): el único que se procesa.
+ * - IPN (`?topic=…&id=…`): no viene firmado, no se puede validar y Mercado Pago lo está
+ *   discontinuando. Se ignora: el pago llega igual por el Webhook y por el retorno al portal.
+ * Lo ignorado se responde 200 para que Mercado Pago no lo reintente. Nunca tiene efectos.
+ */
+export function clasificarNotificacionMercadoPago(consulta: URLSearchParams, cuerpo: { type?: unknown; data?: { id?: unknown } } | null):
+  { accion: "ignorar"; motivo: "ipn" | "otro_evento" } | { accion: "verificar"; dataId: string } {
+  if (consulta.has("topic")) return { accion: "ignorar", motivo: "ipn" };
+  const tipo = consulta.get("type") ?? (typeof cuerpo?.type === "string" ? cuerpo.type : null);
+  const idCuerpo = cuerpo?.data?.id;
+  const dataId = consulta.get("data.id") ?? (typeof idCuerpo === "string" || typeof idCuerpo === "number" ? String(idCuerpo) : null);
+  if (tipo !== "payment" || !dataId || !/^\d{1,30}$/.test(dataId)) return { accion: "ignorar", motivo: "otro_evento" };
+  return { accion: "verificar", dataId };
+}
+
 export type EstadoPago = "EN_PROCESO" | "APROBADO" | "RECHAZADO" | "REEMBOLSADO";
 
 /**

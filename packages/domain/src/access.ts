@@ -1,5 +1,7 @@
 export type Rol = "MASTER_FRANQUICIADOR" | "FRANQUICIADO" | "ADMIN_SEDE" | "RECEPCIONISTA" | "PROFESIONAL";
-export type Permiso = "sede:leer" | "sede:administrar" | "sede:crear" | "sede:credenciales" | "franquiciado:administrar" | "organizacion:configurar" | "usuario:leer" | "usuario:administrar" | "cliente:leer" | "cliente:editar" | "consentimiento:administrar" | "catalogo:administrar" | "catalogo:precios" | "profesional:administrar" | "reserva:gestionar";
+export type Permiso = "sede:leer" | "sede:administrar" | "sede:crear" | "sede:credenciales" | "franquiciado:administrar" | "organizacion:configurar" | "usuario:leer" | "usuario:administrar" | "cliente:leer" | "cliente:editar" | "consentimiento:administrar" | "catalogo:administrar" | "catalogo:precios" | "profesional:administrar" | "reserva:gestionar"
+  // Stock (O03): productos globales; saldos y movimientos por sede.
+  | "producto:administrar" | "stock:leer" | "stock:consumir" | "stock:gestionar";
 export type Asignacion = {
   rol: Rol;
   alcance: "ORGANIZACION" | "FRANQUICIADO" | "SEDE" | "PROPIO";
@@ -7,11 +9,13 @@ export type Asignacion = {
   sedeId: string | null;
 };
 const permisos: Record<Rol, readonly Permiso[]> = {
-  MASTER_FRANQUICIADOR: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "franquiciado:administrar", "organizacion:configurar", "usuario:leer", "usuario:administrar", "cliente:leer", "cliente:editar", "consentimiento:administrar", "catalogo:administrar", "catalogo:precios", "profesional:administrar", "reserva:gestionar"],
+  MASTER_FRANQUICIADOR: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "franquiciado:administrar", "organizacion:configurar", "usuario:leer", "usuario:administrar", "cliente:leer", "cliente:editar", "consentimiento:administrar", "catalogo:administrar", "catalogo:precios", "profesional:administrar", "reserva:gestionar", "producto:administrar", "stock:leer", "stock:consumir", "stock:gestionar"],
   // Credenciales de proveedores: solo quien es dueño comercial de la sede (o el master), no la operación diaria.
-  FRANQUICIADO: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "usuario:leer", "usuario:administrar", "cliente:leer", "cliente:editar", "catalogo:precios", "profesional:administrar", "reserva:gestionar"],
-  ADMIN_SEDE: ["sede:leer", "sede:administrar", "usuario:leer", "cliente:leer", "cliente:editar", "catalogo:precios", "profesional:administrar", "reserva:gestionar"],
-  RECEPCIONISTA: ["sede:leer", "cliente:leer", "cliente:editar", "reserva:gestionar"],
+  FRANQUICIADO: ["sede:leer", "sede:administrar", "sede:crear", "sede:credenciales", "usuario:leer", "usuario:administrar", "cliente:leer", "cliente:editar", "catalogo:precios", "profesional:administrar", "reserva:gestionar", "stock:leer", "stock:consumir", "stock:gestionar"],
+  ADMIN_SEDE: ["sede:leer", "sede:administrar", "usuario:leer", "cliente:leer", "cliente:editar", "catalogo:precios", "profesional:administrar", "reserva:gestionar", "stock:leer", "stock:consumir", "stock:gestionar"],
+  // Stock: recepción ve saldos y registra consumo interno (y ventas, con O01). Compras, ajustes y
+  // transferencias quedan para administración de sede, franquiciado o master.
+  RECEPCIONISTA: ["sede:leer", "cliente:leer", "cliente:editar", "reserva:gestionar", "stock:leer", "stock:consumir"],
   PROFESIONAL: [],
 };
 /**

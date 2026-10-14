@@ -43,6 +43,10 @@ export default defineRailway((ctx) => {
       MP_APP_ID: preserve(),
       MP_CLIENT_SECRET: preserve(),
       MP_WEBHOOK_SECRET: preserve(),
+      // P03 (doc 24): firma del webhook de entrega de Resend, y si se ofrece «Recuperar acceso» (`true`
+      // recién cuando el worker tiene RESEND_API_KEY y el dominio del remitente está verificado).
+      RESEND_WEBHOOK_SECRET: preserve(),
+      RECUPERACION_POR_EMAIL: preserve(),
       PORTAL_ORIGIN: dominio("booking"),
       // Railway pone la IP real del cliente en X-Real-IP; X-Forwarded-For la puede inventar el cliente.
       TRUST_PROXY: "true",
@@ -86,6 +90,11 @@ export default defineRailway((ctx) => {
       // Renovación de los tokens OAuth de las sedes.
       MP_APP_ID: "${{backoffice.MP_APP_ID}}",
       MP_CLIENT_SECRET: "${{backoffice.MP_CLIENT_SECRET}}",
+      // P03 (doc 24): emails transaccionales. Se cargan a mano; sin API key, staging simula los envíos
+      // y producción los deja pendientes en la cola hasta configurarla.
+      RESEND_API_KEY: preserve(),
+      RESEND_FROM: preserve(),
+      ...(staging ? { EMAIL_SIMULADO: "true" } : {}),
     },
   });
 

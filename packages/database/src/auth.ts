@@ -1,5 +1,7 @@
 import { generarToken, hashPassword, hashSenuelo, hashToken, normalizarEmail, requiereRehash, validarPassword, verificarPassword } from "@nailnet/domain/credenciales";
+import type { Llavero } from "@nailnet/domain/secretos";
 import type { Database } from "./client.ts";
+import { encolarEmailRecuperacion } from "./emails.ts";
 import type { Prisma } from "../generated/client/client.ts";
 
 const MINUTO = 60_000;
@@ -98,8 +100,11 @@ export async function cerrarSesion(db: Database, token: string | undefined | nul
 /**
  * Devuelve el token para enviarlo por email, o null si no corresponde (usuario inexistente,
  * inhabilitado o límite alcanzado). Quien llama debe responder igual en ambos casos.
+ *
+ * Con `envio`, encola el email (P03) en la misma transacción que emite el token: el enlace se arma con
+ * la URL pública del backoffice y viaja cifrado con el llavero del servidor hasta el worker.
  */
-export async function solicitarRecuperacion(db: Database, entrada: { email: string; ip?: string | null }): Promise<{ token: string; expiraEn: Date; email: string; nombre: string } | null> {
+export async function solicitarRecuperacion(db: Database, entrada: { email: string; ip?: string | null; envio?: { enlace: (token: string) => string; llavero: Llavero } }): Promise<{ token: string; expiraEn: Date; email: string; nombre: string } | null> {
   const email = normalizarEmail(entrada.email).slice(0, 254);
   const ip = entrada.ip?.slice(0, 64) || null;
   return db.$transaction(async (tx) => {
@@ -112,7 +117,8 @@ export async function solicitarRecuperacion(db: Database, entrada: { email: stri
     const usuario = await tx.usuario.findFirst({ where: { email, ...habilitado }, select: { id: true, email: true, nombre: true } });
     await tx.intentoAcceso.create({ data: { tipo: "RECUPERACION", email, ip, exitoso: !!usuario } });
     if (!usuario) return null;
-    const { token, expiraEn } = await emitirTokenAcceso(tx, usuario.id, POLITICA_ACCESO.recuperacionMs, ahora);
+    const { id, token, expiraEn } = await emitirTokenAcceso(tx, usuario.id, POLITICA_ACCESO.recuperacionMs, ahora);
+    if (entrada.envio) await encolarEmailRecuperacion(tx, { usuarioId: usuario.id, tokenId: id, enlace: entrada.envio.enlace(token), llavero: entrada.envio.llavero });
     return { token, expiraEn, email: usuario.email, nombre: usuario.nombre };
   });
 }
@@ -122,8 +128,8 @@ export async function emitirTokenAcceso(tx: Prisma.TransactionClient, usuarioId:
   await tx.tokenRecuperacion.updateMany({ where: { usuarioId, usadoEn: null }, data: { usadoEn: ahora } });
   const { token, hash } = generarToken();
   const expiraEn = new Date(ahora.getTime() + duracionMs);
-  await tx.tokenRecuperacion.create({ data: { usuarioId, tokenHash: hash, createdAt: ahora, expiraEn } });
-  return { token, expiraEn };
+  const { id } = await tx.tokenRecuperacion.create({ data: { usuarioId, tokenHash: hash, createdAt: ahora, expiraEn }, select: { id: true } });
+  return { id, token, expiraEn };
 }
 
 export async function restablecerPassword(db: Database, token: string, password: string): Promise<void> {

@@ -152,6 +152,31 @@ a.dia:hover{background:var(--gris-50);border-color:var(--teal-200)}
 button.bloqueado{cursor:not-allowed;opacity:.45}
 @media(max-width:1100px){.reserva{grid-template-columns:1fr}.resumen-turno{position:static}}
 
+/* Sedes: filas que llevan a la configuración, pestañas y secciones */
+a.fila-enlace{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:14px;align-items:center;color:inherit;text-decoration:none}
+a.fila-enlace h2{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+a.fila-enlace:hover h2{color:var(--color-primary)}
+a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-2px}
+.desplegable{margin-top:16px;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);padding:12px 18px}
+.desplegable>summary{margin:0;font-size:14px}.desplegable[open]>summary{margin-bottom:14px}
+.desplegable>.formulario+.formulario{margin-top:10px}
+.pestanas{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 20px;border-bottom:1px solid var(--color-border)}
+.pestanas a{padding:9px 12px;margin-bottom:-1px;border-bottom:2px solid transparent;color:var(--color-muted-foreground);text-decoration:none;font-size:13.5px;font-weight:500}
+.pestanas a:hover{color:var(--color-foreground)}
+.pestanas a[aria-current=page]{color:var(--color-primary);border-bottom-color:var(--color-primary)}
+.secciones{display:grid;gap:16px;max-width:880px}
+.secciones>article>h2,.secciones>article>.fila-cabecera{margin:0 0 10px}
+.secciones>article>.ayuda{margin-bottom:12px}
+.secciones details{margin-top:12px}
+.pendientes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.pendientes li{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--gris-200);border-radius:var(--radius-md);border-left-width:3px}
+.pendientes li div{display:grid;gap:2px;min-width:0}.pendientes li span{font-size:13px;color:var(--color-muted-foreground)}
+.pendientes li.listo{border-left-color:var(--color-success)}.pendientes li.falta{border-left-color:var(--color-warning);background:var(--color-warning-soft)}
+.datos-sede{display:grid;gap:14px;margin:0}
+.datos-sede>div{display:grid;grid-template-columns:200px minmax(0,1fr);gap:12px;align-items:baseline}
+.datos-sede dt{font-size:13px;color:var(--color-muted-foreground)}.datos-sede dd{margin:0;font-weight:500}.datos-sede small{font-weight:400;margin-top:2px}
+@media(max-width:700px){a.fila-enlace{grid-template-columns:minmax(0,1fr) auto}a.fila-enlace .boton{display:none}.datos-sede>div{grid-template-columns:1fr;gap:2px}}
+
 /* Imágenes */
 .editor-imagen{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin:8px 0 12px}.editor-imagen .ayuda{font-size:12px;margin:6px 0 0}
 .miniatura{width:160px;height:120px;object-fit:cover;border-radius:var(--radius-md);border:1px solid var(--color-border);background:var(--gris-50)}.miniatura.retrato{width:96px;height:96px;border-radius:50%}.miniatura.vacia{display:grid;place-items:center;font-size:12px;color:var(--color-muted-foreground)}

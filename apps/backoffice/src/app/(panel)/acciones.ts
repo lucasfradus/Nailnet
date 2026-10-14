@@ -73,12 +73,14 @@ export async function elegirContexto(form: FormData) {
 export async function accionCrearSede(_: Estado, form: FormData) {
   return ejecutar("/sedes", async (actor, org) => { await crearSede(db(), actor, org, { franquiciadoId: texto(form, "franquiciadoId"), nombre: texto(form, "nombre"), timezone: texto(form, "timezone") || undefined }); }, "Sede creada");
 }
+// La zona horaria se fija al crear la sede: cambiarla después corre los horarios de los turnos ya tomados.
 export async function accionActualizarSede(_: Estado, form: FormData) {
-  return ejecutar("/sedes", (actor, org) => actualizarSede(db(), actor, org, texto(form, "sedeId"), { nombre: texto(form, "nombre"), timezone: texto(form, "timezone") }), "Cambios guardados");
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => actualizarSede(db(), actor, org, sedeId, { nombre: texto(form, "nombre") }), "Nombre actualizado");
 }
 export async function accionEstadoSede(_: Estado, form: FormData) {
   const activo = texto(form, "activo") === "true";
-  return ejecutar("/sedes", (actor, org) => cambiarEstadoSede(db(), actor, org, texto(form, "sedeId"), activo), activo ? "Sede reactivada" : "Sede desactivada");
+  return ejecutar(`/sedes/${texto(form, "sedeId")}`,(actor, org) => cambiarEstadoSede(db(), actor, org, texto(form, "sedeId"), activo), activo ? "Sede reactivada" : "Sede desactivada");
 }
 export async function accionCrearFranquiciado(_: Estado, form: FormData) {
   return ejecutar("/sedes", async (actor, org) => { await crearFranquiciado(db(), actor, org, texto(form, "nombre")); }, "Franquiciado creado");

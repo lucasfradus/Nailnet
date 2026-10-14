@@ -29,7 +29,7 @@ Cada sede tiene sus credenciales por proveedor (Mercado Pago, Facturante) y ambi
 - **Escritura sin lectura:** la UI muestra el estado, los datos públicos (ID de cuenta, public key, company/subsidiary) y una pista con los últimos 4 caracteres. Para cambiar un secreto se cargan de nuevo todos.
 - **Cifrado:** AES-256-GCM con IV aleatorio y versión de clave. Sede, proveedor y ambiente van como dato asociado: un secreto copiado a otra fila no descifra (probado).
 - **Controles en la base:** un `CHECK` rechaza texto plano en la columna cifrada.
-- **Cuenta de Mercado Pago:** un mismo `user_id` no puede quedar vinculado a dos sedes en el mismo ambiente.
+- **Cuenta de Mercado Pago:** se vincula por OAuth con «Conectar con Mercado Pago», no pegando tokens (doc 23). Un mismo `user_id` no puede quedar vinculado a dos sedes en el mismo ambiente.
 - **Facturante:** no tiene restricción equivalente, porque varias sedes pueden compartir CUIT con puntos de venta distintos (`ConfiguracionFiscalSede`).
 - **Formatos:** se valida lo mínimo para detectar errores de carga. Los formatos exactos de Mercado Pago son estimados y se ajustarán con las credenciales sandbox (F05).
 - **Lectura interna:** `leerCredencial` descifra solo para adaptadores de servidor (worker y webhooks). No recibe actor y nunca debe usarse con datos de un formulario.
@@ -57,7 +57,6 @@ La pantalla marca las credenciales pendientes de rotación.
 ## Pendiente
 
 - No se cargaron credenciales reales ni se contactó a los proveedores. La conexión real y los formatos definitivos quedan para F05.
-- Vincular la cuenta de Mercado Pago por OAuth en lugar de pegar tokens: se evaluará con F05/R04.
 - Consulta de auditoría de cambios de credenciales en la UI.
 
 ## Verificación

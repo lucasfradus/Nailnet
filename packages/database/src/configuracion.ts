@@ -112,8 +112,13 @@ export async function listarCredenciales(db: Database, actorId: string, organiza
   const filas = await db.credencialProveedor.findMany({ where: { organizacionId, sedeId }, orderBy: [{ proveedor: "asc" }, { ambiente: "asc" }] });
   return filas.map(f => ({
     proveedor: f.proveedor, ambiente: f.ambiente, publicos: f.publicos as Record<string, string>, pista: f.pista,
-    actualizadaEn: f.updatedAt, requiereRecifrado: activa !== null && versionDe(f.secretoCifrado) !== activa,
+    actualizadaEn: f.updatedAt, tokenVenceEn: f.tokenVenceEn, requiereRecifrado: activa !== null && versionDe(f.secretoCifrado) !== activa,
   }));
+}
+
+/** Para acciones que empiezan fuera de este módulo (p. ej. ir a autorizar a Mercado Pago). Se vuelve a exigir al guardar. */
+export async function exigirGestionCredenciales(db: Database, actorId: string, organizacionId: string, sedeId: string) {
+  await exigirSobreSede(db, actorId, organizacionId, sedeId, "sede:credenciales");
 }
 
 /** Alta o reemplazo completo (todos los secretos se reescriben: no hay lectura para «editar»). */
@@ -161,6 +166,107 @@ export async function leerCredencial(db: Database, sedeId: string, proveedor: Pr
   if (!fila) return null;
   const secretos = JSON.parse(descifrar(llavero, fila.secretoCifrado, contexto(sedeId, proveedor, ambiente))) as Record<string, string>;
   return { publicos: fila.publicos as Record<string, string>, secretos };
+}
+
+// ─── Mercado Pago por OAuth ───────────────────────────────────────────────────
+
+/** Tokens de una cuenta autorizada (los arma @nailnet/integrations/mercadopago). */
+export type TokensOAuth = { accessToken: string; refreshToken: string; publicKey: string | null; cuentaId: string; expiraEn: Date };
+/** Pide tokens nuevos con el refresh token. Se inyecta: las pruebas usan uno falso. */
+export type RenovadorTokens = (refreshToken: string) => Promise<TokensOAuth>;
+/** Los tokens de Mercado Pago duran 180 días; se renuevan cuando les quedan menos de 30. */
+export const MARGEN_RENOVACION_MS = 30 * 86_400_000;
+
+function filaOAuth(sedeId: string, ambiente: Ambiente, t: TokensOAuth, llavero: Llavero) {
+  return {
+    cuentaExterna: t.cuentaId,
+    publicos: { cuentaId: t.cuentaId, ...(t.publicKey ? { publicKey: t.publicKey } : {}) },
+    secretoCifrado: cifrar(llavero, JSON.stringify({ accessToken: t.accessToken, refreshToken: t.refreshToken }), contexto(sedeId, "MERCADO_PAGO", ambiente)),
+    pista: pista(t.accessToken), tokenVenceEn: t.expiraEn,
+  };
+}
+
+/**
+ * Guarda la cuenta que la sede acaba de autorizar en Mercado Pago (callback de OAuth). Vuelve a exigir
+ * el permiso dentro de la transacción: entre el inicio y el regreso pudo haber cambiado.
+ */
+export async function vincularMercadoPago(db: Database, actorId: string, organizacionId: string, sedeId: string, ambiente: string, tokens: TokensOAuth, llavero: Llavero = llaveroEntorno()) {
+  exigirTipo("MERCADO_PAGO", ambiente);
+  if (!/^\d{3,20}$/.test(tokens.cuentaId)) throw new DatosInvalidos("Mercado Pago devolvió una cuenta inválida");
+  const datos = { ...filaOAuth(sedeId, ambiente as Ambiente, tokens, llavero), actualizadoPor: actorId };
+  try {
+    await db.$transaction(async tx => {
+      await bloquearOrganizacion(tx, organizacionId);
+      await exigirSobreSede(tx, actorId, organizacionId, sedeId, "sede:credenciales");
+      await tx.credencialProveedor.upsert({
+        where: { sedeId_proveedor_ambiente: { sedeId, proveedor: "MERCADO_PAGO", ambiente: ambiente as Ambiente } },
+        create: { organizacionId, sedeId, proveedor: "MERCADO_PAGO", ambiente: ambiente as Ambiente, ...datos },
+        update: datos,
+      });
+      await auditar(tx, organizacionId, actorId, "credencial.vincular", "Sede", sedeId, { proveedor: "MERCADO_PAGO", ambiente, publicos: datos.publicos });
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new DatosInvalidos("Esa cuenta de Mercado Pago ya está vinculada a otra sede");
+    throw e;
+  }
+}
+
+/** Si la sede tiene una cuenta de Mercado Pago vinculada en el ambiente, sin descifrar nada (webhook). */
+export async function tieneCuentaMercadoPago(db: Database, sedeId: string, ambiente: Ambiente) {
+  return (await db.credencialProveedor.count({ where: { sedeId, proveedor: "MERCADO_PAGO", ambiente } })) > 0;
+}
+
+type Vigente = { accessToken: string; cuentaId: string | null };
+const porVencer = (venceEn: Date | null, ahora: Date) => venceEn !== null && venceEn.getTime() - ahora.getTime() < MARGEN_RENOVACION_MS;
+
+/**
+ * Renueva bajo lock de la fila: el refresh token es de un solo uso y lo pueden intentar a la vez el
+ * worker, el webhook y el portal. Quien llega segundo encuentra la fila ya renovada y no llama a la API.
+ */
+async function renovarCredencial(db: Database, id: string, renovar: RenovadorTokens, ahora: Date, llavero: Llavero): Promise<Vigente | null> {
+  return db.$transaction(async tx => {
+    await tx.$queryRaw`SELECT 1 AS ok FROM "CredencialProveedor" WHERE "id" = ${id}::uuid FOR UPDATE`;
+    const f = await tx.credencialProveedor.findUnique({ where: { id } });
+    if (!f) return null;
+    const ambiente = f.ambiente as Ambiente;
+    const s = JSON.parse(descifrar(llavero, f.secretoCifrado, contexto(f.sedeId, "MERCADO_PAGO", ambiente))) as Record<string, string>;
+    const cuentaId = (f.publicos as Record<string, string>).cuentaId ?? null;
+    if (!porVencer(f.tokenVenceEn, ahora) || !s.refreshToken) return { accessToken: s.accessToken!, cuentaId };
+    const t = await renovar(s.refreshToken);
+    // Nunca reemplazar la cuenta receptora de la sede en silencio.
+    if (cuentaId && t.cuentaId !== cuentaId) throw new Error("La renovación devolvió otra cuenta de Mercado Pago");
+    await tx.credencialProveedor.update({ where: { id }, data: filaOAuth(f.sedeId, ambiente, t, llavero) });
+    return { accessToken: t.accessToken, cuentaId: t.cuentaId };
+  }, { timeout: 30_000 });
+}
+
+/**
+ * Access token vigente de la cuenta de Mercado Pago de la sede, renovado si está por vencer. Mismas
+ * reglas que leerCredencial: solo servidor, nunca con datos de un formulario. Si la renovación falla
+ * pero el token todavía sirve, se usa igual: un problema de renovación no frena un cobro.
+ */
+export async function tokenMercadoPago(db: Database, sedeId: string, ambiente: Ambiente, renovar: RenovadorTokens | null, ahora = new Date(), llavero: Llavero = llaveroEntorno()): Promise<Vigente | null> {
+  const fila = await db.credencialProveedor.findUnique({ where: { sedeId_proveedor_ambiente: { sedeId, proveedor: "MERCADO_PAGO", ambiente } } });
+  if (!fila) return null;
+  const actual = (): Vigente => ({ accessToken: (JSON.parse(descifrar(llavero, fila.secretoCifrado, contexto(sedeId, "MERCADO_PAGO", ambiente))) as Record<string, string>).accessToken!, cuentaId: (fila.publicos as Record<string, string>).cuentaId ?? null });
+  if (!renovar || !porVencer(fila.tokenVenceEn, ahora)) return actual();
+  try {
+    return await renovarCredencial(db, fila.id, renovar, ahora, llavero);
+  } catch (e) {
+    if (fila.tokenVenceEn! > ahora) { console.error("No se pudo renovar el token de Mercado Pago", e instanceof Error ? e.message : e); return actual(); }
+    throw e;
+  }
+}
+
+/** Tarea del worker: renueva las cuentas que entran en el margen, aunque no se esté cobrando nada. */
+export async function renovarTokensPorVencer(db: Database, renovar: RenovadorTokens, ahora = new Date(), llavero: Llavero = llaveroEntorno()) {
+  const filas = await db.credencialProveedor.findMany({ where: { proveedor: "MERCADO_PAGO", tokenVenceEn: { lt: new Date(ahora.getTime() + MARGEN_RENOVACION_MS) } }, select: { id: true } });
+  let renovadas = 0, fallidas = 0;
+  for (const { id } of filas) {
+    try { await renovarCredencial(db, id, renovar, ahora, llavero); renovadas++; }
+    catch (e) { fallidas++; console.error("No se pudo renovar el token de Mercado Pago", id, e instanceof Error ? e.message : e); }
+  }
+  return { renovadas, fallidas };
 }
 
 /** Rotación: reescribe con la versión activa todo lo cifrado con versiones anteriores. Idempotente. */

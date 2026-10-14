@@ -33,10 +33,11 @@ test("redacción y pista", () => {
   assert.equal(pista("corto"), "••••");
 });
 test("validación de credenciales por proveedor", () => {
-  const ok = validarCredencial("MERCADO_PAGO", { cuentaId: "123456", publicKey: "TEST-abcdefgh-1234", accessToken: "TEST-" + "a".repeat(30), webhookSecret: "b".repeat(32) });
-  assert.ok("secretos" in ok && ok.cuentaExterna === "123456");
-  assert.ok("error" in validarCredencial("MERCADO_PAGO", { cuentaId: "abc" }));
+  const ok = validarCredencial("FACTURANTE", { companyId: "1", subsidiaryId: "2", usuario: "usuario", password: "123456" });
+  assert.ok("secretos" in ok && ok.cuentaExterna === null);
   assert.ok("error" in validarCredencial("FACTURANTE", { companyId: "1", subsidiaryId: "2", usuario: "u", password: "123456" }));
+  // Mercado Pago se vincula por OAuth: aunque los datos tengan buen formato, no se aceptan cargados a mano.
+  assert.ok("error" in validarCredencial("MERCADO_PAGO", { cuentaId: "123456", publicKey: "TEST-abcdefgh-1234", accessToken: "TEST-" + "a".repeat(30), refreshToken: "TG-" + "b".repeat(20) }));
 });
 test("herencia de configuración y rangos", () => {
   const r = resolverConfiguracion({ horizonteReservaDias: 14, anticipacionMinimaMinutos: null }, { horizonteReservaDias: 30 });

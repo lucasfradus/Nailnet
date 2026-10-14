@@ -5,7 +5,8 @@ import { revalidatePath } from "next/cache";
 import { AccesoDenegado, type Asignacion } from "@nailnet/domain";
 import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes, zonaHorariaValida } from "@nailnet/database/access";
 import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol } from "@nailnet/database/usuarios";
-import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configurarSenaRecepcion, eliminarCredencial, guardarCredencial } from "@nailnet/database/configuracion";
+import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configurarSenaRecepcion, eliminarCredencial, exigirGestionCredenciales, guardarCredencial } from "@nailnet/database/configuracion";
+import { ambientePagos } from "@nailnet/database/pagos";
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
 import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
@@ -19,6 +20,7 @@ import { TurnoNoDisponible, cancelarReserva, marcarAtendida, marcarAusente, repr
 import { db } from "@/lib/db";
 import { urlBackoffice } from "@/lib/red";
 import { COOKIE_ORGANIZACION, COOKIE_SEDE, requerirOrganizacion } from "@/lib/contexto";
+import { aplicacionMercadoPago, iniciarVinculacion } from "@/lib/mercadopago";
 import type { Estado } from "@/components/formulario";
 
 // Cada acción obtiene actor y organización de la sesión validada; los IDs del formulario solo
@@ -131,6 +133,18 @@ export async function accionGuardarCredencial(_: Estado, form: FormData) {
 export async function accionEliminarCredencial(_: Estado, form: FormData) {
   const sedeId = texto(form, "sedeId");
   return ejecutar(`/sedes/${sedeId}`, (actor, org) => eliminarCredencial(db(), actor, org, sedeId, texto(form, "proveedor"), texto(form, "ambiente")), "Credencial eliminada");
+}
+/**
+ * Lleva a Mercado Pago para que la sede autorice su cuenta; vuelve por /api/mercadopago/callback.
+ * Se vincula el ambiente de este despliegue (staging: cuenta de prueba; producción: la real).
+ */
+export async function accionConectarMercadoPago(form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  const { sesion, organizacion } = await requerirOrganizacion();
+  await exigirGestionCredenciales(db(), sesion.usuario.id, organizacion.id, sedeId);
+  const app = aplicacionMercadoPago();
+  if (!app) redirect(`/sedes/${sedeId}?mp=sin-configurar`);
+  redirect(await iniciarVinculacion(app, { usuarioId: sesion.usuario.id, organizacionId: organizacion.id, sedeId, ambiente: ambientePagos() }));
 }
 
 // Clientes y consentimientos (C01).

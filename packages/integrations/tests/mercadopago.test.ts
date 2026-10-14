@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ErrorProveedor, ErrorTransitorio, crearPreferencia, obtenerPago } from "../src/mercadopago.ts";
+import { ErrorProveedor, ErrorTransitorio, canjearCodigo, crearPreferencia, obtenerPago, refrescarTokens, urlAutorizacion } from "../src/mercadopago.ts";
 
 type Llamada = { url: string; init: RequestInit };
 function falso(status: number, cuerpo: unknown, llamadas: Llamada[] = []) {
@@ -63,4 +63,36 @@ test("consultar pago", async () => {
   await assert.rejects(obtenerPago("TEST-t", "../users/me", falso(200, {})), ErrorProveedor);
   await assert.rejects(obtenerPago("TEST-t", "1", falso(404, { message: "Payment not found" })), ErrorProveedor);
   await assert.rejects(obtenerPago("TEST-t", "1", falso(200, { id: 1 })), ErrorTransitorio);
+});
+
+// ─── OAuth ───────────────────────────────────────────────────────────────────
+const app = { clientId: "1234567890", clientSecret: "secreto-de-la-app", redirectUri: "https://backoffice.example/api/mercadopago/callback" };
+const respuestaTokens = { access_token: "APP_USR-acceso", token_type: "Bearer", expires_in: 15552000, scope: "offline_access read write", user_id: 998877, refresh_token: "TG-refresco", public_key: "APP_USR-publica", live_mode: true };
+
+test("URL de autorización", () => {
+  const u = new URL(urlAutorizacion(app, "estado-al-azar"));
+  assert.equal(u.origin + u.pathname, "https://auth.mercadopago.com.ar/authorization");
+  assert.deepEqual(Object.fromEntries(u.searchParams), { client_id: app.clientId, response_type: "code", platform_id: "mp", state: "estado-al-azar", redirect_uri: app.redirectUri });
+  assert.equal(urlAutorizacion(app, "x").includes(app.clientSecret), false, "el secreto nunca va al navegador");
+});
+
+test("canjear el code y renovar", async () => {
+  const llamadas: Llamada[] = [];
+  const t = await canjearCodigo(app, "TG-code", ahora, falso(200, respuestaTokens, llamadas));
+  assert.deepEqual(t, { accessToken: "APP_USR-acceso", refreshToken: "TG-refresco", publicKey: "APP_USR-publica", cuentaId: "998877", expiraEn: new Date(ahora.getTime() + 15552000 * 1000) });
+  assert.equal(llamadas[0]!.url, "https://api.mercadopago.com/oauth/token");
+  assert.deepEqual(JSON.parse(String(llamadas[0]!.init.body)), { client_id: app.clientId, client_secret: app.clientSecret, grant_type: "authorization_code", code: "TG-code", redirect_uri: app.redirectUri });
+  assert.equal((llamadas[0]!.init.headers as Record<string, string>).Authorization, undefined);
+
+  await refrescarTokens(app, "TG-refresco", ahora, falso(200, respuestaTokens, llamadas));
+  // El refresh token tiene que viajar: sin él Mercado Pago no renueva.
+  assert.deepEqual(JSON.parse(String(llamadas[1]!.init.body)), { client_id: app.clientId, client_secret: app.clientSecret, grant_type: "refresh_token", refresh_token: "TG-refresco" });
+});
+
+test("errores de OAuth sin exponer code ni tokens", async () => {
+  await assert.rejects(canjearCodigo(app, "TG-code-secreto", ahora, falso(400, { error: "invalid_grant", message: "invalid code TG-code-secreto" })),
+    (e: unknown) => e instanceof ErrorProveedor && e.status === 400 && e.message.includes("invalid_grant") && !e.message.includes("TG-code-secreto"));
+  await assert.rejects(refrescarTokens(app, "TG-r", ahora, falso(500, {})), ErrorTransitorio);
+  await assert.rejects(refrescarTokens(app, "TG-r", ahora, (async () => { throw new TypeError("fetch failed"); }) as typeof fetch), ErrorTransitorio);
+  await assert.rejects(canjearCodigo(app, "c", ahora, falso(200, { access_token: "x" })), ErrorTransitorio, "faltan campos");
 });

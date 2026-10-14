@@ -38,6 +38,11 @@ export default defineRailway((ctx) => {
       // nunca en el repo. preserve() mantiene el valor que ya está cargado.
       NAILNET_CLAVES_CIFRADO: preserve(),
       NAILNET_CLAVE_ACTIVA: preserve(),
+      // Aplicación de Mercado Pago de NailNet (doc 23): las sedes vinculan su cuenta por OAuth contra
+      // ella y Mercado Pago firma las notificaciones con su clave. Se cargan a mano en Railway.
+      MP_APP_ID: preserve(),
+      MP_CLIENT_SECRET: preserve(),
+      MP_WEBHOOK_SECRET: preserve(),
       PORTAL_ORIGIN: dominio("booking"),
       // Railway pone la IP real del cliente en X-Real-IP; X-Forwarded-For la puede inventar el cliente.
       TRUST_PROXY: "true",
@@ -78,6 +83,9 @@ export default defineRailway((ctx) => {
       // backoffice, por referencia: se carga una sola vez y nunca se copia.
       NAILNET_CLAVES_CIFRADO: "${{backoffice.NAILNET_CLAVES_CIFRADO}}",
       NAILNET_CLAVE_ACTIVA: "${{backoffice.NAILNET_CLAVE_ACTIVA}}",
+      // Renovación de los tokens OAuth de las sedes.
+      MP_APP_ID: "${{backoffice.MP_APP_ID}}",
+      MP_CLIENT_SECRET: "${{backoffice.MP_CLIENT_SECRET}}",
     },
   });
 

@@ -343,6 +343,8 @@ model CredencialProveedor {
   publicos       Json
   secretoCifrado String
   pista          String
+  // Cuentas vinculadas por OAuth (Mercado Pago): vencimiento del access token. Null = sin renovación.
+  tokenVenceEn   DateTime?
   actualizadoPor String?   @db.Uuid
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -351,6 +353,7 @@ model CredencialProveedor {
   @@unique([sedeId, proveedor, ambiente])
   @@unique([proveedor, ambiente, cuentaExterna])
   @@index([organizacionId])
+  @@index([tokenVenceEn])
 }
 
 // Identidad compartida en la organización (D13). Sin datos de salud ni fotos.

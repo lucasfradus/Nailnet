@@ -131,6 +131,7 @@ model Organizacion {
   profesionales   Profesional[]
   excepciones     ExcepcionHorario[]
   imagenes        Imagen[]
+  categoriasGasto CategoriaGasto[]
 }
 
 model Franquiciado {
@@ -170,6 +171,8 @@ model Sede {
   excepciones             ExcepcionHorario[]
   recursos                Recurso[]
   reservas                Reserva[]
+  categoriasGasto         CategoriaGasto[]
+  gastos                  Gasto[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -935,4 +938,76 @@ model Pago {
 
   @@unique([proveedor, ambiente, externoId])
   @@index([reservaId])
+}
+
+// ─── Gastos ───────────────────────────────────────────────────────────────────
+// O04. Ver docs/25-gastos.md. Bloque propio del módulo; las únicas líneas fuera de él son las
+// relaciones inversas en Organizacion y Sede.
+
+// Medio con que se pagó el gasto. EFECTIVO será un egreso de caja cuando exista O02.
+enum MedioPagoGasto {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA_DEBITO
+  TARJETA_CREDITO
+  MERCADO_PAGO
+  OTRO
+}
+
+enum TipoMovimientoGasto {
+  GASTO
+  // Anulación: copia el gasto con monto negativo; el original nunca se edita ni se borra.
+  REVERSO
+}
+
+// Categoría de gasto (alineado a D12): sedeId null = global de la organización (la define el master);
+// con sede = local de esa sede (la define quien la administra). Se desactiva, no se borra.
+model CategoriaGasto {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  sedeId         String?      @db.Uuid
+  nombre         String
+  activo         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sede           Sede?        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  gastos         Gasto[]
+
+  @@unique([organizacionId, id])
+  @@index([organizacionId, sedeId])
+}
+
+// Movimiento de gasto, solo inserción (trigger). Un GASTO tiene monto positivo; su REVERSO (único,
+// por revierteId) lleva el monto negado y la misma sede, categoría, fecha y medio, más el motivo.
+// El total de un período es la suma de los montos: un gasto anulado suma cero.
+model Gasto {
+  id              String              @id @default(uuid()) @db.Uuid
+  organizacionId  String              @db.Uuid
+  sedeId          String              @db.Uuid
+  categoriaId     String              @db.Uuid
+  tipo            TipoMovimientoGasto
+  // Fecha local de la sede en que se hizo el gasto. El instante de carga (o de anulación) es createdAt.
+  fecha           DateTime            @db.Date
+  // ARS en centavos: positivo en GASTO, negativo en REVERSO.
+  montoCentavos   BigInt
+  medioPago       MedioPagoGasto
+  descripcion     String
+  // Referencia libre al comprobante (tipo y número, proveedor). Sin archivo por ahora.
+  comprobante     String?
+  // Quien registró el gasto (o lo anuló, en un REVERSO). Sin FK a Usuario, como los actores de ReservaEvento.
+  registradoPorId String              @db.Uuid
+  revierteId      String?             @db.Uuid
+  motivoAnulacion String?
+  createdAt       DateTime            @default(now())
+  sede            Sede                @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  categoria       CategoriaGasto      @relation(fields: [organizacionId, categoriaId], references: [organizacionId, id], onDelete: Restrict)
+  revierte        Gasto?              @relation("ReversoGasto", fields: [organizacionId, revierteId], references: [organizacionId, id], onDelete: Restrict)
+  reverso         Gasto?              @relation("ReversoGasto")
+
+  @@unique([organizacionId, id])
+  // Un gasto tiene a lo sumo un reverso: dos anulaciones simultáneas no pasan las dos.
+  @@unique([organizacionId, revierteId])
+  @@index([sedeId, fecha])
+  @@index([organizacionId, fecha])
 }

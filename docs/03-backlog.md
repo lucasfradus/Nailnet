@@ -79,7 +79,7 @@ Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación ante
 | O01 | Cobros manuales y ventas mixtas | Efectivo/transferencia/tarjeta/MP; productos con servicios; anticipo aplicado |
 | O02 | Caja y cierres | Apertura, entradas/salidas, diferencia y reversos; digitales no inflan efectivo esperado |
 | O03 | Compras, stock y consumo interno | Stock por sede, cantidades fraccionarias, movimientos; venta concurrente no produce negativo |
-| O04 | Gastos | Categorías y sede, egreso trazable, anulación por reverso |
+| O04 | Gastos · hecho 2026-10-14, ver 25-gastos.md | Categorías y sede, egreso trazable, anulación por reverso |
 
 ## Fase 8 · días 43–46 · liquidaciones e informes
 

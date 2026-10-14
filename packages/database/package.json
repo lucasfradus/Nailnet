@@ -17,7 +17,8 @@
     "./publico": "./src/publico.ts",
     "./jobs": "./src/jobs.ts",
     "./pagos": "./src/pagos.ts",
-    "./imagenes": "./src/imagenes.ts"
+    "./imagenes": "./src/imagenes.ts",
+    "./gastos": "./src/gastos.ts"
   },
   "scripts": {
     "generate": "prisma generate",

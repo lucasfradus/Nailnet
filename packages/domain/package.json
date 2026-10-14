@@ -13,7 +13,8 @@
     "./agenda": "./src/agenda.ts",
     "./disponibilidad": "./src/disponibilidad.ts",
     "./red": "./src/red.ts",
-    "./mercadopago": "./src/mercadopago.ts"
+    "./mercadopago": "./src/mercadopago.ts",
+    "./gastos": "./src/gastos.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -14,6 +14,20 @@ const permisos: Record<Rol, readonly Permiso[]> = {
   RECEPCIONISTA: ["sede:leer", "cliente:leer", "cliente:editar", "reserva:gestionar"],
   PROFESIONAL: [],
 };
+/**
+ * O04 · Gastos de sede. Tabla propia para no mezclar el módulo con los permisos de estructura.
+ * Recepción no ve ni registra gastos hasta definir su papel en la caja (O02); ver 25-gastos.md.
+ * Las categorías globales (sin sede) son solo del alcance de organización: ver puedeAdministrarCategoriaGasto.
+ */
+export type PermisoGasto = "gasto:leer" | "gasto:registrar" | "gasto:anular" | "gasto:categorias";
+const GASTOS_COMPLETO: readonly PermisoGasto[] = ["gasto:leer", "gasto:registrar", "gasto:anular", "gasto:categorias"];
+const permisosGasto: Record<Rol, readonly PermisoGasto[]> = {
+  MASTER_FRANQUICIADOR: GASTOS_COMPLETO,
+  FRANQUICIADO: GASTOS_COMPLETO,
+  ADMIN_SEDE: GASTOS_COMPLETO,
+  RECEPCIONISTA: [],
+  PROFESIONAL: [],
+};
 export function asignacionValida(a: Asignacion): boolean {
   switch (a.rol) {
     case "MASTER_FRANQUICIADOR": return a.alcance === "ORGANIZACION" && a.franquiciadoId === null && a.sedeId === null;
@@ -24,8 +38,11 @@ export function asignacionValida(a: Asignacion): boolean {
     default: return false;
   }
 }
-export function tienePermiso(a: Asignacion, permiso: Permiso): boolean {
-  return asignacionValida(a) && (permisos[a.rol]?.includes(permiso) ?? false);
+export function tienePermiso(a: Asignacion, permiso: Permiso | PermisoGasto): boolean {
+  if (!asignacionValida(a)) return false;
+  return permiso.startsWith("gasto:")
+    ? permisosGasto[a.rol]?.includes(permiso as PermisoGasto) ?? false
+    : permisos[a.rol]?.includes(permiso as Permiso) ?? false;
 }
 export class AccesoDenegado extends Error {
   constructor() { super("Acceso denegado"); this.name = "AccesoDenegado"; }

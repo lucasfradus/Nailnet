@@ -60,7 +60,7 @@ Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación ante
 |---|---|---|
 | P01 | Portal separado responsive · hecho 2026-10-05; botón de seña con R04 (2026-10-12), ver 19-portal.md y 23-pagos-mercadopago.md | Sede → servicio → profesional → horario → datos → seña → confirmación |
 | P02 | Estado real de reserva | Consulta backend tras retorno; UX para pendiente, conflicto, rechazo y expiración |
-| P03 | Emails Resend | Confirmación/cancelación/reprogramación y recuperación; job reintentable y evidencia de entrega/resultado |
+| P03 | Emails Resend · hecho 2026-10-14, ver 24-emails.md | Confirmación/cancelación/reprogramación y recuperación; job reintentable y evidencia de entrega/resultado |
 | P04 | Cancelación por enlace y revisión de reembolso | Token válido y política aplicados; devolución no se marca completa por solicitud enviada |
 
 ## Fase 6 · días 32–36 · robustez financiera y facturación

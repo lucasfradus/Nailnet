@@ -54,6 +54,8 @@ Las que no figuran las pone Railway (`PORT`, `RAILWAY_PUBLIC_DOMAIN`, etc.).
 | `BACKOFFICE_URL` | (opcional) | Para enlaces de invitación y la redirect URI de Mercado Pago. Si falta, se usa el dominio público del propio servicio |
 | `MP_APP_ID`, `MP_CLIENT_SECRET` | Aplicación de Mercado Pago | **Secretos: cargar a mano.** Vinculación de cuentas por OAuth y renovación de tokens (doc 23) |
 | `MP_WEBHOOK_SECRET` | Clave de notificaciones de la aplicación | **Secreto: cargar a mano.** Firma del webhook |
+| `RESEND_WEBHOOK_SECRET` | `whsec_…` del webhook de Resend | **Secreto: cargar a mano.** Eventos de entrega de emails (doc 24) |
+| `RECUPERACION_POR_EMAIL` | `true` | Ofrece «Recuperar acceso». Activar recién con Resend configurado en el worker y el dominio verificado (doc 24) |
 
 ### booking
 
@@ -73,6 +75,9 @@ Las variables `VITE_` terminan en el bundle público: nunca poner secretos.
 | `WORKER_INTERVALO_SEGUNDOS`, `WORKER_JOBS_SEGUNDOS` | Opcionales (30 y 5) |
 | `NAILNET_CLAVES_CIFRADO`, `NAILNET_CLAVE_ACTIVA` | Referencias a las del backoffice (`${{backoffice.…}}`). Para consultar pagos con las credenciales de cada sede (R04) |
 | `MP_APP_ID`, `MP_CLIENT_SECRET` | Referencias a las del backoffice. Renovación de los tokens OAuth de las sedes |
+| `RESEND_API_KEY` | **Secreto: cargar a mano.** API key de Resend (solo envío). Sin ella, staging simula los emails y producción los deja en cola (doc 24). El llavero de arriba también descifra los enlaces de recuperación |
+| `RESEND_FROM` | Remitente con dominio verificado en Resend, p. ej. `Sicurella <turnos@sicurella.com.ar>`. Obligatoria con la API key |
+| `EMAIL_SIMULADO` | `true` solo en `staging` (lo fija el IaC): emails simulados mientras no haya API key |
 
 ## IP del cliente
 
@@ -109,7 +114,7 @@ Los límites de intentos (login, recuperación, reservas del portal) dependen de
 
 - **Dependencias de desarrollo:** el pre-deploy usa `prisma` (migraciones) y, en staging, `tsx` (seed). Railpack no las borra por defecto. Si se activa la poda (`RAILPACK_PRUNE_DEPS`), las migraciones fallan.
 - **Producción real:** dominio propio (`reservas.sicurella.com.ar`, por ejemplo), bootstrap de la organización y el primer usuario, backups ensayados (Q03) y alertas sobre `/ready` del worker.
-- **Emails (P03):** sin proveedor, la recuperación de contraseña en producción la gestiona un administrador.
+- **Emails (P03):** implementados (doc 24). Falta verificar el dominio en Resend y cargar `RESEND_API_KEY`, `RESEND_FROM` y `RESEND_WEBHOOK_SECRET`. Hasta entonces la recuperación de contraseña en producción la gestiona un administrador. Las variables nuevas están en el IaC con `preserve()` y no se aplicaron: revisar `railway config plan` antes de aplicar.
 - **Aplicar desde CI:** el action `railwayapp/config` puede planificar en cada PR y aplicar al mergear. Requiere un token de proyecto (`RAILWAY_TOKEN`) y queda para cuando el IaC esté probado contra el proyecto real.
 
 ## Staging desplegado

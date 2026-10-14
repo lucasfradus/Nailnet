@@ -32,7 +32,7 @@ Implementa F03: login, logout, sesiones revocables, límite de intentos y recupe
 
 ## Pendiente, deliberadamente
 
-- **Envío de emails** (P03, Resend + outbox del worker F04). En desarrollo el enlace de recuperación se imprime en la consola del backoffice. En producción la pantalla de recuperación no emite enlaces y deriva a un administrador, para no crear tokens que nadie recibiría.
+- ~~Envío de emails~~ (P03, hecho 2026-10-14, ver [24-emails.md](24-emails.md)): el pedido de recuperación encola el email en la misma transacción que emite el token, con el enlace cifrado. En producción y staging la pantalla se ofrece solo con `RECUPERACION_POR_EMAIL=true`; si no, sigue derivando a un administrador.
 - Alta de usuarios e invitaciones desde la UI (A02). Hoy la contraseña inicial se asigna por CLI.
 - Limpieza periódica de sesiones vencidas e intentos antiguos: tarea del worker.
 - Selección de organización activa para usuarios con varias membresías: se resolverá con el selector de sede (A02).

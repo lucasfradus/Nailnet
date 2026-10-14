@@ -51,6 +51,7 @@ Estados: `PENDIENTE` → `EN_PROCESO` → `COMPLETADO`. Si se agotan los intento
 | Tipo | Origen | Qué hace |
 |---|---|---|
 | `mantenimiento.limpieza` | Tarea periódica, clave por hora: varias instancias encolan uno solo | Borra claves de idempotencia vencidas, eventos anti-abuso de más de 1 día, tokens de invitado vencidos o revocados hace más de 30 días y trabajos completados de más de 30 días. Los fallidos se conservan. Cierra la limpieza pendiente del doc 18 |
+| `email.reserva_confirmada`, `email.reserva_cancelada`, `email.reserva_reprogramada`, `email.recuperacion` | Encolados en la transacción del evento de reserva o del pedido de recuperación (P03) | Envían el email con Resend (o el transporte falso) y guardan la evidencia en `EnvioEmail`. Ver [24-emails.md](24-emails.md) |
 
 ## Variables
 

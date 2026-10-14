@@ -13,7 +13,9 @@
     "./agenda": "./src/agenda.ts",
     "./disponibilidad": "./src/disponibilidad.ts",
     "./red": "./src/red.ts",
-    "./mercadopago": "./src/mercadopago.ts"
+    "./mercadopago": "./src/mercadopago.ts",
+    "./emails": "./src/emails.ts",
+    "./resend": "./src/resend.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

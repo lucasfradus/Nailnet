@@ -5,7 +5,7 @@ import type { HealthResponse } from "@nailnet/contracts";
 import { createDatabase } from "@nailnet/database";
 import { encolarJob, estadoCola, procesarJobs, resumenError } from "@nailnet/database/jobs";
 import { expirarRetenciones } from "@nailnet/database/reservas";
-import { TIPO_RENOVACION_MP, claveLimpieza, claveRenovacion, manejadores, renovacionHabilitada } from "./manejadores.ts";
+import { TIPO_RENOVACION_MP, claveLimpieza, claveRenovacion, manejadores, renovacionHabilitada, transporteEmail } from "./manejadores.ts";
 
 const port = Number(process.env.PORT ?? 3001);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT debe ser un puerto válido");
@@ -60,6 +60,8 @@ const detener: (() => Promise<void>)[] = [];
 server.listen(port, process.env.HOST ?? "127.0.0.1", () => {
   if (!db) { console.info("Worker sin DATABASE_URL: solo liveness, sin tareas."); return; }
   console.info(`Worker ${workerId}: tareas cada ${intervaloMs / 1000} s, trabajos cada ${intervaloJobsMs / 1000} s (${Object.keys(tipos).join(", ")}).`);
+  if (!transporteEmail) console.warn("Emails sin transporte: falta RESEND_API_KEY en producción. Los trabajos email.* quedan pendientes hasta configurarla.");
+  else if (transporteEmail === "simulado") console.info("Emails simulados: sin RESEND_API_KEY, se muestran en la consola y no salen.");
   // Tareas periódicas: el estado vive en PostgreSQL y las transiciones son condicionales, así que un
   // reinicio retoma lo pendiente y varias instancias no duplican efectos.
   detener.push(ciclo("tareas periódicas", intervaloMs, async () => {

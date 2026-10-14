@@ -17,6 +17,7 @@
     "./publico": "./src/publico.ts",
     "./jobs": "./src/jobs.ts",
     "./pagos": "./src/pagos.ts",
+    "./emails": "./src/emails.ts",
     "./imagenes": "./src/imagenes.ts"
   },
   "scripts": {

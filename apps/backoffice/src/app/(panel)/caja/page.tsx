@@ -13,11 +13,12 @@ import { MovimientosCaja, ResumenCaja } from "./detalle";
 export const metadata: Metadata = { title: "Caja · Sicurella" };
 
 /** Caja de la sede elegida arriba: apertura, movimientos de efectivo, cierre con conteo e historial de cierres. */
-export default async function Caja() {
+export default async function Caja({ searchParams }: { searchParams: Promise<{ diferencias?: string }> }) {
+  const soloConDiferencia = (await searchParams).diferencias === "1";
   const { sesion, organizacion, sede, puede } = await requerirOrganizacion();
   if (!puede.verCaja) notFound();
   if (!sede) return <section className="panel"><h1>Caja</h1><p className="intro">No tenés sedes asignadas.</p></section>;
-  const estado = await estadoCaja(db(), sesion.usuario.id, organizacion.id, sede.id).catch(e => { if (e instanceof AccesoDenegado) return null; throw e; });
+  const estado = await estadoCaja(db(), sesion.usuario.id, organizacion.id, sede.id, { soloConDiferencia }).catch(e => { if (e instanceof AccesoDenegado) return null; throw e; });
   if (!estado) notFound();
   const tz = sede.timezone;
   const caja = estado.abierta;
@@ -56,8 +57,8 @@ export default async function Caja() {
           <Formulario accion={accionCerrarCaja} boton="Cerrar caja" confirmar="¿Cerrar la caja? El cierre queda fijo y no se puede reabrir.">
             <input type="hidden" name="cajaId" value={caja.id} />
             <label>Efectivo contado ($)<input name="contado" required inputMode="decimal" pattern="\d{1,10}([.,]\d{1,2})?" /></label>
-            <label>Observaciones (opcional)<input name="observaciones" maxLength={500} placeholder="Explicá la diferencia, si la hay" /></label>
-            <p className="ayuda">Contá solo el efectivo. La diferencia es contado − esperado ({pesos(caja.esperado)}). Los cobros con otros medios no se cuentan.</p>
+            <label>Observaciones<input name="observaciones" maxLength={500} placeholder="Obligatorias si hay diferencia" /></label>
+            <p className="ayuda">Contá solo el efectivo. La diferencia es contado − esperado ({pesos(caja.esperado)}); si hay diferencia, explicala en las observaciones. Los cobros con otros medios no se cuentan.</p>
           </Formulario>
         </details>
       </div>}
@@ -65,7 +66,8 @@ export default async function Caja() {
       <MovimientosCaja caja={caja} tz={tz} puedeRevertir={estado.puedeOperar} />
     </>}
 
-    <h2 className="subtitulo">Cierres anteriores</h2>
+    <div className="fila-cabecera"><h2 className="subtitulo">{soloConDiferencia ? "Cierres con diferencia" : "Cierres anteriores"}</h2>
+      <Link href={soloConDiferencia ? "/caja" : "/caja?diferencias=1"}>{soloConDiferencia ? "Ver todos" : "Ver solo con diferencia"}</Link></div>
     <div className="tabla">
       {estado.cierres.map(c => <Link key={c.id} href={`/caja/${c.id}`} className="fila fila-enlace">
         <div className="fila-enlace-texto">
@@ -75,7 +77,7 @@ export default async function Caja() {
         <span className={c.diferencia === "0.00" ? "tag estado-completada" : "tag estado-anulada"}>{c.diferencia === "0.00" ? "Sin diferencia" : pesos(c.diferencia)}</span>
         <span className="boton secundario">Ver</span>
       </Link>)}
-      {!estado.cierres.length && <p>Todavía no hay cierres.</p>}
+      {!estado.cierres.length && <p>{soloConDiferencia ? "No hay cierres con diferencia." : "Todavía no hay cierres."}</p>}
     </div>
   </section>;
 }

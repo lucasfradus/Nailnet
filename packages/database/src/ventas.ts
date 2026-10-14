@@ -9,7 +9,7 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { aLocal, validarFecha } from "@nailnet/domain/agenda";
 import { importe } from "@nailnet/domain/catalogo";
 import { aMilesimas, cantidadTexto, decimal, desdeDecimal, subtotalCentavos, validarCantidad } from "@nailnet/domain/stock";
-import { calcularVenta, claveValida, descuentoDe, esEfectivo, estadoSegunCobros, resumirCobros, saldoVenta, validarCobros, validarMotivo, type CobroEntrada, type CobroValidado, type LineaVenta, type MedioCobro } from "@nailnet/domain/ventas";
+import { MAX_SERVICIOS_COMANDA, calcularVenta, claveValida, descuentoDe, esEfectivo, estadoSegunCobros, precioCobrado, resumirCobros, saldoVenta, validarCobros, validarMotivo, type CobroEntrada, type CobroValidado, type LineaVenta, type MedioCobro } from "@nailnet/domain/ventas";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, auditar, exigirIds } from "./access.ts";
@@ -93,10 +93,22 @@ async function completarSiCorresponde(tx: Tx, venta: VentaBloqueada) {
 
 // ─── Alta de venta ────────────────────────────────────────────────────────────
 
+/**
+ * Una línea de la comanda: el servicio realmente hecho, quién lo hizo y lo que se cobró. `reservaItemId`
+ * la vincula con el ítem del turno (si el servicio coincide); una línea sin él es un servicio agregado al
+ * cobrar, que no vuelve a reservar agenda (ya terminó). `precio` vacío = el propuesto.
+ */
+export type ServicioComanda = { servicioId: string; profesionalId: string; precio?: string | null; reservaItemId?: string | null };
+
 export type DatosVenta = {
   sedeId: string;
-  /** Turno ATENDIDO que se cobra; sus servicios entran con el precio pactado. Sin reserva: venta de productos sueltos. */
+  /** Turno ATENDIDO que se cobra (con o sin reserva previa). Sin turno: venta de productos sueltos. */
   reservaId?: string | null;
+  /**
+   * Comanda: los servicios realmente hechos. Sin indicar, se cobran los del turno al precio pactado.
+   * Solo con turno: los servicios se cobran contra un turno.
+   */
+  servicios?: ServicioComanda[];
   productos: ItemCantidad[];
   descuento?: string | null;
   /** Cobros a registrar junto con la venta (pueden ser varios medios). Lo que falte se cobra después. */
@@ -105,6 +117,51 @@ export type DatosVenta = {
   claveIdempotencia: string;
 };
 export type VentaRegistrada = { id: string; estado: string; saldo: string; repetida: boolean };
+
+type Linea = LineaVenta & {
+  tipo: "SERVICIO" | "PRODUCTO"; descripcion: string; precioLista: bigint | null;
+  reservaItemId?: string | null; servicioId?: string; profesionalId?: string; productoId?: string;
+};
+
+/**
+ * Arma las líneas de servicio de la comanda. Cada servicio tiene que estar habilitado en la sede y la
+ * profesional tiene que trabajar en ella. Precio propuesto: el pactado en el turno si la línea es un ítem
+ * del turno con el mismo servicio; si no, el de lista de la sede. El cobrado es editable. Agregar un
+ * servicio no reserva agenda: ya se hizo.
+ */
+async function lineasDeComanda(tx: Tx, organizacionId: string, sedeId: string, itemsTurno: { id: string; servicioId: string; precio: Prisma.Decimal }[], comanda: ServicioComanda[]): Promise<Linea[]> {
+  if (comanda.length > MAX_SERVICIOS_COMANDA) throw new DatosInvalidos(`Hasta ${MAX_SERVICIOS_COMANDA} servicios por comanda`);
+  if (!comanda.length) return [];
+  const servicios = await tx.servicio.findMany({
+    where: { organizacionId, id: { in: [...new Set(comanda.map(c => c.servicioId))] } },
+    select: { id: true, nombre: true, activo: true, sedes: { where: { sedeId }, select: { habilitado: true, precio: true } } },
+  });
+  const profesionales = await tx.profesional.findMany({
+    where: { organizacionId, id: { in: [...new Set(comanda.map(c => c.profesionalId))] } },
+    select: { id: true, nombre: true, apellido: true, sedes: { where: { sedeId, activo: true }, select: { sedeId: true } } },
+  });
+  const servicio = new Map(servicios.map(s => [s.id, s]));
+  const profesional = new Map(profesionales.map(p => [p.id, p]));
+  const delTurno = new Map(itemsTurno.map(i => [i.id, i]));
+  const usados = new Set<string>();
+  return comanda.map(c => {
+    const s = servicio.get(c.servicioId), p = profesional.get(c.profesionalId);
+    // Un ID de otra organización es, para esta venta, inexistente.
+    if (!s || !p) throw new AccesoDenegado();
+    const enSede = s.sedes[0];
+    if (!p.sedes.length) throw new DatosInvalidos(`${nombreCompleto(p)} no trabaja en esta sede`);
+    // El ítem del turno se usa una vez y solo si el servicio coincide; si se cambió el servicio, es uno agregado.
+    let item = c.reservaItemId ? delTurno.get(c.reservaItemId) : undefined;
+    if (c.reservaItemId && !item) throw new AccesoDenegado();
+    if (item && (item.servicioId !== c.servicioId || usados.has(item.id))) item = undefined;
+    if (item) usados.add(item.id);
+    else if (!s.activo || !enSede?.habilitado) throw new DatosInvalidos(`«${s.nombre}» no está habilitado en la sede`);
+    const lista = item ? centavos(item.precio) : enSede?.precio ? centavos(enSede.precio) : null;
+    const precio = precioCobrado(c.precio, lista);
+    if ("error" in precio) throw new DatosInvalidos(`«${s.nombre}»: ${precio.error}`);
+    return { tipo: "SERVICIO" as const, reservaItemId: item?.id ?? null, servicioId: s.id, profesionalId: p.id, cantidad: 1000n, precioLista: lista, precioUnitario: precio.precio, descripcion: `${s.nombre} · ${nombreCompleto(p)}` };
+  });
+}
 
 async function ventaPorClave(db: Database | Tx, actorId: string, organizacionId: string, clave: string): Promise<VentaRegistrada | null> {
   const v = await db.venta.findFirst({ where: { organizacionId, claveIdempotencia: clave }, select: { id: true, sedeId: true, estado: true, total: true, anticipo: true, cobros: { select: { monto: true } } } });
@@ -122,7 +179,7 @@ async function ventaPorClave(db: Database | Tx, actorId: string, organizacionId:
  * → venta de $30.000, anticipo $9.000, se cobran $21.000.
  */
 export async function registrarVenta(db: Database, actorId: string, organizacionId: string, datos: DatosVenta): Promise<VentaRegistrada> {
-  exigirIds(datos.sedeId, datos.reservaId, ...datos.productos.map(p => p.productoId));
+  exigirIds(datos.sedeId, datos.reservaId, ...datos.productos.map(p => p.productoId), ...(datos.servicios ?? []).flatMap(s => [s.servicioId, s.profesionalId, s.reservaItemId]));
   if (!claveValida(datos.claveIdempotencia)) throw new DatosInvalidos("El formulario venció: recargá la página e intentá de nuevo");
   const descuento = descuentoDe(datos.descuento);
   if (descuento === null) throw new DatosInvalidos("Descuento inválido: pesos con hasta 2 decimales");
@@ -142,20 +199,21 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
       const sede = await tx.sede.findFirst({ where: { id: datos.sedeId, organizacionId, activo: true }, select: { timezone: true } });
       if (!sede) throw new AccesoDenegado();
 
-      const lineas: (LineaVenta & { tipo: "SERVICIO" | "PRODUCTO"; reservaItemId?: string; productoId?: string; descripcion: string })[] = [];
+      const lineas: Linea[] = [];
       let anticipo: Awaited<ReturnType<typeof anticipoDe>> = null;
       if (datos.reservaId) {
         const reserva = await tx.reserva.findFirst({
           where: { id: datos.reservaId, organizacionId },
-          select: { sedeId: true, estado: true, items: { orderBy: { posicion: "asc" }, select: { id: true, precio: true, servicio: { select: { nombre: true } }, profesional: { select: { nombre: true, apellido: true } } } } },
+          select: { sedeId: true, estado: true, items: { orderBy: { posicion: "asc" }, select: { id: true, servicioId: true, profesionalId: true, precio: true } } },
         });
         // Una reserva de otra sede es, para esta venta, inexistente.
         if (!reserva || reserva.sedeId !== datos.sedeId) throw new AccesoDenegado();
         if (reserva.estado !== "ATENDIDA") throw new DatosInvalidos("Solo se cobra un turno atendido: marcalo como atendido en la agenda");
         if (await tx.venta.count({ where: { organizacionId, reservaId: datos.reservaId, estado: { not: "ANULADA" } } })) throw new DatosInvalidos("El turno ya tiene una venta registrada");
-        for (const it of reserva.items) lineas.push({ tipo: "SERVICIO", reservaItemId: it.id, cantidad: 1000n, precioUnitario: centavos(it.precio), descripcion: `${it.servicio.nombre} · ${nombreCompleto(it.profesional)}` });
+        const comanda = datos.servicios ?? reserva.items.map(i => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, reservaItemId: i.id, precio: null }));
+        lineas.push(...await lineasDeComanda(tx, organizacionId, datos.sedeId, reserva.items, comanda));
         anticipo = await anticipoDe(tx, organizacionId, datos.sedeId, datos.reservaId);
-      }
+      } else if (datos.servicios?.length) throw new DatosInvalidos("Los servicios se cobran desde un turno: usá «Atender ahora» para un cliente sin turno");
       if (productos.length) {
         const encontrados = await tx.producto.findMany({
           where: { organizacionId, id: { in: productos.map(p => p.productoId) } },
@@ -169,7 +227,7 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
           if (!prod.activo) throw new DatosInvalidos(`«${prod.nombre}» está inactivo`);
           const precio = prod.sedes[0]?.precio;
           if (!precio) throw new DatosInvalidos(`«${prod.nombre}» no tiene precio de venta en la sede`);
-          lineas.push({ tipo: "PRODUCTO", productoId: prod.id, cantidad: p.cantidad, precioUnitario: centavos(precio), descripcion: prod.nombre });
+          lineas.push({ tipo: "PRODUCTO", productoId: prod.id, cantidad: p.cantidad, precioLista: centavos(precio), precioUnitario: centavos(precio), descripcion: prod.nombre });
         }
       }
       if (!lineas.length) throw new DatosInvalidos("Agregá al menos un producto o cobrá un turno atendido");
@@ -188,8 +246,9 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
         select: { id: true },
       });
       await tx.ventaItem.createMany({ data: lineas.map((l, posicion) => ({
-        organizacionId, ventaId: creada.id, posicion, tipo: l.tipo, reservaItemId: l.reservaItemId, productoId: l.productoId, descripcion: l.descripcion.slice(0, 300),
-        cantidad: decimal(l.cantidad), precioUnitario: importe(l.precioUnitario), subtotal: importe(subtotalCentavos(l.cantidad, l.precioUnitario)),
+        organizacionId, ventaId: creada.id, posicion, tipo: l.tipo, reservaItemId: l.reservaItemId ?? null, servicioId: l.servicioId ?? null, profesionalId: l.profesionalId ?? null,
+        productoId: l.productoId ?? null, descripcion: l.descripcion.slice(0, 300), cantidad: decimal(l.cantidad),
+        precioLista: l.precioLista === null ? null : importe(l.precioLista), precioUnitario: importe(l.precioUnitario), subtotal: importe(subtotalCentavos(l.cantidad, l.precioUnitario)),
       })) });
       // Orden de locks: venta → saldos de stock → caja.
       if (productos.length) await egresarPorVenta(tx, actorId, organizacionId, { sedeId: datos.sedeId, ventaId: creada.id, items: productos.map(p => ({ productoId: p.productoId, cantidad: cantidadTexto(p.cantidad) })) });
@@ -309,7 +368,7 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
     const r = await db.reserva.findFirst({
       where: { id: reservaId, organizacionId },
       select: { id: true, sedeId: true, estado: true, cliente: { select: { id: true, nombre: true, apellido: true } },
-        items: { orderBy: { posicion: "asc" }, select: { inicio: true, precio: true, servicio: { select: { nombre: true } }, profesional: { select: { nombre: true, apellido: true } } } } },
+        items: { orderBy: { posicion: "asc" }, select: { id: true, servicioId: true, profesionalId: true, inicio: true, precio: true, servicio: { select: { nombre: true } }, profesional: { select: { nombre: true, apellido: true } } } } },
     });
     if (!r || r.sedeId !== sedeId) throw new AccesoDenegado();
     const vigente = await db.venta.findFirst({ where: { organizacionId, reservaId, estado: { not: "ANULADA" } }, select: { id: true } });
@@ -317,7 +376,7 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
     const subtotal = r.items.reduce((s, i) => s + centavos(i.precio), 0n);
     turno = {
       id: r.id, estado: r.estado, cliente: r.cliente, ventaId: vigente?.id ?? null,
-      items: r.items.map(i => ({ servicio: i.servicio.nombre, profesional: nombreCompleto(i.profesional), inicio: i.inicio, precio: i.precio.toFixed(2) })),
+      items: r.items.map(i => ({ reservaItemId: i.id, servicioId: i.servicioId, profesionalId: i.profesionalId, servicio: i.servicio.nombre, profesional: nombreCompleto(i.profesional), inicio: i.inicio, precio: i.precio.toFixed(2) })),
       subtotal: importe(subtotal),
       anticipo: anticipo && "monto" in anticipo ? importe(anticipo.monto) : "0.00",
       // Lo que resta de los servicios después de la seña (sin productos ni descuento).
@@ -330,16 +389,27 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
     select: { id: true, nombre: true, unidad: true, sedes: { where: { sedeId }, select: { precio: true } }, saldos: { where: { sedeId }, select: { cantidad: true } } },
     orderBy: { nombre: "asc" },
   });
+  // Comanda: servicios habilitados en la sede (con su precio de lista) y profesionales de la sede.
+  const servicios = turno ? await db.servicio.findMany({
+    where: { organizacionId, activo: true, sedes: { some: { sedeId, habilitado: true } } },
+    select: { id: true, nombre: true, sedes: { where: { sedeId }, select: { precio: true } } }, orderBy: { nombre: "asc" },
+  }) : [];
+  const profesionales = turno ? await db.profesional.findMany({
+    where: { organizacionId, activo: true, sedes: { some: { sedeId, activo: true } } },
+    select: { id: true, nombre: true, apellido: true }, orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
+  }) : [];
   return {
     puedeAnular: puede("venta:anular"),
     cajaAbierta: await hayCajaAbierta(db, actorId, organizacionId, sedeId).catch(e => { if (e instanceof AccesoDenegado) return false; throw e; }),
     turno,
+    servicios: servicios.map(s => ({ id: s.id, nombre: s.nombre, precioLista: s.sedes[0]?.precio?.toFixed(2) ?? null })),
+    profesionales: profesionales.map(p => ({ id: p.id, nombre: nombreCompleto(p) })),
     productos: productos.map(p => ({ id: p.id, nombre: p.nombre, unidad: p.unidad, precio: p.sedes[0]!.precio!.toFixed(2), stock: cantidadTexto(desdeDecimal(p.saldos[0]?.cantidad.toFixed(3) ?? "0")) })),
   };
 }
 
 const incluirVenta = {
-  items: { orderBy: { posicion: "asc" as const }, select: { tipo: true, descripcion: true, cantidad: true, precioUnitario: true, subtotal: true, productoId: true, producto: { select: { unidad: true } } } },
+  items: { orderBy: { posicion: "asc" as const }, select: { tipo: true, descripcion: true, cantidad: true, precioLista: true, precioUnitario: true, profesionalId: true, subtotal: true, productoId: true, producto: { select: { unidad: true } } } },
   cobros: { orderBy: { createdAt: "asc" as const }, select: { id: true, tipo: true, medio: true, monto: true, referencia: true, motivo: true, revierteId: true, registradoPorId: true, createdAt: true } },
   reserva: { select: { id: true, cliente: { select: { id: true, nombre: true, apellido: true } } } },
 } satisfies Prisma.VentaInclude;
@@ -353,7 +423,7 @@ function presentar(v: VentaConDetalle, nombre: Map<string, string>) {
     reservaId: v.reservaId, cliente: v.reserva?.cliente ?? null,
     subtotal: v.subtotal.toFixed(2), descuento: v.descuento.toFixed(2), total: v.total.toFixed(2), anticipo: v.anticipo.toFixed(2),
     cobrado: importe(cobrado), saldo: importe(v.estado === "ANULADA" ? 0n : saldoVenta(centavos(v.total), centavos(v.anticipo), cobrado)),
-    items: v.items.map(i => ({ tipo: i.tipo, descripcion: i.descripcion, cantidad: cantidadTexto(desdeDecimal(i.cantidad.toFixed(3))), unidad: i.producto?.unidad ?? null, precioUnitario: i.precioUnitario.toFixed(2), subtotal: i.subtotal.toFixed(2) })),
+    items: v.items.map(i => ({ tipo: i.tipo, descripcion: i.descripcion, cantidad: cantidadTexto(desdeDecimal(i.cantidad.toFixed(3))), unidad: i.producto?.unidad ?? null, precioLista: i.precioLista?.toFixed(2) ?? null, precioUnitario: i.precioUnitario.toFixed(2), profesionalId: i.profesionalId, subtotal: i.subtotal.toFixed(2) })),
     cobros: v.cobros.map(c => ({ id: c.id, tipo: c.tipo, medio: MEDIO(c.medio), monto: c.monto.toFixed(2), referencia: c.referencia, motivo: c.motivo, por: nombre.get(c.registradoPorId) ?? "—", en: c.createdAt, revertido: revertidos.has(c.id) })),
     anulacion: v.estado === "ANULADA" ? { motivo: v.motivoAnulacion!, por: nombre.get(v.anuladaPorId!) ?? "—", en: v.anuladaEn! } : null,
   };

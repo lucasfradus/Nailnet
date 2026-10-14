@@ -44,8 +44,8 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
   return <section className="panel">
     <p className="eyebrow">AGENDA · {sedeActual.nombre.toUpperCase()}</p>
     <div className="fila-cabecera"><h1>{semana ? `Semana del ${fecha}` : dia(new Date(`${fecha}T12:00:00Z`))}</h1>
-      {puede.verSedes && <Link className="boton" href={`/agenda/nuevo?fecha=${fecha}`}>Nuevo turno</Link>}</div>
-    {q.ok && <p className="alerta ok">{q.ok === "reprogramado" ? "Turno reprogramado." : "Turno reservado."}</p>}
+      {puede.verSedes && <div className="en-linea"><Link className="boton" href="/agenda/ahora">Atender ahora</Link> <Link className="boton secundario" href={`/agenda/nuevo?fecha=${fecha}`}>Nuevo turno</Link></div>}</div>
+    {q.ok && <p className="alerta ok">{q.ok === "reprogramado" ? "Turno reprogramado." : q.ok === "ahora" ? "Cliente en atención: el turno empezó ahora. Al terminar, marcalo atendido y cobralo." : "Turno reservado."}</p>}
     <nav className="en-linea">
       <Link href={enlace({ fecha: sumar(fecha, semana ? -7 : -1) })}>← Anterior</Link>
       <Link href={enlace({ fecha: hoy })}>Hoy</Link>
@@ -65,7 +65,7 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
       <div className="tabla">{items.map(i => <article key={i.itemId} className={["CANCELADA", "EXPIRADA"].includes(i.estado) ? "fila inactiva" : "fila"}>
         <div className="fila-cabecera"><h2>{hora(i.inicio)} – {hora(i.fin)} · {i.servicio}</h2><span className={`tag estado-${i.estado.toLowerCase()}`}>{ESTADOS[i.estado]}</span></div>
         <p>{i.cliente ? <Link href={`/clientes/${i.cliente.id}`}>{i.cliente.nombre} {i.cliente.apellido}</Link> : "Sin cliente"}{i.cliente?.telefono ? ` · ${i.cliente.telefono}` : ""}
-          {" · "}{i.profesional.nombre} {i.profesional.apellido}{i.recursos.length ? ` · ${i.recursos.join(", ")}` : ""}{i.canal === "ONLINE" ? " · online" : ""}
+          {" · "}{i.profesional.nombre} {i.profesional.apellido}{i.recursos.length ? ` · ${i.recursos.join(", ")}` : ""}{i.canal === "ONLINE" ? " · online" : ""}{i.sinTurnoPrevio ? " · sin turno previo" : ""}
           {i.estado === "PENDIENTE_PAGO" && i.expiraEn ? ` · vence ${hora(i.expiraEn)}` : ""}</p>
         {i.notas && i.posicion === 0 && <p className="ayuda">{i.notas}</p>}
         {i.posicion === 0 && i.estado === "ATENDIDA" && puede.verVentas && <div className="acciones">

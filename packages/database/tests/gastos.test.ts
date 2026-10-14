@@ -6,7 +6,7 @@ import { aLocal } from "@nailnet/domain/agenda";
 import { sumarDias } from "@nailnet/domain/gastos";
 import { createDatabase } from "../src/client.ts";
 import { DatosInvalidos } from "../src/access.ts";
-import { actualizarCategoriaGasto, anularGasto, crearCategoriaGasto, listarCategoriasGasto, listarGastos, obtenerGasto, registrarGasto, type DatosGasto } from "../src/gastos.ts";
+import { SOLO_DESDE_CAJA, actualizarCategoriaGasto, anularGasto, crearCategoriaGasto, listarCategoriasGasto, listarGastos, obtenerGasto, registrarGasto, type DatosGasto } from "../src/gastos.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
 test("gastos: categorías, alta, alcance por ID y anulación por reverso", async (t) => {
@@ -40,7 +40,10 @@ test("gastos: categorías, alta, alcance por ID y anulación por reverso", async
       assert.deepEqual(centro.categorias.map(c => [c.nombre, c.global, c.puedeEditar]), [["Alquiler", true, false], ["Café", false, true], ["Limpieza", true, false]]);
       assert.deepEqual([centro.puedeCrearGlobal, centro.puedeCrearLocal], [false, true]);
       await assert.rejects(listarCategoriasGasto(db, a.admin.id, a.org.id, a.norte.id), AccesoDenegado);
-      await assert.rejects(listarCategoriasGasto(db, a.recepcion.id, a.org.id, a.centro.id), AccesoDenegado, "recepción no ve gastos");
+      // Recepción ve los gastos de su sede (Sicurella, 2026-10-14), pero no administra categorías.
+      const deRecepcion = await listarCategoriasGasto(db, a.recepcion.id, a.org.id, a.centro.id);
+      assert.deepEqual([deRecepcion.puedeCrearGlobal, deRecepcion.puedeCrearLocal], [false, false]);
+      await assert.rejects(listarCategoriasGasto(db, a.recepcion.id, a.org.id, a.sur.id), AccesoDenegado, "recepción en otra sede");
 
       await assert.rejects(actualizarCategoriaGasto(db, a.admin.id, a.org.id, ids.alquiler, { nombre: "Renta" }), AccesoDenegado, "admin no edita globales");
       await assert.rejects(actualizarCategoriaGasto(db, a.admin.id, a.org.id, ids.cafeNorte, { activo: false }), AccesoDenegado, "local de otra sede, por ID");
@@ -56,7 +59,11 @@ test("gastos: categorías, alta, alcance por ID y anulación por reverso", async
       ids.sur = (await registrarGasto(db, a.master.id, a.org.id, gasto({ sedeId: a.sur.id, medioPago: "EFECTIVO" }))).id;
       await assert.rejects(registrarGasto(db, a.admin.id, a.org.id, gasto({ sedeId: a.norte.id })), AccesoDenegado, "admin en otra sede");
       await assert.rejects(registrarGasto(db, a.franquiciado.id, a.org.id, gasto({ sedeId: a.sur.id })), AccesoDenegado, "franquiciado en sede ajena");
-      await assert.rejects(registrarGasto(db, a.recepcion.id, a.org.id, gasto()), AccesoDenegado);
+      // Recepción solo carga gastos en efectivo pagados con la caja abierta.
+      await assert.rejects(registrarGasto(db, a.recepcion.id, a.org.id, gasto()), (e: unknown) => e instanceof DatosInvalidos && e.message === SOLO_DESDE_CAJA, "transferencia");
+      await assert.rejects(registrarGasto(db, a.recepcion.id, a.org.id, gasto({ medioPago: "EFECTIVO", desdeCaja: false })), DatosInvalidos, "efectivo por fuera de la caja");
+      await assert.rejects(registrarGasto(db, a.recepcion.id, a.org.id, gasto({ medioPago: "EFECTIVO" })), DatosInvalidos, "sin caja abierta");
+      await assert.rejects(registrarGasto(db, a.recepcion.id, a.org.id, gasto({ sedeId: a.sur.id, medioPago: "EFECTIVO" })), AccesoDenegado, "recepción en otra sede");
       await assert.rejects(registrarGasto(db, a.profesional.id, a.org.id, gasto()), AccesoDenegado);
       await assert.rejects(registrarGasto(db, b.master.id, b.org.id, gasto()), AccesoDenegado, "sede de otra organización");
       await assert.rejects(registrarGasto(db, a.admin.id, a.org.id, gasto({ categoriaId: ids.cafeNorte })), AccesoDenegado, "categoría local de otra sede");
@@ -75,10 +82,13 @@ test("gastos: categorías, alta, alcance por ID y anulación por reverso", async
       assert.equal((await obtenerGasto(db, a.master.id, a.org.id, ids.sur!)).sedeId, a.sur.id);
       await assert.rejects(obtenerGasto(db, a.admin.id, a.org.id, ids.sur!), AccesoDenegado, "admin de centro lee gasto de sur");
       await assert.rejects(obtenerGasto(db, a.franquiciado.id, a.org.id, ids.sur!), AccesoDenegado);
-      await assert.rejects(obtenerGasto(db, a.recepcion.id, a.org.id, ids.g1!), AccesoDenegado);
+      assert.equal((await obtenerGasto(db, a.recepcion.id, a.org.id, ids.g1!)).id, ids.g1, "recepción lee los gastos de su sede");
+      await assert.rejects(obtenerGasto(db, a.recepcion.id, a.org.id, ids.sur!), AccesoDenegado);
       await assert.rejects(obtenerGasto(db, b.master.id, b.org.id, ids.g1!), AccesoDenegado, "otra organización");
       await assert.rejects(listarGastos(db, a.admin.id, a.org.id, { sedeId: a.sur.id }), AccesoDenegado);
-      await assert.rejects(listarGastos(db, a.recepcion.id, a.org.id, { sedeId: a.centro.id }), AccesoDenegado);
+      const deRecepcion = await listarGastos(db, a.recepcion.id, a.org.id, { sedeId: a.centro.id, desde: hoy, hasta: hoy });
+      assert.deepEqual([deRecepcion.puedeRegistrar, deRecepcion.soloDesdeCaja, deRecepcion.puedeAnular], [true, true, false]);
+      await assert.rejects(listarGastos(db, a.recepcion.id, a.org.id, { sedeId: a.sur.id }), AccesoDenegado);
       const lista = await listarGastos(db, a.admin.id, a.org.id, { sedeId: a.centro.id, desde: hoy, hasta: hoy });
       assert.equal(lista.gastos.length, 2, "no incluye el gasto de sur");
       assert.deepEqual([lista.total, lista.efectivo, lista.puedeRegistrar, lista.puedeAnular], ["262500.50", "12500.50", true, true]);

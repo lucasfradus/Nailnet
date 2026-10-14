@@ -22,6 +22,39 @@ Las propuestas siguen pendientes salvo donde se registra una confirmación expl�
 | D16 | Elección de profesional | Confirmado el 2026-09-30: opcional; «cualquiera» por defecto con asignación balanceada dentro del motor | Resuelto; portal y motor |
 | D17 | Grilla de inicio de turnos | Pendiente. Modelado el 2026-10-01 como parámetro heredable `pasoGrillaMinutos` sin valor por defecto: sin definirlo la sede no genera turnos (ver 15-disponibilidad.md). El sistema actual usa paso fijo de 60 min; se busca una definición prolija (configurable por sede y/o derivada de duración y buffers) | Motor de disponibilidad (C04) |
 | D18 | Horizonte y anticipación | Confirmado el 2026-09-30: horizonte máximo y anticipación mínima configurables por sede. Valores iniciales pendientes (referencia del sistema actual: ~14 días) | Resuelto el criterio; valores con D12 |
+| D19 | Operación de recepción: clientes sin turno, comanda, caja | Confirmado por Sicurella el 2026-10-14 (reunión con el usuario): ver «Respuestas de Sicurella · 2026-10-14» abajo y 27-ventas-caja.md | Resuelto |
+
+## Respuestas de Sicurella · 2026-10-14
+
+Relevadas por el usuario en una reunión con Sicurella. Confirmado por Sicurella; aplicadas en O01/O02 (27-ventas-caja.md).
+
+- **Cómo operan:**
+  - muchos clientes llegan sin turno;
+  - recepción los deriva a una profesional;
+  - la profesional hace los trabajos y entrega una comanda en papel con los trabajos realizados y el valor;
+  - recepción la carga y cobra.
+  - **Se cobra siempre después de atender.**
+- **«Atender ahora»:** el cliente sin turno entra al sistema al llegar.
+  - Recepción elige profesional y servicios, y se crea un turno que arranca en ese momento y ocupa la agenda (el portal deja de ofrecer ese horario).
+  - Si la profesional está ocupada, se rechaza.
+  - Queda marcado como «sin turno previo» para reportes.
+- **Comanda al cobrar** (cualquier turno atendido):
+  - recepción agrega o quita los servicios realmente hechos, con la profesional de cada uno (para comisiones, L01);
+  - el precio de cada servicio es editable: se propone el de lista y se guardan el de lista y el cobrado;
+  - un servicio agregado no re-reserva agenda.
+- **Recepción:**
+  - puede anular ventas;
+  - ve y registra gastos de su sede pagados desde la caja;
+  - la anulación de gastos sigue en administración de sede, franquiciado o master.
+- **Vuelto:** no se registra. **Puestos de cobro:** uno por sede. **Descuentos:** sin tope ni restricción de rol.
+- **Arqueo no ciego:**
+  - el esperado se muestra;
+  - con diferencia, la observación del cierre es obligatoria;
+  - los faltantes los revisan recepción y franquiciado, que ven el historial de cierres de su sede (con filtro de diferencias).
+- **Stock:** es «prácticamente virtual» (un esmalte rinde unos 50 servicios y dura años).
+  - Al anular una venta, el stock no se repone por defecto.
+  - El flujo de servicios no depende del stock.
+- **Facturación (D9):** sigue sin definir; no cambia nada.
 
 ## Escenarios a cerrar con las respuestas
 

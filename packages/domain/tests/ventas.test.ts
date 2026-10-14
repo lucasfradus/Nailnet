@@ -1,8 +1,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cubreSede, tienePermiso, type Asignacion } from "../src/access.ts";
-import { dejaNegativo, diferenciaArqueo, efectivoEsperado, importeNoNegativo, resumirCaja, revertibleDesdeCaja, signoValidoCaja, validarManual } from "../src/caja.ts";
-import { calcularVenta, claveValida, descuentoDe, esEfectivo, estadoSegunCobros, formatoPesos, resumirCobros, saldoVenta, validarCobro, validarCobros, validarMotivo } from "../src/ventas.ts";
+import { dejaNegativo, diferenciaArqueo, efectivoEsperado, importeNoNegativo, resumirCaja, revertibleDesdeCaja, signoValidoCaja, validarManual, validarObservacionesCierre } from "../src/caja.ts";
+import { calcularVenta, claveValida, descuentoDe, esEfectivo, estadoSegunCobros, formatoPesos, precioCobrado, resumirCobros, saldoVenta, validarCobro, validarCobros, validarMotivo } from "../src/ventas.ts";
+
+test("comanda: precio cobrado editable, propuesto el de lista", () => {
+  assert.deepEqual(precioCobrado("", 3_000_000n), { precio: 3_000_000n }, "vacío = lista");
+  assert.deepEqual(precioCobrado(" 27000,50 ", 3_000_000n), { precio: 2_700_050n });
+  assert.deepEqual(precioCobrado("0", 3_000_000n), { precio: 0n }, "cortesía");
+  assert.ok("error" in precioCobrado("", null), "sin lista hay que indicar el precio");
+  assert.deepEqual(precioCobrado("15000", null), { precio: 1_500_000n });
+  assert.ok("error" in precioCobrado("-1", 100n));
+  assert.ok("error" in precioCobrado("1,234", 100n));
+});
+
+test("cierre: con diferencia la observación es obligatoria", () => {
+  assert.equal(validarObservacionesCierre(0n, ""), null);
+  assert.match(validarObservacionesCierre(-10_000n, "")!, /explicala/);
+  assert.match(validarObservacionesCierre(500n, "ok")!, /explicala/);
+  assert.equal(validarObservacionesCierre(-10_000n, "Faltan $100 del cambio"), null);
+  assert.ok(validarObservacionesCierre(0n, "x".repeat(501)));
+});
 
 const servicio = (pesos: bigint) => ({ cantidad: 1000n, precioUnitario: pesos * 100n });
 
@@ -108,10 +126,10 @@ test("permisos de ventas y caja por rol", () => {
   const recepcion: Asignacion = { rol: "RECEPCIONISTA", alcance: "SEDE", franquiciadoId: null, sedeId: "centro" };
   const profesional: Asignacion = { rol: "PROFESIONAL", alcance: "PROPIO", franquiciadoId: null, sedeId: null };
   for (const a of [master, franA, admin]) for (const p of ["venta:leer", "venta:registrar", "venta:anular", "caja:leer", "caja:operar"] as const) assert.equal(tienePermiso(a, p), true, `${a.rol} ${p}`);
-  assert.deepEqual((["venta:leer", "venta:registrar", "venta:anular", "caja:leer", "caja:operar"] as const).map(p => tienePermiso(recepcion, p)), [true, true, false, true, true]);
+  assert.deepEqual((["venta:leer", "venta:registrar", "venta:anular", "caja:leer", "caja:operar"] as const).map(p => tienePermiso(recepcion, p)), [true, true, true, true, true], "recepción también anula (Sicurella, 2026-10-14)");
   assert.equal(tienePermiso(profesional, "venta:leer"), false);
   assert.equal(tienePermiso(profesional, "caja:leer"), false);
   assert.equal(tienePermiso({ ...recepcion, alcance: "ORGANIZACION" }, "venta:leer"), false, "forma inválida");
-  assert.equal(tienePermiso(recepcion, "gasto:leer"), false, "los permisos de gastos no cambian");
+  assert.deepEqual((["gasto:leer", "gasto:registrar_caja", "gasto:registrar", "gasto:anular", "gasto:categorias"] as const).map(p => tienePermiso(recepcion, p)), [true, true, false, false, false], "recepción: gastos de la caja, sin anular");
   assert.equal(cubreSede(franA, "sur", de), false);
 });

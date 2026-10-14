@@ -13,7 +13,8 @@ import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
 import { anularGasto, crearCategoriaGasto, registrarGasto } from "../src/gastos.ts";
 import { aplicarPago } from "../src/pagos.ts";
 import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
-import { marcarAtendida, tomarTurno } from "../src/reservas.ts";
+import { PROFESIONAL_OCUPADA, atenderAhora, marcarAtendida, tomarTurno } from "../src/reservas.ts";
+import { consultarDisponibilidad } from "../src/disponibilidad.ts";
 import { SinStock, fichaProducto, guardarPrecioProducto, guardarProducto, registrarCompra } from "../src/stock.ts";
 import { SIN_CAJA_EFECTIVO, anularVenta, listarVentas, obtenerVenta, prepararVenta, registrarCobro, registrarCobroEn, registrarVenta, ventasDeReservas } from "../src/ventas.ts";
 import { crearFixture } from "../prisma/fixture.ts";
@@ -46,6 +47,14 @@ test("ventas, cobros y caja (O01, O02, M03)", async (t) => {
     await guardarHorarioProfesional(db, M, O, ana, centro, semanaDesdeTextos({ 2: "08:00-22:00" }));
     await actualizarConfiguracionOrganizacion(db, M, O, { pasoGrillaMinutos: 60 });
     const clienta = (await crearCliente(db, M, O, centro, { nombre: "Lucía", telefono: "1155551234" }))!.id;
+    // Comanda: otro servicio sin seña, otra profesional de Centro, un servicio no habilitado y una profesional solo de Norte.
+    const kapping = (await guardarServicio(db, M, O, { categoriaId: cat.id, nombre: "Kapping", duracionMinutos: 30, bufferAntesMinutos: 0, bufferDespuesMinutos: 0, sena: { tipo: "NINGUNA", valor: null }, activo: true, consentimientos: [], skillIds: [], recursos: [] }))!.id;
+    await guardarServicioSede(db, M, O, centro, kapping, { habilitado: true, precio: "12000", duracionMinutos: null, sena: null, reservableOnline: true });
+    const noHabilitado = (await guardarServicio(db, M, O, { categoriaId: cat.id, nombre: "Pedicuría", duracionMinutos: 60, bufferAntesMinutos: 0, bufferDespuesMinutos: 0, sena: { tipo: "NINGUNA", valor: null }, activo: true, consentimientos: [], skillIds: [], recursos: [] }))!.id;
+    const bea = (await crearProfesional(db, M, O, centro, { nombre: "Bea" })).id;
+    await guardarHabilidades(db, M, O, bea, { skillIds: [], servicioIds: [semi, kapping] });
+    await guardarHorarioProfesional(db, M, O, bea, centro, semanaDesdeTextos({ 2: "08:00-22:00" }));
+    const deNorte = (await crearProfesional(db, M, O, norte, { nombre: "Nora" })).id;
 
     /** Turno de recepción (confirmado) que se marca atendido a su hora. */
     const atendido = async (hhmm: string) => {
@@ -169,6 +178,70 @@ test("ventas, cobros y caja (O01, O02, M03)", async (t) => {
       assert.equal(await stockDe(centro, esmalte), "7");
     });
 
+    await t.test("comanda: agregar y quitar servicios, profesional por ítem y precio editable (lista y cobrado)", async () => {
+      const reserva = await atendido("11:00");
+      const item = (await db.reservaItem.findFirstOrThrow({ where: { reservaId: reserva } })).id;
+      const movimientosStock = await db.movimientoStock.count({ where: { organizacionId: O } });
+      // Semi con Ana a $28.000 (lista $30.000) + kapping agregado con Bea al precio de lista ($12.000).
+      const v = await registrarVenta(db, R, O, { sedeId: centro, reservaId: reserva, productos: [], claveIdempotencia: clave(),
+        servicios: [{ servicioId: semi, profesionalId: ana, reservaItemId: item, precio: "28000" }, { servicioId: kapping, profesionalId: bea, precio: "" }],
+        cobros: [{ medio: "TRANSFERENCIA", monto: "40000" }] });
+      assert.equal(v.estado, "COMPLETADA");
+      const items = await db.ventaItem.findMany({ where: { ventaId: v.id }, orderBy: { posicion: "asc" } });
+      assert.deepEqual(items.map(i => [i.servicioId, i.profesionalId, i.reservaItemId, i.precioLista?.toFixed(2), i.precioUnitario.toFixed(2)]), [
+        [semi, ana, item, "30000.00", "28000.00"],
+        [kapping, bea, null, "12000.00", "12000.00"],
+      ]);
+      assert.equal(await db.movimientoStock.count({ where: { organizacionId: O } }), movimientosStock, "los servicios no tocan el stock");
+      assert.equal((await obtenerVenta(db, R, O, v.id)).total, "40000.00");
+
+      // Quitar el servicio del turno: queda solo lo que realmente se hizo (otro servicio, otra profesional).
+      const otra = await atendido("12:00");
+      const w = await registrarVenta(db, R, O, { sedeId: centro, reservaId: otra, productos: [], claveIdempotencia: clave(), servicios: [{ servicioId: kapping, profesionalId: ana, precio: "10000" }], cobros: [] });
+      assert.equal((await obtenerVenta(db, R, O, w.id)).total, "10000.00");
+
+      const base = { sedeId: centro, productos: [], cobros: [], claveIdempotencia: clave() };
+      const r3 = await atendido("13:00");
+      await assert.rejects(registrarVenta(db, R, O, { ...base, reservaId: r3, servicios: [{ servicioId: noHabilitado, profesionalId: ana }] }), /no está habilitado/);
+      await assert.rejects(registrarVenta(db, R, O, { ...base, reservaId: r3, servicios: [{ servicioId: kapping, profesionalId: deNorte }] }), /no trabaja en esta sede/);
+      await assert.rejects(registrarVenta(db, R, O, { ...base, reservaId: r3, servicios: [{ servicioId: semi, profesionalId: ana, reservaItemId: item }] }), AccesoDenegado, "ítem de otro turno");
+      await assert.rejects(registrarVenta(db, R, O, { ...base, reservaId: r3, servicios: [{ servicioId: semi, profesionalId: ana, precio: "-1" }] }), /Precio inválido/);
+      await assert.rejects(registrarVenta(db, R, O, { ...base, servicios: [{ servicioId: semi, profesionalId: ana }] }), /desde un turno/, "servicios sin turno");
+      await assert.rejects(registrarVenta(db, b.master.id, b.org.id, { ...base, sedeId: b.centro.id, reservaId: r3, servicios: [{ servicioId: semi, profesionalId: ana }] }), AccesoDenegado, "turno de otra organización");
+      // Descuento sin tope ni rol especial (Sicurella, 2026-10-14): recepción puede dejar la venta en cero.
+      const z = await registrarVenta(db, R, O, { ...base, reservaId: r3, descuento: "30000" });
+      assert.deepEqual([z.estado, (await obtenerVenta(db, R, O, z.id)).total], ["COMPLETADA", "0.00"]);
+    });
+
+    await t.test("Atender ahora: cliente sin turno ocupa la agenda desde este minuto y se cobra con comanda", async () => {
+      // Cliente rápido: nombre y un contacto (lo mínimo que exige el modelo de clientes, doc 12).
+      await assert.rejects(crearCliente(db, R, O, centro, { nombre: "Sin contacto" }), DatosInvalidos);
+      const rapida = (await crearCliente(db, R, O, centro, { nombre: "Clienta sin turno", telefono: "1144443333" }))!.id;
+      const llegada = new Date(en("16:07").getTime() + 25_000);
+      const r = await atenderAhora(db, R, O, { sedeId: centro, clienteId: rapida, items: [{ servicioId: semi, profesionalId: ana }] }, llegada);
+      const reserva = await db.reserva.findUniqueOrThrow({ where: { id: r.reservaId }, include: { items: true } });
+      assert.deepEqual([reserva.estado, reserva.sinTurnoPrevio, reserva.canal, reserva.items[0]!.inicio.toISOString()], ["CONFIRMADA", true, "RECEPCION", en("16:07").toISOString()]);
+      assert.equal(await db.job.count({ where: { clave: { endsWith: r.reservaId } } }), 0, "sin email de confirmación");
+      // Ocupa la agenda: el motor ya no ofrece a Ana a las 17:00 (16:07 + 60 min) ni acepta otro «ahora».
+      const libres = await consultarDisponibilidad(db, R, O, { sedeId: centro, fecha: FECHA, canal: "RECEPCION", items: [{ servicioId: semi, profesionalId: ana }] }, ahora);
+      assert.ok(!libres.some(l => l.inicio === en("16:00").toISOString()) && !libres.some(l => l.inicio === en("17:00").toISOString()));
+      assert.ok(libres.some(l => l.inicio === en("18:00").toISOString()));
+      await assert.rejects(atenderAhora(db, R, O, { sedeId: centro, clienteId: rapida, items: [{ servicioId: kapping, profesionalId: ana }] }, new Date(en("16:30").getTime())), (e: unknown) => e instanceof DatosInvalidos && e.message === PROFESIONAL_OCUPADA);
+      await assert.rejects(atenderAhora(db, R, O, { sedeId: centro, clienteId: rapida, items: [{ servicioId: kapping, profesionalId: ana }] }, en("23:00")), (e: unknown) => e instanceof DatosInvalidos && e.message === PROFESIONAL_OCUPADA, "fuera del horario");
+      await assert.rejects(atenderAhora(db, R, O, { sedeId: centro, clienteId: rapida, items: [{ servicioId: kapping, profesionalId: "" }] }, llegada), /profesional/);
+      await assert.rejects(atenderAhora(db, a.profesional.id, O, { sedeId: centro, clienteId: rapida, items: [{ servicioId: kapping, profesionalId: bea }] }, llegada), AccesoDenegado);
+      await assert.rejects(atenderAhora(db, R, O, { sedeId: a.sur.id, clienteId: rapida, items: [{ servicioId: kapping, profesionalId: bea }] }, llegada), AccesoDenegado);
+      // Bea está libre: también se la puede asignar ahora.
+      await atenderAhora(db, R, O, { sedeId: centro, clienteId: rapida, items: [{ servicioId: kapping, profesionalId: bea }] }, new Date(en("16:30").getTime()));
+      // Se atiende, y al cobrar la comanda suma lo que realmente se hizo (sin re-reservar agenda).
+      await marcarAtendida(db, R, O, r.reservaId, en("17:10"));
+      const v = await registrarVenta(db, R, O, { sedeId: centro, reservaId: r.reservaId, productos: [], claveIdempotencia: clave(),
+        servicios: [{ servicioId: semi, profesionalId: ana, reservaItemId: reserva.items[0]!.id }, { servicioId: kapping, profesionalId: ana, precio: "11000" }],
+        cobros: [{ medio: "EFECTIVO", monto: "41000" }] });
+      assert.equal(v.estado, "COMPLETADA");
+      assert.equal((await ventasDeReservas(db, R, O, centro, [r.reservaId])).get(r.reservaId)?.ventaId, v.id);
+    });
+
     await t.test("efectivo sin caja abierta: se rechaza; con otros medios se cobra igual", async () => {
       await cerrarCaja(db, R, O, { cajaId: (await estadoCaja(db, R, O, norte)).abierta!.id, contado: (await estadoCaja(db, R, O, norte)).abierta!.esperado });
       const ventas = await db.venta.count({ where: { organizacionId: O } });
@@ -233,8 +306,8 @@ test("ventas, cobros y caja (O01, O02, M03)", async (t) => {
 
     await t.test("anulación por reverso: cobros revertidos, efectivo devuelto desde la caja, stock repuesto y seña liberada", async () => {
       const ventaPrevia = await obtenerVenta(db, R, O, ventaMixta);
-      assert.equal(ventaPrevia.puede.anular, false, "recepción no anula");
-      await assert.rejects(anularVenta(db, R, O, ventaMixta, { motivo: "Se cargó mal", reponerStock: true }), AccesoDenegado);
+      assert.equal(ventaPrevia.puede.anular, true, "recepción anula (Sicurella, 2026-10-14)");
+      await assert.rejects(anularVenta(db, a.profesional.id, O, ventaMixta, { motivo: "Se cargó mal", reponerStock: true }), AccesoDenegado);
       await assert.rejects(anularVenta(db, ADM, O, ventaMixta, { motivo: "x", reponerStock: true }), DatosInvalidos, "motivo obligatorio");
       const stockAntes = await stockDe(centro, esmalte), cajaAntes = await esperadoCentro();
       const r = await anularVenta(db, ADM, O, ventaMixta, { motivo: "La clienta devolvió los esmaltes", reponerStock: true });
@@ -250,7 +323,7 @@ test("ventas, cobros y caja (O01, O02, M03)", async (t) => {
       await assert.rejects(registrarCobro(db, R, O, ventaMixta, { medio: "EFECTIVO", monto: "1", claveIdempotencia: clave() }), /anulada/);
 
       // Anular la venta M03 libera la seña: el turno se vuelve a cobrar con el mismo anticipo, una sola vez.
-      await anularVenta(db, ADM, O, ventaM03, { motivo: "Se cobró con el medio equivocado", reponerStock: false });
+      await anularVenta(db, R, O, ventaM03, { motivo: "Se cobró con el medio equivocado", reponerStock: false });
       const nueva = await registrarVenta(db, R, O, { sedeId: centro, reservaId: reservaM03, productos: [], cobros: [{ medio: "TARJETA_CREDITO", monto: "21000" }], claveIdempotencia: clave() });
       const v = await obtenerVenta(db, R, O, nueva.id);
       assert.deepEqual([v.estado, v.anticipo, v.cobrado], ["COMPLETADA", "9000.00", "21000.00"]);
@@ -267,7 +340,13 @@ test("ventas, cobros y caja (O01, O02, M03)", async (t) => {
       assert.equal((await registrarGasto(db, ADM, O, { ...base, monto: "800", medioPago: "TRANSFERENCIA" })).egresoCaja, false, "una transferencia no toca la caja");
       assert.equal((await registrarGasto(db, ADM, O, { ...base, monto: "700", medioPago: "EFECTIVO", desdeCaja: false })).egresoCaja, false, "pagado desde afuera de la caja");
       await assert.rejects(registrarGasto(db, ADM, O, { ...base, monto: "999999", medioPago: "EFECTIVO", desdeCaja: true }), /efectivo suficiente/);
+      await assert.rejects(anularGasto(db, R, O, g.id, "Se cargó dos veces"), AccesoDenegado, "recepción no anula gastos");
       await anularGasto(db, ADM, O, g.id, "Se cargó dos veces");
+      // Recepción carga un gasto pagado con la caja (Sicurella, 2026-10-14); otro medio, no.
+      const deRecepcion = await registrarGasto(db, R, O, { ...base, monto: "300", medioPago: "EFECTIVO", descripcion: "Café para la sala" });
+      assert.equal(deRecepcion.egresoCaja, true);
+      await assert.rejects(registrarGasto(db, R, O, { ...base, monto: "300", medioPago: "MERCADO_PAGO" }), DatosInvalidos);
+      await anularGasto(db, ADM, O, deRecepcion.id, "Prueba de recepción");
       assert.equal(await esperadoCentro(), antes, "el reverso devuelve el efectivo a la caja");
       const caja = (await estadoCaja(db, ADM, O, centro)).abierta!;
       const egreso = caja.movimientos.find(m => m.tipo === "EGRESO_GASTO")!;
@@ -285,12 +364,17 @@ test("ventas, cobros y caja (O01, O02, M03)", async (t) => {
       const contado = (Number(esperado) - 100).toFixed(2);
       await assert.rejects(cerrarCaja(db, b.master.id, b.org.id, { cajaId: abierta.id, contado }), AccesoDenegado, "caja de otra organización");
       await assert.rejects(cerrarCaja(db, R, O, { cajaId: abierta.id, contado: "-1" }), DatosInvalidos);
+      await assert.rejects(cerrarCaja(db, R, O, { cajaId: abierta.id, contado }), /explicala/, "con diferencia, la observación es obligatoria");
+      await assert.rejects(cerrarCaja(db, R, O, { cajaId: abierta.id, contado, observaciones: "  ok " }), /explicala/);
       const cierre = await cerrarCaja(db, R, O, { cajaId: abierta.id, contado, observaciones: "Faltan $100: se revisa mañana" });
       assert.deepEqual(cierre, { esperado, contado, diferencia: "-100.00" });
       await assert.rejects(cerrarCaja(db, R, O, { cajaId: abierta.id, contado }), /ya está cerrada/);
       const estado = await estadoCaja(db, R, O, centro);
       assert.equal(estado.abierta, null);
       assert.deepEqual([estado.cierres[0]!.id, estado.cierres[0]!.diferencia, estado.cierres[0]!.observaciones], [abierta.id, "-100.00", "Faltan $100: se revisa mañana"]);
+      // Los faltantes los revisan recepción y franquiciado: ambos ven el historial filtrado por diferencia.
+      for (const quien of [R, a.franquiciado.id]) assert.deepEqual((await estadoCaja(db, quien, O, centro, { soloConDiferencia: true })).cierres.map(c => c.id), [abierta.id]);
+      await assert.rejects(estadoCaja(db, a.franquiciado.id, O, a.sur.id, { soloConDiferencia: true }), AccesoDenegado);
       const detalle = await obtenerCaja(db, R, O, abierta.id);
       assert.equal(detalle.estado, "CERRADA");
       assert.ok(detalle.movimientos.length > 5);

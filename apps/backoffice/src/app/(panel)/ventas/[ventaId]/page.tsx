@@ -31,7 +31,7 @@ export default async function Venta({ params }: { params: Promise<{ ventaId: str
 
     <div className="tabla">
       {v.items.map((i, n) => <article key={n} className="fila fila-cabecera">
-        <span>{i.descripcion}{i.tipo === "PRODUCTO" && i.unidad ? ` × ${cantidad(i.cantidad, i.unidad)} a ${pesos(i.precioUnitario)}` : ""}</span>
+        <span>{i.descripcion}{i.tipo === "PRODUCTO" && i.unidad ? ` × ${cantidad(i.cantidad, i.unidad)} a ${pesos(i.precioUnitario)}` : ""}{i.tipo === "SERVICIO" && i.precioLista && i.precioLista !== i.precioUnitario ? ` (lista ${pesos(i.precioLista)})` : ""}</span>
         <span className="tag">{pesos(i.subtotal)}</span>
       </article>)}
     </div>
@@ -75,7 +75,7 @@ export default async function Venta({ params }: { params: Promise<{ ventaId: str
       <Formulario accion={accionAnularVenta} boton="Anular venta" secundario confirmar="¿Anular la venta? Se revierten todos sus cobros y no se puede deshacer.">
         <input type="hidden" name="ventaId" value={v.id} />
         <label>Motivo<input name="motivo" required minLength={5} maxLength={500} placeholder="Por qué se anula" /></label>
-        {v.tieneProductos && <label className="check"><input type="checkbox" name="reponerStock" defaultChecked />Los productos vuelven al stock (se devolvieron físicamente)</label>}
+        {v.tieneProductos && <label className="check"><input type="checkbox" name="reponerStock" />Los productos vuelven al stock (solo si se devolvieron físicamente)</label>}
         <p className="ayuda">Cada cobro recibe un reverso: el efectivo sale de la caja abierta (tiene que estar abierta), los demás medios se devuelven por fuera del sistema. La seña de Mercado Pago queda libre para volver a cobrar el turno; devolverla es manual.</p>
       </Formulario>
     </details>}

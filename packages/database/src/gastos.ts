@@ -126,14 +126,21 @@ export type DatosGasto = AltaGasto & {
  * registrado quién lo cargó. Un gasto en EFECTIVO pagado con la caja genera, en la misma transacción,
  * el egreso de la caja abierta (O02, doc 27).
  */
+export const SOLO_DESDE_CAJA = "Recepción registra solo gastos pagados en efectivo con la caja abierta";
+
 export async function registrarGasto(db: Database, actorId: string, organizacionId: string, datos: DatosGasto) {
   exigirIds(datos.sedeId, datos.categoriaId);
   return conReintento(() => db.$transaction(async tx => {
-    await exigirSede(tx, actorId, organizacionId, datos.sedeId, "gasto:registrar");
+    // Con gasto:registrar se carga cualquier gasto; con gasto:registrar_caja (recepción) solo uno pagado
+    // en efectivo con la caja abierta.
+    const { actor, franquiciadoDe } = await exigirSede(tx, actorId, organizacionId, datos.sedeId, "gasto:registrar_caja");
+    const soloDesdeCaja = !puede(actor, "gasto:registrar", datos.sedeId, franquiciadoDe);
     const sede = await tx.sede.findFirst({ where: { id: datos.sedeId, organizacionId, activo: true }, select: { timezone: true } });
     if (!sede) throw new AccesoDenegado();
     const v = validarGasto(datos, aLocal(new Date(), sede.timezone).fecha);
     if ("error" in v) throw new DatosInvalidos(v.error);
+    if (soloDesdeCaja && (!afectaCajaEfectivo(v.gasto.medioPago) || datos.desdeCaja === false)) throw new DatosInvalidos(SOLO_DESDE_CAJA);
+    if (soloDesdeCaja) datos = { ...datos, desdeCaja: true };
     const categoria = await tx.categoriaGasto.findFirst({ where: { id: datos.categoriaId, organizacionId }, select: { sedeId: true, activo: true } });
     // Una categoría local de otra sede es, para esta sede, inexistente.
     if (!categoria || !categoriaAplicaASede(categoria, datos.sedeId)) throw new AccesoDenegado();
@@ -228,7 +235,9 @@ export async function listarGastos(db: Database, actorId: string, organizacionId
   const nombreCategoria = new Map(movimientos.map(m => [m.categoriaId, m.categoria.nombre]));
   return {
     desde, hasta,
-    puedeRegistrar: puede(actor, "gasto:registrar", filtro.sedeId, franquiciadoDe),
+    puedeRegistrar: puede(actor, "gasto:registrar_caja", filtro.sedeId, franquiciadoDe),
+    // Recepción: solo gastos en efectivo pagados con la caja abierta.
+    soloDesdeCaja: !puede(actor, "gasto:registrar", filtro.sedeId, franquiciadoDe),
     puedeAnular: puede(actor, "gasto:anular", filtro.sedeId, franquiciadoDe),
     gastos: movimientos.filter(m => m.tipo === "GASTO").map(m => {
       const r = reversos.get(m.id);

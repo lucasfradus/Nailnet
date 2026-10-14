@@ -39,6 +39,16 @@ export function diferenciaArqueo(contado: bigint, esperado: bigint): bigint {
   return contado - esperado;
 }
 
+/**
+ * Arqueo no ciego (confirmado por Sicurella el 2026-10-14): el esperado se muestra, y si el cierre tiene
+ * diferencia la observación es obligatoria (5 a 500 caracteres). Sin diferencia, es opcional.
+ */
+export function validarObservacionesCierre(diferencia: bigint, observaciones: string): string | null {
+  if (observaciones.length > 500) return "Las observaciones tienen hasta 500 caracteres";
+  if (diferencia !== 0n && observaciones.length < 5) return "Hay diferencia entre lo contado y lo esperado: explicala en las observaciones (al menos 5 caracteres)";
+  return null;
+}
+
 /** ¿El movimiento deja la caja con efectivo negativo? Un retiro o un gasto no pueden sacar lo que no hay. */
 export function dejaNegativo(esperado: bigint, monto: bigint): boolean {
   return esperado + monto < 0n;

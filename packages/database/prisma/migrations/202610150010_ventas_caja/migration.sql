@@ -16,9 +16,6 @@ CREATE TYPE "EstadoCaja" AS ENUM ('ABIERTA', 'CERRADA');
 -- CreateEnum
 CREATE TYPE "TipoMovimientoCaja" AS ENUM ('INGRESO_COBRO', 'EGRESO_GASTO', 'ENTRADA', 'SALIDA', 'REVERSO');
 
--- AlterTable
-ALTER TABLE "Reserva" ADD COLUMN     "sinTurnoPrevio" BOOLEAN NOT NULL DEFAULT false;
-
 -- CreateTable
 CREATE TABLE "Venta" (
     "id" UUID NOT NULL,
@@ -51,12 +48,9 @@ CREATE TABLE "VentaItem" (
     "posicion" INTEGER NOT NULL,
     "tipo" "TipoItemVenta" NOT NULL,
     "reservaItemId" UUID,
-    "servicioId" UUID,
-    "profesionalId" UUID,
     "productoId" UUID,
     "descripcion" TEXT NOT NULL,
     "cantidad" DECIMAL(14,3) NOT NULL,
-    "precioLista" DECIMAL(12,2),
     "precioUnitario" DECIMAL(12,2) NOT NULL,
     "subtotal" DECIMAL(12,2) NOT NULL,
 
@@ -194,12 +188,6 @@ ALTER TABLE "VentaItem" ADD CONSTRAINT "VentaItem_organizacionId_ventaId_fkey" F
 ALTER TABLE "VentaItem" ADD CONSTRAINT "VentaItem_organizacionId_reservaItemId_fkey" FOREIGN KEY ("organizacionId", "reservaItemId") REFERENCES "ReservaItem"("organizacionId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "VentaItem" ADD CONSTRAINT "VentaItem_organizacionId_servicioId_fkey" FOREIGN KEY ("organizacionId", "servicioId") REFERENCES "Servicio"("organizacionId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "VentaItem" ADD CONSTRAINT "VentaItem_organizacionId_profesionalId_fkey" FOREIGN KEY ("organizacionId", "profesionalId") REFERENCES "Profesional"("organizacionId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "VentaItem" ADD CONSTRAINT "VentaItem_organizacionId_productoId_fkey" FOREIGN KEY ("organizacionId", "productoId") REFERENCES "Producto"("organizacionId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -231,7 +219,6 @@ ALTER TABLE "MovimientoCaja" ADD CONSTRAINT "MovimientoCaja_organizacionId_gasto
 
 -- AddForeignKey
 ALTER TABLE "MovimientoCaja" ADD CONSTRAINT "MovimientoCaja_organizacionId_revierteId_fkey" FOREIGN KEY ("organizacionId", "revierteId") REFERENCES "MovimientoCaja"("organizacionId", "id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
 
 
 -- ─── Reglas de ventas y caja en la base (segunda defensa; la primera es src/ventas.ts y src/caja.ts) ───
@@ -309,33 +296,11 @@ $$;
 CREATE TRIGGER "Venta_transicion" BEFORE UPDATE OR DELETE ON "Venta" FOR EACH ROW EXECUTE FUNCTION "venta_transicion"();
 
 -- Ítems: servicio con su ítem de reserva (cantidad 1) o producto con cantidad positiva. Inmutables.
--- Comanda: un servicio lleva servicio y profesional (y, si vino del turno, su ítem de reserva); un
--- producto, el producto. El precio de lista es el propuesto y el unitario, el cobrado.
 ALTER TABLE "VentaItem" ADD CONSTRAINT "VentaItem_forma" CHECK (COALESCE(
-  (("tipo" = 'SERVICIO' AND "servicioId" IS NOT NULL AND "profesionalId" IS NOT NULL AND "productoId" IS NULL AND "cantidad" = 1)
-    OR ("tipo" = 'PRODUCTO' AND "productoId" IS NOT NULL AND "reservaItemId" IS NULL AND "servicioId" IS NULL AND "profesionalId" IS NULL AND "cantidad" > 0))
-  AND ("precioLista" IS NULL OR "precioLista" >= 0)
+  (("tipo" = 'SERVICIO' AND "reservaItemId" IS NOT NULL AND "productoId" IS NULL AND "cantidad" = 1)
+    OR ("tipo" = 'PRODUCTO' AND "productoId" IS NOT NULL AND "reservaItemId" IS NULL AND "cantidad" > 0))
   AND "precioUnitario" >= 0 AND "subtotal" >= 0 AND "posicion" >= 0 AND length(btrim("descripcion")) BETWEEN 1 AND 300, false));
 CREATE TRIGGER "VentaItem_inmutable" BEFORE UPDATE OR DELETE ON "VentaItem" FOR EACH ROW EXECUTE FUNCTION "solo_insercion"();
-
--- Los servicios solo se cobran contra un turno (con o sin reserva previa): la venta tiene reserva, y el
--- ítem de reserva, si lo hay, es de ese turno.
-CREATE FUNCTION "venta_item_coherente"() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE
-  venta RECORD;
-BEGIN
-  IF NEW."tipo" <> 'SERVICIO' THEN RETURN NEW; END IF;
-  SELECT "reservaId" INTO venta FROM "Venta" WHERE "organizacionId" = NEW."organizacionId" AND "id" = NEW."ventaId";
-  IF NOT FOUND OR venta."reservaId" IS NULL THEN
-    RAISE EXCEPTION 'Los servicios se cobran contra un turno';
-  END IF;
-  IF NEW."reservaItemId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM "ReservaItem" WHERE "organizacionId" = NEW."organizacionId" AND "id" = NEW."reservaItemId" AND "reservaId" = venta."reservaId") THEN
-    RAISE EXCEPTION 'El ítem de reserva es de otro turno';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-CREATE TRIGGER "VentaItem_coherente" BEFORE INSERT ON "VentaItem" FOR EACH ROW EXECUTE FUNCTION "venta_item_coherente"();
 
 -- Cobros: positivo y sin motivo; su reverso, negativo y con motivo. El efectivo siempre pasa por una caja.
 ALTER TABLE "CobroVenta" ADD CONSTRAINT "CobroVenta_forma" CHECK (COALESCE(
@@ -400,9 +365,7 @@ CREATE UNIQUE INDEX "Caja_una_abierta_por_sede" ON "Caja"("sedeId") WHERE "estad
 ALTER TABLE "Caja" ADD CONSTRAINT "Caja_forma" CHECK (COALESCE("montoInicial" >= 0 AND (
   ("estado" = 'ABIERTA' AND "cerradaPorId" IS NULL AND "cerradaEn" IS NULL AND "esperado" IS NULL AND "contado" IS NULL AND "diferencia" IS NULL)
   OR ("estado" = 'CERRADA' AND "cerradaPorId" IS NOT NULL AND "cerradaEn" IS NOT NULL AND "esperado" IS NOT NULL AND "contado" >= 0 AND "diferencia" = "contado" - "esperado"))
-  AND ("observaciones" IS NULL OR length("observaciones") <= 500)
-  -- Un cierre con diferencia se explica (confirmado por Sicurella el 2026-10-14).
-  AND ("estado" = 'ABIERTA' OR "diferencia" = 0 OR length(btrim("observaciones")) >= 5), false));
+  AND ("observaciones" IS NULL OR length("observaciones") <= 500), false));
 
 -- Una caja nace abierta, se cierra una sola vez y no se borra. El esperado del cierre tiene que ser
 -- exactamente el inicial más la suma de sus movimientos.

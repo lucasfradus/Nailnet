@@ -4,6 +4,7 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { aLocal } from "@nailnet/domain/agenda";
 import { MEDIOS_PAGO_GASTO } from "@nailnet/domain/gastos";
 import { DatosInvalidos } from "@nailnet/database/access";
+import { hayCajaAbierta } from "@nailnet/database/caja";
 import { listarCategoriasGasto, listarGastos } from "@nailnet/database/gastos";
 import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
@@ -35,6 +36,7 @@ export default async function Gastos({ searchParams }: { searchParams: Promise<P
   const error = consulta.error;
   const lista = consulta.lista ?? await listarGastos(db(), actorId, organizacion.id, { sedeId: sede.id });
   const activas = cats.categorias.filter(c => c.activo);
+  const cajaAbierta = await hayCajaAbierta(db(), actorId, organizacion.id, sede.id).catch(e => { if (e instanceof AccesoDenegado) return false; throw e; });
   const instante = (d: Date) => d.toLocaleString("es-AR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const fecha = (f: string) => f.split("-").reverse().join("/");
 
@@ -56,7 +58,7 @@ export default async function Gastos({ searchParams }: { searchParams: Promise<P
 
     <div className="resumen gastos-totales">
       <article className="fila"><p>Total del período</p><strong>{pesos(lista.total)}</strong><small>{fecha(lista.desde)} al {fecha(lista.hasta)} · sin anulados</small></article>
-      <article className="fila"><p>En efectivo</p><strong>{pesos(lista.efectivo)}</strong><small>Saldrá de la caja cuando esté disponible (O02)</small></article>
+      <article className="fila"><p>En efectivo</p><strong>{pesos(lista.efectivo)}</strong><small>Los pagados con la caja abierta salen de ella (ver Caja)</small></article>
       {lista.porCategoria.length > 0 && <article className="fila"><p>Por categoría</p>
         <ul>{lista.porCategoria.map(c => <li key={c.id}>{c.nombre}: {pesos(c.total)}</li>)}</ul></article>}
     </div>
@@ -73,6 +75,8 @@ export default async function Gastos({ searchParams }: { searchParams: Promise<P
         </div>
         <label>Descripción<input name="descripcion" required minLength={3} maxLength={500} placeholder="Qué se pagó y a quién" /></label>
         <label>Comprobante (opcional)<input name="comprobante" maxLength={120} placeholder="Tipo y número, p. ej. Factura B 0003-00012345" /></label>
+        {cajaAbierta ? <><input type="hidden" name="conCaja" value="1" /><label className="check"><input type="checkbox" name="desdeCaja" defaultChecked />Si es en efectivo, sale de la caja abierta</label></>
+          : <p className="ayuda">La caja de la sede está cerrada: un gasto en efectivo no se descuenta de ninguna caja.</p>}
         <p className="ayuda">Un gasto no se edita ni se borra. Si te equivocaste, anulalo (queda registrado quién, cuándo y por qué) y cargalo de nuevo.</p>
       </Formulario> : <p className="ayuda">No hay categorías activas para esta sede. Creá una en la pestaña Categorías.</p>}
     </details>}

@@ -25,13 +25,20 @@ async function ejecutar(ruta: string, fn: (actorId: string, organizacionId: stri
 }
 
 export async function accionRegistrarGasto(_: Estado, form: FormData) {
-  return ejecutar("/gastos", (actor, org) => registrarGasto(db(), actor, org, {
+  // O02: la casilla «sale de la caja» solo se muestra con la caja abierta (conCaja=1). Sin ella, el
+  // repositorio decide: un gasto en efectivo sale de la caja si hay una abierta.
+  const desdeCaja = texto(form, "conCaja") === "1" ? form.get("desdeCaja") === "on" : undefined;
+  const r = await ejecutar("/gastos", (actor, org) => registrarGasto(db(), actor, org, {
     sedeId: texto(form, "sedeId"), categoriaId: texto(form, "categoriaId"), fecha: texto(form, "fecha"), monto: texto(form, "monto"),
-    medioPago: texto(form, "medioPago"), descripcion: texto(form, "descripcion"), comprobante: texto(form, "comprobante"),
+    medioPago: texto(form, "medioPago"), descripcion: texto(form, "descripcion"), comprobante: texto(form, "comprobante"), desdeCaja,
   }), "Gasto registrado");
+  revalidatePath("/caja", "layout");
+  return r;
 }
 export async function accionAnularGasto(_: Estado, form: FormData) {
-  return ejecutar("/gastos", (actor, org) => anularGasto(db(), actor, org, texto(form, "gastoId"), texto(form, "motivo")), "Gasto anulado");
+  const r = await ejecutar("/gastos", (actor, org) => anularGasto(db(), actor, org, texto(form, "gastoId"), texto(form, "motivo")), "Gasto anulado");
+  revalidatePath("/caja", "layout");
+  return r;
 }
 export async function accionCrearCategoriaGasto(_: Estado, form: FormData) {
   const sedeId = texto(form, "alcance") === "global" ? null : texto(form, "sedeId");

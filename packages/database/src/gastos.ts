@@ -4,10 +4,12 @@
 import { AccesoDenegado, cubreSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type PermisoGasto } from "@nailnet/domain";
 import { aLocal } from "@nailnet/domain/agenda";
 import { importe } from "@nailnet/domain/catalogo";
-import { categoriaAplicaASede, mesDe, puedeAdministrarCategoriaGasto, resumirGastos, validarGasto, validarMotivoAnulacion, validarNombreCategoria, validarPeriodo, type AltaGasto, type MedioPagoGasto } from "@nailnet/domain/gastos";
+import { afectaCajaEfectivo, categoriaAplicaASede, mesDe, puedeAdministrarCategoriaGasto, resumirGastos, validarGasto, validarMotivoAnulacion, validarNombreCategoria, validarPeriodo, type AltaGasto, type MedioPagoGasto } from "@nailnet/domain/gastos";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, bloquearOrganizacion, exigirIds, mapaSedes } from "./access.ts";
+import { SIN_CAJA, asentarMovimiento, cajaAbiertaBloqueada } from "./caja.ts";
+import { conReintento } from "./reservas.ts";
 
 type Cliente = Database | Prisma.TransactionClient;
 const fechaDb = (f: string) => new Date(`${f}T00:00:00Z`);
@@ -110,15 +112,23 @@ export async function actualizarCategoriaGasto(db: Database, actorId: string, or
 
 // ─── Gastos ───────────────────────────────────────────────────────────────────
 
-export type DatosGasto = AltaGasto & { sedeId: string; categoriaId: string };
+export type DatosGasto = AltaGasto & {
+  sedeId: string; categoriaId: string;
+  /**
+   * O02. Solo para EFECTIVO: ¿el dinero sale de la caja abierta de la sede? true exige caja abierta;
+   * false no toca la caja (lo pagó alguien desde afuera); sin indicar, sale de la caja si hay una abierta.
+   */
+  desdeCaja?: boolean;
+};
 
 /**
  * Registra un gasto de la sede. La fecha no puede ser futura en la zona horaria de la sede. Queda
- * registrado quién lo cargó; con O02, un gasto en EFECTIVO generará además el egreso de caja.
+ * registrado quién lo cargó. Un gasto en EFECTIVO pagado con la caja genera, en la misma transacción,
+ * el egreso de la caja abierta (O02, doc 27).
  */
 export async function registrarGasto(db: Database, actorId: string, organizacionId: string, datos: DatosGasto) {
   exigirIds(datos.sedeId, datos.categoriaId);
-  return db.$transaction(async tx => {
+  return conReintento(() => db.$transaction(async tx => {
     await exigirSede(tx, actorId, organizacionId, datos.sedeId, "gasto:registrar");
     const sede = await tx.sede.findFirst({ where: { id: datos.sedeId, organizacionId, activo: true }, select: { timezone: true } });
     if (!sede) throw new AccesoDenegado();
@@ -136,9 +146,18 @@ export async function registrarGasto(db: Database, actorId: string, organizacion
       },
       select: { id: true },
     });
-    await auditar(tx, organizacionId, actorId, "gasto.registrar", "Gasto", gasto.id, { sedeId: datos.sedeId, fecha: g.fecha, monto: importe(g.montoCentavos), medioPago: g.medioPago });
-    return gasto;
-  });
+    let egresoCaja = false;
+    if (afectaCajaEfectivo(g.medioPago) && datos.desdeCaja !== false) {
+      const caja = await cajaAbiertaBloqueada(tx, organizacionId, datos.sedeId);
+      if (!caja && datos.desdeCaja === true) throw new DatosInvalidos("La caja de la sede está cerrada: abrila, o indicá que el gasto no sale de la caja");
+      if (caja) {
+        await asentarMovimiento(tx, organizacionId, datos.sedeId, actorId, caja, { tipo: "EGRESO_GASTO", monto: -g.montoCentavos, gastoId: gasto.id });
+        egresoCaja = true;
+      }
+    }
+    await auditar(tx, organizacionId, actorId, "gasto.registrar", "Gasto", gasto.id, { sedeId: datos.sedeId, fecha: g.fecha, monto: importe(g.montoCentavos), medioPago: g.medioPago, egresoCaja });
+    return { ...gasto, egresoCaja };
+  }));
 }
 
 /**
@@ -151,8 +170,8 @@ export async function anularGasto(db: Database, actorId: string, organizacionId:
   const m = validarMotivoAnulacion(motivo);
   if ("error" in m) throw new DatosInvalidos(m.error);
   try {
-    return await db.$transaction(async tx => {
-      const original = await tx.gasto.findFirst({ where: { id: gastoId, organizacionId, tipo: "GASTO" }, include: { reverso: { select: { id: true } } } });
+    return await conReintento(() => db.$transaction(async tx => {
+      const original = await tx.gasto.findFirst({ where: { id: gastoId, organizacionId, tipo: "GASTO" }, include: { reverso: { select: { id: true } }, movimientoCaja: { select: { id: true } } } });
       if (!original) throw new AccesoDenegado();
       await exigirSede(tx, actorId, organizacionId, original.sedeId, "gasto:anular");
       if (original.reverso) throw new DatosInvalidos("El gasto ya fue anulado");
@@ -164,9 +183,16 @@ export async function anularGasto(db: Database, actorId: string, organizacionId:
         },
         select: { id: true },
       });
+      // Si el gasto salió de la caja, el efectivo vuelve a la caja abierta al momento de anular
+      // (una caja cerrada no se reescribe).
+      if (original.movimientoCaja) {
+        const caja = await cajaAbiertaBloqueada(tx, organizacionId, original.sedeId);
+        if (!caja) throw new DatosInvalidos(`${SIN_CAJA}: el gasto salió de la caja y su anulación devuelve el efectivo`);
+        await asentarMovimiento(tx, organizacionId, original.sedeId, actorId, caja, { tipo: "REVERSO", monto: centavos(original.monto), motivo: m.motivo, gastoId: reverso.id, revierteId: original.movimientoCaja.id });
+      }
       await auditar(tx, organizacionId, actorId, "gasto.anular", "Gasto", original.id, { reversoId: reverso.id, motivo: m.motivo });
       return reverso;
-    });
+    }));
   } catch (e) {
     if (esUnico(e)) throw new DatosInvalidos("El gasto ya fue anulado");
     throw e;

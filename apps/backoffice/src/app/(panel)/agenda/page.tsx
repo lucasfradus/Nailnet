@@ -5,6 +5,7 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { aLocal } from "@nailnet/domain/agenda";
 import { listarProfesionales } from "@nailnet/database/profesionales";
 import { agendaSede } from "@nailnet/database/reservas";
+import { ventasDeReservas } from "@nailnet/database/ventas";
 import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
@@ -31,6 +32,9 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
     .catch(e => { if (e instanceof AccesoDenegado) return null; throw e; });
   if (!agenda) notFound();
   const profesionales = await listarProfesionales(db(), actorId, organizacion.id, { sedeId }).catch(() => []);
+  // O01: los turnos atendidos se cobran desde aquí; si ya tienen venta, se enlaza.
+  const atendidas = agenda.items.filter(i => i.estado === "ATENDIDA" && i.posicion === 0).map(i => i.reservaId);
+  const ventas = puede.verVentas ? await ventasDeReservas(db(), actorId, organizacion.id, sedeId, atendidas) : new Map<string, { ventaId: string; estado: string }>();
   const hora = (d: Date) => d.toLocaleTimeString("es-AR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const dia = (d: Date) => d.toLocaleDateString("es-AR", { timeZone: tz, weekday: "long", day: "numeric", month: "long" });
   const porDia = new Map<string, typeof agenda.items>();
@@ -64,6 +68,11 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
           {" · "}{i.profesional.nombre} {i.profesional.apellido}{i.recursos.length ? ` · ${i.recursos.join(", ")}` : ""}{i.canal === "ONLINE" ? " · online" : ""}
           {i.estado === "PENDIENTE_PAGO" && i.expiraEn ? ` · vence ${hora(i.expiraEn)}` : ""}</p>
         {i.notas && i.posicion === 0 && <p className="ayuda">{i.notas}</p>}
+        {i.posicion === 0 && i.estado === "ATENDIDA" && puede.verVentas && <div className="acciones">
+          {ventas.get(i.reservaId)
+            ? <Link className="boton secundario" href={`/ventas/${ventas.get(i.reservaId)!.ventaId}`}>{ventas.get(i.reservaId)!.estado === "COMPLETADA" ? "Cobrado · ver venta" : "Venta pendiente de cobro"}</Link>
+            : <Link className="boton" href={`/ventas/nueva?reserva=${i.reservaId}`}>Cobrar</Link>}
+        </div>}
         {i.posicion === 0 && ["CONFIRMADA", "PENDIENTE_PAGO", "PAGO_EN_REVISION"].includes(i.estado) && <div className="acciones">
           {i.estado === "CONFIRMADA" && <>
             <Formulario accion={accionAtendida} boton="Atendido" className="en-linea" secundario><input type="hidden" name="reservaId" value={i.reservaId} /></Formulario>

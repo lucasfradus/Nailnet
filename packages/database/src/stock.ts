@@ -364,3 +364,18 @@ export async function egresarPorVenta(tx: Tx, actorId: string, organizacionId: s
   await productosDe(tx, organizacionId, lineas.map(l => l.productoId), { vendibles: true });
   await aplicarMovimientos(tx, organizacionId, actorId, lineas.map(l => ({ sedeId: datos.sedeId, productoId: l.productoId, tipo: "VENTA", cantidad: -l.cantidad, ventaId: datos.ventaId ?? null })));
 }
+
+/**
+ * Anulación de una venta (O01): devuelve al stock lo que egresó por esa venta, con un REVERSO por cada
+ * movimiento VENTA, dentro de la transacción de la anulación. La unicidad de revierteId impide reponer
+ * dos veces. Se usa solo cuando los productos vuelven físicamente (ver doc 27).
+ */
+export async function reponerPorAnulacionVenta(tx: Tx, actorId: string, organizacionId: string, datos: { sedeId: string; ventaId: string; motivo: string }) {
+  exigirIds(datos.ventaId);
+  const motivo = motivoDe(datos.motivo, true);
+  await exigirSede(tx, actorId, organizacionId, datos.sedeId, "stock:consumir");
+  const egresos = await tx.movimientoStock.findMany({ where: { organizacionId, sedeId: datos.sedeId, ventaId: datos.ventaId, tipo: "VENTA", revertidoPor: null }, select: { id: true, productoId: true, cantidad: true } });
+  if (!egresos.length) return 0;
+  await aplicarMovimientos(tx, organizacionId, actorId, egresos.map(m => ({ sedeId: datos.sedeId, productoId: m.productoId, tipo: "REVERSO" as const, cantidad: -desdeDecimal(m.cantidad.toFixed(3)), motivo, revierteId: m.id })));
+  return egresos.length;
+}

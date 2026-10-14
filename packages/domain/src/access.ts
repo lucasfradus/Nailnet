@@ -32,6 +32,20 @@ const permisosGasto: Record<Rol, readonly PermisoGasto[]> = {
   RECEPCIONISTA: [],
   PROFESIONAL: [],
 };
+/**
+ * O01/O02 · Ventas y caja. Tabla propia, como gastos. Recepción registra ventas, cobra y opera la caja
+ * de sus sedes (abrir, entradas/salidas, cerrar), pero no anula ventas: la anulación devuelve dinero y
+ * stock, así que queda para administración de sede, franquiciado o master. Ver 27-ventas-caja.md.
+ */
+export type PermisoVenta = "venta:leer" | "venta:registrar" | "venta:anular" | "caja:leer" | "caja:operar";
+const VENTAS_COMPLETO: readonly PermisoVenta[] = ["venta:leer", "venta:registrar", "venta:anular", "caja:leer", "caja:operar"];
+const permisosVenta: Record<Rol, readonly PermisoVenta[]> = {
+  MASTER_FRANQUICIADOR: VENTAS_COMPLETO,
+  FRANQUICIADO: VENTAS_COMPLETO,
+  ADMIN_SEDE: VENTAS_COMPLETO,
+  RECEPCIONISTA: ["venta:leer", "venta:registrar", "caja:leer", "caja:operar"],
+  PROFESIONAL: [],
+};
 export function asignacionValida(a: Asignacion): boolean {
   switch (a.rol) {
     case "MASTER_FRANQUICIADOR": return a.alcance === "ORGANIZACION" && a.franquiciadoId === null && a.sedeId === null;
@@ -42,11 +56,11 @@ export function asignacionValida(a: Asignacion): boolean {
     default: return false;
   }
 }
-export function tienePermiso(a: Asignacion, permiso: Permiso | PermisoGasto): boolean {
+export function tienePermiso(a: Asignacion, permiso: Permiso | PermisoGasto | PermisoVenta): boolean {
   if (!asignacionValida(a)) return false;
-  return permiso.startsWith("gasto:")
-    ? permisosGasto[a.rol]?.includes(permiso as PermisoGasto) ?? false
-    : permisos[a.rol]?.includes(permiso as Permiso) ?? false;
+  if (permiso.startsWith("gasto:")) return permisosGasto[a.rol]?.includes(permiso as PermisoGasto) ?? false;
+  if (permiso.startsWith("venta:") || permiso.startsWith("caja:")) return permisosVenta[a.rol]?.includes(permiso as PermisoVenta) ?? false;
+  return permisos[a.rol]?.includes(permiso as Permiso) ?? false;
 }
 export class AccesoDenegado extends Error {
   constructor() { super("Acceso denegado"); this.name = "AccesoDenegado"; }

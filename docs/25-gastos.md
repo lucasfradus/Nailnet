@@ -66,7 +66,9 @@ El total del período es la suma de los movimientos con fecha en el período. **
 
 Los anulados siguen a la vista, tachados, con quién, cuándo y por qué. El período por defecto es el mes en curso de la sede. Admite hasta 366 días y como máximo 2000 movimientos; si hay más, pide acotarlo.
 
-## Preparado para caja (O02), sin implementarla
+## Preparado para caja (O02)
+
+**Actualización 2026-10-14:** la caja ya existe y la propuesta de abajo se implementó tal cual, con una casilla «sale de la caja». Ver [27-ventas-caja.md](27-ventas-caja.md). Se conserva el texto original:
 
 - El medio de pago queda guardado en cada movimiento. `afectaCajaEfectivo(medio)` (dominio) define que solo `EFECTIVO` sale del efectivo de la sede. El listado ya separa el subtotal en efectivo.
 - Propuesta para O02:
@@ -90,7 +92,7 @@ Los anulados siguen a la vista, tachados, con quién, cuándo y por qué. El per
 
 ## Pendiente
 
-- Egreso de caja para gastos en efectivo (O02).
+- ~~Egreso de caja para gastos en efectivo (O02).~~ Hecho el 2026-10-14, ver 27-ventas-caja.md.
 - Exportación CSV y consolidado entre sedes (L03/L04). Hoy el listado es por sede.
 - Archivo adjunto del comprobante, si se confirma.
 - Clave de idempotencia en el alta: hoy el botón se deshabilita mientras se envía, pero un doble envío forzado crearía dos gastos (se anula uno).

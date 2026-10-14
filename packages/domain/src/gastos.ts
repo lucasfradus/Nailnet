@@ -8,8 +8,8 @@ export const MEDIOS_PAGO_GASTO = ["EFECTIVO", "TRANSFERENCIA", "TARJETA_DEBITO",
 export type MedioPagoGasto = (typeof MEDIOS_PAGO_GASTO)[number];
 
 /**
- * ¿El gasto sale del efectivo de la sede? Cuando exista la caja (O02), estos gastos (y sus reversos)
- * generarán un egreso de caja. Los demás medios no tocan el efectivo esperado.
+ * ¿El gasto sale del efectivo de la sede? Pagados con la caja abierta (O02, doc 27), estos gastos (y
+ * sus reversos) generan un movimiento de caja. Los demás medios no tocan el efectivo esperado.
  */
 export function afectaCajaEfectivo(medio: MedioPagoGasto): boolean {
   return medio === "EFECTIVO";

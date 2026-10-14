@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { AccesoDenegado } from "@nailnet/domain";
 import { createDatabase } from "../src/client.ts";
 import { DatosInvalidos } from "../src/access.ts";
-import { catalogoSede, crearCategoria, crearSkill, crearTipoRecurso, guardarServicio, guardarServicioSede, listarCatalogo, type DatosServicio } from "../src/catalogo.ts";
+import { catalogoSede, crearCategoria, crearSkill, crearTipoRecurso, guardarCategoria, guardarServicio, guardarSkill, guardarTipoRecurso, guardarServicioSede, listarCatalogo, type DatosServicio } from "../src/catalogo.ts";
 import { publicarConsentimiento } from "../src/clientes.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
@@ -75,6 +75,31 @@ test("catálogo global y condiciones por sede", async (t) => {
       await guardarServicioSede(db, a.admin.id, a.org.id, a.centro.id, servicioId, { habilitado: true, precio: "15000", duracionMinutos: null, sena: { tipo: "NINGUNA", valor: null }, reservableOnline: false });
       e = (await catalogoSede(db, a.recepcion.id, a.org.id, a.centro.id)).servicios[0]!.efectivo;
       assert.deepEqual([e.sena, e.reservableOnline], ["0.00", false], "solo recepción");
+    });
+
+    await t.test("edición de categorías, habilidades y tipos de recurso con sus servicios", async () => {
+      await guardarCategoria(db, a.master.id, a.org.id, { nombre: "Manos", orden: 2 }, nails.id);
+      await assert.rejects(guardarCategoria(db, a.admin.id, a.org.id, { nombre: "X" }, nails.id), AccesoDenegado);
+      await assert.rejects(guardarCategoria(db, b.master.id, b.org.id, { nombre: "X" }, nails.id), AccesoDenegado, "categoría ajena");
+      await assert.rejects(guardarCategoria(db, a.master.id, a.org.id, { nombre: "Y", orden: 10_000 }), DatosInvalidos);
+
+      const lifting = (await guardarSkill(db, a.master.id, a.org.id, { nombre: "Lifting", servicioIds: [servicioId] }))!;
+      await guardarTipoRecurso(db, a.master.id, a.org.id, { nombre: "Cabina doble", servicios: [{ servicioId, cantidad: 2 }] }, cabina.id);
+      let cat = await listarCatalogo(db, a.master.id, a.org.id);
+      const s = cat.categorias.find(c => c.id === nails.id)!.servicios[0]!;
+      assert.deepEqual([cat.categorias.find(c => c.id === nails.id)!.nombre, s.skills.map(x => x.skillId).sort(), s.recursos], ["Manos", [semi.id, lifting.id].sort(), [{ tipoRecursoId: cabina.id, cantidad: 2 }]]);
+      assert.equal(cat.tiposRecurso.find(t => t.id === cabina.id)!.nombre, "Cabina doble");
+
+      await guardarSkill(db, a.master.id, a.org.id, { nombre: "Lifting", servicioIds: [] }, lifting.id);
+      await guardarTipoRecurso(db, a.master.id, a.org.id, { nombre: "Cabina", servicios: [] }, cabina.id);
+      cat = await listarCatalogo(db, a.master.id, a.org.id);
+      assert.deepEqual([cat.skills.find(x => x.id === lifting.id)!.servicios, cat.tiposRecurso.find(t => t.id === cabina.id)!.requisitos], [[], []]);
+      await assert.rejects(guardarTipoRecurso(db, a.master.id, a.org.id, { nombre: "Cabina", servicios: [{ servicioId, cantidad: 11 }] }, cabina.id), DatosInvalidos);
+      await assert.rejects(guardarSkill(db, a.master.id, a.org.id, { nombre: "Semipermanente" }, lifting.id), DatosInvalidos, "nombre repetido");
+      const skillB = (await crearSkill(db, b.master.id, b.org.id, "Otra"))!;
+      await assert.rejects(guardarSkill(db, b.master.id, b.org.id, { nombre: "Otra", servicioIds: [servicioId] }, skillB.id), AccesoDenegado, "servicio de otra organización");
+      // Restituye el requisito que usan los tests siguientes.
+      await guardarTipoRecurso(db, a.master.id, a.org.id, { nombre: "Cabina", servicios: [{ servicioId, cantidad: 1 }] }, cabina.id);
     });
 
     await t.test("servicio inactivo deja de estar habilitado en todas las sedes", async () => {

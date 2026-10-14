@@ -79,8 +79,10 @@ export async function crearPreferencia(accessToken: string, p: PreferenciaMercad
     method: "POST", body: JSON.stringify(cuerpo),
     headers: { "Content-Type": "application/json", "X-Idempotency-Key": p.claveIdempotencia },
   }) as { id?: unknown; init_point?: unknown; sandbox_init_point?: unknown } | null;
-  // Con credenciales de prueba se usa el checkout de sandbox cuando la API lo informa.
-  const url = ambiente === "PRUEBA" && typeof r?.sandbox_init_point === "string" ? r.sandbox_init_point : r?.init_point;
+  // El checkout de sandbox solo sirve con credenciales TEST- de la aplicación. Una cuenta vinculada
+  // por OAuth tiene token APP_USR- aunque sea un usuario de prueba: con ella el sandbox falla al pagar
+  // («algo anduvo mal») y hay que usar el checkout normal, donde el pago entre usuarios de prueba es simulado.
+  const url = ambiente === "PRUEBA" && accessToken.startsWith("TEST-") && typeof r?.sandbox_init_point === "string" ? r.sandbox_init_point : r?.init_point;
   if (typeof r?.id !== "string" || typeof url !== "string" || !url.startsWith("https://")) throw new ErrorTransitorio("Respuesta de preferencia inesperada");
   return { id: r.id, url };
 }

@@ -39,6 +39,10 @@ test("crear preferencia de Checkout Pro", async () => {
   const p = await crearPreferencia("APP_USR-token", { ...preferencia, urlNotificacion: null }, "PRODUCCION", falso(201, { id: "pref-2", init_point: "https://www.mercadopago.com.ar/x", sandbox_init_point: "https://sandbox.mercadopago.com.ar/x" }, prod));
   assert.equal(p.url, "https://www.mercadopago.com.ar/x");
   assert.equal("notification_url" in JSON.parse(String(prod[0]!.init.body)), false);
+
+  // Cuenta de prueba vinculada por OAuth (token APP_USR-): el sandbox falla al pagar, va el checkout normal.
+  const oauth = await crearPreferencia("APP_USR-usuario-de-prueba", preferencia, "PRUEBA", falso(201, { id: "pref-3", init_point: "https://www.mercadopago.com.ar/y", sandbox_init_point: "https://sandbox.mercadopago.com.ar/y" }));
+  assert.equal(oauth.url, "https://www.mercadopago.com.ar/y");
 });
 
 test("errores clasificados y sin el token", async () => {

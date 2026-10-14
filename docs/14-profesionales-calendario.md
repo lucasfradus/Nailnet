@@ -13,6 +13,11 @@ Implementa C03. Migración `202610010005_profesionales`. Pantallas: Profesionale
 
 ## Jornadas y ausencias
 
+- **Dentro del horario de la sede (2026-10-13):** guardar una jornada, o dar de alta un profesional con jornada, que se sale del horario de atención de la sede se rechaza con el día y el tramo afuera («Sábado: 14:00-16:00 queda fuera del horario de la sede (09:00-14:00)»). Achicar después el horario de la sede no se bloquea por esto (solo por turnos tomados); la ficha del profesional avisa si parte de su jornada quedó afuera, y el motor igual no ofrece esas horas.
+- **Editor visual:** por día, tilde de si trabaja y rangos desde/hasta; «+ pausa» parte el último rango, «Copiar a todos» replica un día e «Igual al horario de la sede» precarga todo. El mismo editor sirve para el horario de la sede. Envía los mismos campos `dia0`…`dia6` en texto.
+- **Alta con jornada:** el alta del profesional incluye la jornada en la sede elegida, precargada con el horario de la sede.
+- **Ocupación:** la pantalla Profesionales muestra los próximos 7 días por profesional: porcentaje del tiempo disponible (jornada ∩ apertura de la sede, con fechas especiales, menos ausencias) ocupado por turnos vigentes de esa sede, con preparación incluida (`ocupacionProfesionales`).
+
 - **Jornada semanal por sede** con varios rangos por día; los cortes entre rangos son pausas.
   - Formato `09:00-13:00, 14:00-20:00`, en múltiplos de 5 minutos.
   - Intervalos semiabiertos: 13:00 de una sede y 13:00 de otra son contiguos y válidos.
@@ -46,7 +51,7 @@ Implementa C03. Migración `202610010005_profesionales`. Pantallas: Profesionale
 - Validar cambios de jornada y ausencias contra reservas vigentes (C04/R01).
 - Asignar el usuario del profesional y su vista de agenda propia; revisar entonces quién concede el rol `PROFESIONAL` (hoy solo el master).
 - Grilla de inicio de turnos (D17).
-- Copiar la jornada de un día a otros y plantillas de horario.
+- Plantillas de horario reutilizables entre profesionales (copiar un día a otros ya está en el editor).
 
 ## Verificación
 

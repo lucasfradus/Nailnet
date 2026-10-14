@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { equipoSede } from "@nailnet/database/profesionales";
+import { calendarioSede, equipoSede } from "@nailnet/database/profesionales";
 import { Formulario } from "@/components/formulario";
-import { CamposSemana, textoSemana } from "@/components/semana";
+import { EditorSemana } from "@/components/editor-semana";
+import { textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
 import { cargarSede, oNulo } from "@/lib/sede";
 import { accionCrearProfesional, accionHorarioProfesional, accionVincularSedeProfesional } from "../../../acciones";
@@ -14,11 +15,18 @@ export default async function EquipoSede({ params }: { params: Promise<{ sedeId:
   const { sedeId } = await params;
   const { actorId, organizacion, sede } = await cargarSede(sedeId);
   if (!sede.activo) return <p className="ayuda">Disponible mientras la sede esté activa.</p>;
-  const equipo = await oNulo(equipoSede(db(), actorId, organizacion.id, sede.id));
-  if (!equipo) notFound();
+  const [equipo, cal] = await Promise.all([
+    oNulo(equipoSede(db(), actorId, organizacion.id, sede.id)),
+    oNulo(calendarioSede(db(), actorId, organizacion.id, sede.id)),
+  ]);
+  if (!equipo || !cal) notFound();
   const { editable, profesionales, disponibles } = equipo;
+  // Las jornadas tienen que caer dentro del horario de la sede; sin horario no hay dónde asignarlas.
+  const horarioSede = cal.semana;
+  const sinHorario = !Object.values(horarioSede).some(r => r?.length);
 
   return <>
+    {editable && sinHorario && <p className="alerta error">La sede todavía no tiene horario de atención. <Link href={`/sedes/${sede.id}/horarios`}>Cargalo primero</Link> para poder asignar jornadas.</p>}
     <h2 className="subtitulo">Profesionales</h2>
     <div className="tabla">
       {profesionales.map(p => {
@@ -29,11 +37,11 @@ export default async function EquipoSede({ params }: { params: Promise<{ sedeId:
             <span className="tag">{!p.activo ? "Inactivo" : p.vinculado ? "Atiende en la sede" : "Desvinculado"}</span>
           </div>
           <p>{textoSemana(p.semana)} · {p.servicios} {p.servicios === 1 ? "servicio habilitado" : "servicios habilitados"}</p>
-          {editable && atiende && <details><summary>Editar jornada en {sede.nombre}</summary>
+          {editable && atiende && !sinHorario && <details><summary>Editar jornada en {sede.nombre}</summary>
             <Formulario accion={accionHorarioProfesional} boton="Guardar jornada">
               <input type="hidden" name="profesionalId" value={p.id} /><input type="hidden" name="sedeId" value={sede.id} />
-              <CamposSemana semana={p.semana} />
-              <p className="ayuda">Formato 09:00-13:00, 14:00-20:00. No puede superponerse con su jornada en otra sede.</p>
+              <EditorSemana semana={p.semana} limite={horarioSede} />
+              <p className="ayuda">No puede superponerse con su jornada en otra sede.</p>
             </Formulario>
           </details>}
           {editable && p.activo && <Formulario accion={accionVincularSedeProfesional} boton={p.vinculado ? "Desvincular de la sede" : "Volver a vincular"} className="en-linea" secundario
@@ -55,12 +63,22 @@ export default async function EquipoSede({ params }: { params: Promise<{ sedeId:
         </Formulario>
         <p className="ayuda">Profesionales que ya trabajan en otras sedes tuyas. Después de vincular, cargale la jornada en esta sede.</p>
       </>}
-      <h2 className="subtitulo">Nuevo profesional</h2>
-      <Formulario accion={accionCrearProfesional} boton="Crear profesional" className="en-linea">
-        <input type="hidden" name="sedeId" value={sede.id} /><input type="hidden" name="volver" value={`/sedes/${sede.id}/equipo`} />
-        <input name="nombre" placeholder="Nombre" required maxLength={80} aria-label="Nombre" />
-        <input name="apellido" placeholder="Apellido" maxLength={80} aria-label="Apellido" />
-      </Formulario>
+      {!sinHorario && <>
+        <h2 className="subtitulo">Nuevo profesional</h2>
+        <article>
+          <Formulario accion={accionCrearProfesional} boton="Crear profesional">
+            <input type="hidden" name="sedeId" value={sede.id} /><input type="hidden" name="volver" value={`/sedes/${sede.id}/equipo`} />
+            <div className="grilla">
+              <label>Nombre<input name="nombre" required maxLength={80} /></label>
+              <label>Apellido<input name="apellido" maxLength={80} /></label>
+            </div>
+            <fieldset className="bloque"><legend>Jornada en {sede.nombre}</legend>
+              <EditorSemana semana={horarioSede} limite={horarioSede} />
+            </fieldset>
+          </Formulario>
+          <p className="ayuda pie-tabla">Arranca con el horario completo de la sede: destildá los días que no trabaja y ajustá las horas.</p>
+        </article>
+      </>}
     </>}
   </>;
 }

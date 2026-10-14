@@ -6,12 +6,16 @@ import { listarCatalogo } from "@nailnet/database/catalogo";
 import { obtenerProfesional } from "@nailnet/database/profesionales";
 import { Formulario } from "@/components/formulario";
 import { EditorImagen } from "@/components/imagen";
-import { CamposSemana, textoSemana } from "@/components/semana";
+import { fueraDe, type Rango } from "@nailnet/domain/agenda";
+import { EditorSemana } from "@/components/editor-semana";
+import { textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { accionActualizarProfesional, accionFotoProfesional, accionCrearBloqueo, accionEliminarBloqueo, accionHabilidades, accionHorarioProfesional, accionVincularSedeProfesional } from "../../acciones";
 
 export const metadata: Metadata = { title: "Profesional · Sicurella" };
+type Semana = Partial<Record<number, Rango[]>>;
+const fueraDeSede = (jornada: Semana, sede: Semana) => [0, 1, 2, 3, 4, 5, 6].some(d => fueraDe(jornada[d] ?? [], sede[d] ?? []).length > 0);
 
 export default async function Profesional({ params }: { params: Promise<{ profesionalId: string }> }) {
   const { profesionalId } = await params;
@@ -50,11 +54,12 @@ export default async function Profesional({ params }: { params: Promise<{ profes
     <div className="tabla">{p.sedes.map(s => <article key={s.sedeId} className={s.activo ? "fila" : "fila inactiva"}>
       <div className="fila-cabecera"><h2>{s.nombre}</h2><span className="tag">{s.activo ? "Activa" : "Desvinculada"}</span></div>
       <p>{textoSemana(s.semana)}</p>
+      <p className="ayuda">Horario de la sede: {textoSemana(s.horarioSede)}</p>
+      {fueraDeSede(s.semana, s.horarioSede) && <p className="alerta error">Parte de esta jornada quedó fuera del horario de la sede: en esas horas no se ofrecen turnos.</p>}
       {s.editable && <details><summary>Editar jornada</summary>
         <Formulario accion={accionHorarioProfesional} boton="Guardar jornada">
           <input type="hidden" name="profesionalId" value={p.id} /><input type="hidden" name="sedeId" value={s.sedeId} />
-          <CamposSemana semana={s.semana} />
-          <p className="ayuda">Formato 09:00-13:00, 14:00-20:00. Los cortes entre rangos son pausas.</p>
+          <EditorSemana semana={s.semana} limite={s.horarioSede} />
         </Formulario>
       </details>}
       {s.editable && <Formulario accion={accionVincularSedeProfesional} boton={s.activo ? "Desvincular de la sede" : "Volver a vincular"} className="en-linea" secundario>

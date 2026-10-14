@@ -15,12 +15,12 @@ export default async function Panel({ children }: { children: React.ReactNode })
       { href: "/", etiqueta: "Inicio", icono: "inicio" },
       ...puede.verSedes ? [{ href: "/agenda", etiqueta: "Agenda", icono: "agenda" } as const] : [],
       ...puede.verClientes ? [{ href: "/clientes", etiqueta: "Clientes", icono: "clientes" } as const] : [],
+      ...puede.verSedes ? [{ href: "/profesionales", etiqueta: "Profesionales", icono: "profesionales" } as const] : [],
     ] },
     { titulo: "Configuración", icono: "configuracion", items: [
       ...puede.verSedes ? [
         { href: "/sedes", etiqueta: "Sedes", icono: "sedes" } as const,
         { href: "/catalogo", etiqueta: "Catálogo", icono: "catalogo" } as const,
-        { href: "/profesionales", etiqueta: "Profesionales", icono: "profesionales" } as const,
       ] : [],
       ...puede.verUsuarios ? [{ href: "/usuarios", etiqueta: "Usuarios", icono: "usuarios" } as const] : [],
       ...puede.administrarConsentimientos ? [{ href: "/consentimientos", etiqueta: "Consentimientos", icono: "consentimientos" } as const] : [],

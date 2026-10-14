@@ -8,7 +8,7 @@ import { DatosInvalidos } from "../src/access.ts";
 import { crearCategoria, guardarServicio, guardarServicioSede } from "../src/catalogo.ts";
 import { crearCliente } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion, configurarSenaRecepcion } from "../src/configuracion.ts";
-import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
+import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, ocupacionProfesionales, semanaDesdeTextos } from "../src/profesionales.ts";
 import { TurnoNoDisponible, agendaSede, expirarRetenciones, tomarTurno } from "../src/reservas.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
@@ -49,6 +49,13 @@ test("reserva manual en recepción y agenda (R01)", async (t) => {
       assert.deepEqual(ev.map(e => [e.tipo, e.estadoNuevo, e.actorId]), [["CREADA", "CONFIRMADA", a.recepcion.id]]);
       await assert.rejects(db.reservaEvento.delete({ where: { id: ev[0]!.id } }), "historial inmutable");
       await assert.rejects(tomarTurno(db, a.recepcion.id, O, pedido(), ahora), TurnoNoDisponible);
+    });
+
+    await t.test("ocupación del profesional: el turno cuenta con su preparación", async () => {
+      const o = await ocupacionProfesionales(db, a.recepcion.id, O, a.centro.id, 1, en("00:00"));
+      const dia = (id: string) => o.profesionales.find(p => p.id === id)!.dias[0]!;
+      assert.deepEqual([dia(ana).disponibleMinutos, dia(ana).ocupadoMinutos, dia(ana).turnos], [540, 60, 1], "50 min + 10 de preparación");
+      assert.deepEqual([dia(bea).ocupadoMinutos, dia(bea).turnos], [0, 0]);
     });
 
     await t.test("la sede puede exigir seña también en recepción (D6): pendiente 15 min (D4)", async () => {

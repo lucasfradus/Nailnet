@@ -235,7 +235,7 @@ function instante(f: FormData, k: string): Date {
 export async function accionCrearProfesional(_: Estado, form: FormData) {
   let id = "";
   const sedeId = texto(form, "sedeId");
-  const r = await ejecutar(["/profesionales", `/sedes/${sedeId}`], async (actor, org) => { id = (await crearProfesional(db(), actor, org, sedeId, { nombre: texto(form, "nombre"), apellido: texto(form, "apellido") })).id; }, "Profesional creado");
+  const r = await ejecutar(["/profesionales", `/sedes/${sedeId}`], async (actor, org) => { id = (await crearProfesional(db(), actor, org, sedeId, { nombre: texto(form, "nombre"), apellido: texto(form, "apellido"), semana: semanaForm(form) })).id; }, "Profesional creado");
   // Desde el equipo de una sede se vuelve a esa pestaña. Solo a esa ruta: no es un redirect abierto.
   const volver = texto(form, "volver");
   if (r?.ok && id) redirect(volver === `/sedes/${sedeId}/equipo` ? volver : `/profesionales/${id}`);

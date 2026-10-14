@@ -1,5 +1,6 @@
 import { AccesoDenegado, tienePermiso, type Permiso } from "@nailnet/domain";
-import { aLocal, diaSemana, parsearRangos, solapan, validarFecha, vigenciasSeCruzan, type Rango } from "@nailnet/domain/agenda";
+import { aLocal, aUtc, diaSemana, formatearRangos, fueraDe, parsearRangos, solapan, validarFecha, vigenciasSeCruzan, type Rango } from "@nailnet/domain/agenda";
+import { aIntervalos, aperturaDelDia, jornadaDelDia, ocupacionDelDia } from "@nailnet/domain/disponibilidad";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, exigirIds, sedesConPermiso } from "./access.ts";
@@ -9,6 +10,7 @@ import { borrarImagenHuerfana, insertarImagen, procesarImagen } from "./imagenes
 type Tx = Prisma.TransactionClient;
 export type Semana = Partial<Record<0 | 1 | 2 | 3 | 4 | 5 | 6, Rango[]>>;
 const DIAS = [0, 1, 2, 3, 4, 5, 6] as const;
+const NOMBRE_DIA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
 const fechaDb = (f: string | null) => (f === null ? null : new Date(`${f}T00:00:00Z`));
 const fechaTexto = (d: Date | null) => (d === null ? null : d.toISOString().slice(0, 10));
 
@@ -22,7 +24,7 @@ export function semanaDesdeTextos(textos: Partial<Record<number, string>>): Sema
   const semana: Semana = {};
   for (const d of DIAS) {
     const r = parsearRangos(textos[d] ?? "");
-    if ("error" in r) throw new DatosInvalidos(`${["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"][d]}: ${r.error}`);
+    if ("error" in r) throw new DatosInvalidos(`${NOMBRE_DIA[d]}: ${r.error}`);
     if (r.rangos.length) semana[d] = r.rangos;
   }
   return semana;
@@ -35,6 +37,21 @@ function agruparSemana(filas: { diaSemana: number; inicioMinutos: number; finMin
   for (const f of filas) (s[f.diaSemana as 0] ??= []).push({ inicio: f.inicioMinutos, fin: f.finMinutos });
   for (const d of DIAS) s[d]?.sort((a, b) => a.inicio - b.inicio);
   return s;
+}
+
+async function horarioDeSede(db: Database | Tx, sedeId: string) {
+  return agruparSemana(await db.horarioSede.findMany({ where: { sedeId, vigenteDesde: null, vigenteHasta: null } }));
+}
+/** La jornada de un profesional en una sede tiene que caer dentro del horario de atención de esa sede. */
+async function exigirDentroDeSede(tx: Tx, sedeId: string, semana: Semana) {
+  const sede = await horarioDeSede(tx, sedeId);
+  for (const d of DIAS) {
+    const fuera = fueraDe(semana[d] ?? [], sede[d] ?? []);
+    if (!fuera.length) continue;
+    throw new DatosInvalidos(sede[d]?.length
+      ? `${NOMBRE_DIA[d]}: ${formatearRangos(fuera)} queda fuera del horario de la sede (${formatearRangos(sede[d])})`
+      : `${NOMBRE_DIA[d]}: la sede no atiende ese día`);
+  }
 }
 
 // Serializa cambios de agenda de un profesional con el mismo lock de fila que usan las retenciones
@@ -77,13 +94,16 @@ export async function listarProfesionales(db: Database, actorId: string, organiz
   }));
 }
 
-export async function crearProfesional(db: Database, actorId: string, organizacionId: string, sedeId: string, datos: { nombre: string; apellido?: string | null }) {
+/** Alta en una sede. La jornada inicial es opcional y debe caer dentro del horario de la sede. */
+export async function crearProfesional(db: Database, actorId: string, organizacionId: string, sedeId: string, datos: { nombre: string; apellido?: string | null; semana?: Semana }) {
   exigirIds(sedeId);
   const n = nombre(datos.nombre), a = datos.apellido?.trim() ? nombre(datos.apellido, "Apellido") : null;
   return db.$transaction(async tx => {
     const { ids } = await sedesConPermiso(tx, actorId, organizacionId, "profesional:administrar");
     if (!ids.has(sedeId)) throw new AccesoDenegado();
+    if (datos.semana) await exigirDentroDeSede(tx, sedeId, datos.semana);
     const p = await tx.profesional.create({ data: { organizacionId, nombre: n, apellido: a, sedes: { create: { sedeId } } }, select: { id: true } });
+    if (datos.semana) await tx.horarioProfesional.createMany({ data: filasSemana(datos.semana).map(f => ({ organizacionId, profesionalId: p.id, sedeId, ...f })) });
     await auditar(tx, organizacionId, actorId, "profesional.crear", "Profesional", p.id, { sedeId });
     return p;
   });
@@ -92,11 +112,12 @@ export async function crearProfesional(db: Database, actorId: string, organizaci
 export async function obtenerProfesional(db: Database, actorId: string, organizacionId: string, profesionalId: string) {
   const { prof, visibles, sedes } = await contextoProfesional(db, actorId, organizacionId, profesionalId, "sede:leer");
   const admin = await sedesConPermiso(db, actorId, organizacionId, "profesional:administrar");
-  const [skills, servicios, horarios, bloqueos] = await Promise.all([
+  const [skills, servicios, horarios, bloqueos, horariosSede] = await Promise.all([
     db.profesionalSkill.findMany({ where: { profesionalId }, select: { skillId: true } }),
     db.profesionalServicio.findMany({ where: { profesionalId }, select: { servicioId: true } }),
     db.horarioProfesional.findMany({ where: { profesionalId, sedeId: { in: visibles.map(v => v.sedeId) } }, orderBy: [{ diaSemana: "asc" }, { inicioMinutos: "asc" }] }),
     db.bloqueoAgenda.findMany({ where: { profesionalId, fin: { gt: new Date() } }, orderBy: { inicio: "asc" }, take: 50 }),
+    db.horarioSede.findMany({ where: { sedeId: { in: visibles.map(v => v.sedeId) }, vigenteDesde: null, vigenteHasta: null } }),
   ]);
   const nombres = new Map(sedes.map(s => [s.id, s.nombre]));
   const editable = visibles.some(v => admin.ids.has(v.sedeId)) || admin.organizacional;
@@ -107,6 +128,8 @@ export async function obtenerProfesional(db: Database, actorId: string, organiza
     sedes: visibles.map(v => ({
       sedeId: v.sedeId, nombre: nombres.get(v.sedeId)!, activo: v.activo, editable: admin.ids.has(v.sedeId),
       semana: agruparSemana(horarios.filter(h => h.sedeId === v.sedeId && h.vigenteDesde === null && h.vigenteHasta === null)),
+      // Horario de atención de la sede: límite y valor sugerido al editar la jornada.
+      horarioSede: agruparSemana(horariosSede.filter(h => h.sedeId === v.sedeId)),
     })),
     skillIds: skills.map(s => s.skillId), servicioIds: servicios.map(s => s.servicioId),
     bloqueos: bloqueos.map(b => ({ id: b.id, inicio: b.inicio, fin: b.fin, motivo: b.motivo })),
@@ -167,8 +190,8 @@ export async function guardarHabilidades(db: Database, actorId: string, organiza
 
 /**
  * Reemplaza la jornada semanal del profesional en una sede. Rechaza superposiciones con su jornada
- * en otra sede: el profesional no puede estar en dos lugares a la vez. Cambios que afecten turnos
- * tomados se validarán contra reservas cuando existan (C04/R01).
+ * en otra sede (el profesional no puede estar en dos lugares a la vez), rangos fuera del horario de
+ * atención de la sede y cambios que dejen afuera turnos tomados.
  */
 export async function guardarHorarioProfesional(db: Database, actorId: string, organizacionId: string, profesionalId: string, sedeId: string, semana: Semana) {
   exigirIds(sedeId);
@@ -177,6 +200,7 @@ export async function guardarHorarioProfesional(db: Database, actorId: string, o
     const { ids, prof } = await contextoProfesional(tx, actorId, organizacionId, profesionalId, "profesional:administrar");
     if (!ids.has(sedeId)) throw new AccesoDenegado();
     if (!prof.sedes.some(s => s.sedeId === sedeId)) throw new DatosInvalidos("Primero vinculá al profesional con esta sede");
+    await exigirDentroDeSede(tx, sedeId, semana);
     const otras = await tx.horarioProfesional.findMany({ where: { profesionalId, sedeId: { not: sedeId } }, include: { sede: { select: { nombre: true } } } });
     for (const fila of filasSemana(semana)) {
       const choque = otras.find(o => o.diaSemana === fila.diaSemana && solapan({ inicio: o.inicioMinutos, fin: o.finMinutos }, { inicio: fila.inicioMinutos, fin: fila.finMinutos })
@@ -214,6 +238,64 @@ export async function eliminarBloqueo(db: Database, actorId: string, organizacio
     await tx.bloqueoAgenda.delete({ where: { id: b.id } });
     await auditar(tx, organizacionId, actorId, "profesional.bloqueo.eliminar", "Profesional", b.profesionalId, { bloqueoId });
   });
+}
+
+// ─── Ocupación ────────────────────────────────────────────────────────────────
+
+const sumarDias = (f: string, n: number) => new Date(Date.parse(`${f}T00:00:00Z`) + n * DIA_MS).toISOString().slice(0, 10);
+const semanal = (f: { diaSemana: number; inicioMinutos: number; finMinutos: number; vigenteDesde: Date | null; vigenteHasta: Date | null }) =>
+  ({ diaSemana: f.diaSemana, inicioMinutos: f.inicioMinutos, finMinutos: f.finMinutos, vigenteDesde: fechaTexto(f.vigenteDesde), vigenteHasta: fechaTexto(f.vigenteHasta) });
+
+/**
+ * Ocupación de los profesionales activos de una sede desde hoy (hora local de la sede): por día,
+ * minutos disponibles (jornada dentro del horario de la sede, fechas especiales y ausencias) contra
+ * minutos tomados por turnos vigentes en esa sede, con preparación incluida.
+ */
+export async function ocupacionProfesionales(db: Database, actorId: string, organizacionId: string, sedeId: string, dias = 7, ahora = new Date()) {
+  await exigirSede(db, actorId, organizacionId, sedeId, "sede:leer");
+  const sede = await db.sede.findFirst({ where: { id: sedeId, organizacionId }, select: { timezone: true } });
+  if (!sede) throw new AccesoDenegado();
+  const tz = sede.timezone;
+  const hoy = aLocal(ahora, tz).fecha;
+  const fechas = Array.from({ length: Math.min(Math.max(dias, 1), 31) }, (_, i) => sumarDias(hoy, i));
+  const desde = aUtc(fechas[0]!, 0, tz), hasta = aUtc(fechas.at(-1)!, 1440, tz);
+  const profesionales = await db.profesional.findMany({
+    where: { organizacionId, activo: true, sedes: { some: { sedeId, activo: true } } },
+    select: { id: true, nombre: true, apellido: true }, orderBy: [{ nombre: "asc" }, { id: "asc" }],
+  });
+  const ids = profesionales.map(p => p.id);
+  const [horarios, apertura, excepciones, bloqueos, items] = await Promise.all([
+    db.horarioProfesional.findMany({ where: { profesionalId: { in: ids }, sedeId } }),
+    db.horarioSede.findMany({ where: { sedeId } }),
+    db.excepcionHorario.findMany({ where: { organizacionId, OR: [{ sedeId }, { sedeId: null }], fecha: { gte: fechaDb(fechas[0]!)!, lte: fechaDb(fechas.at(-1)!)! } } }),
+    db.bloqueoAgenda.findMany({ where: { profesionalId: { in: ids }, inicio: { lt: hasta }, fin: { gt: desde } } }),
+    db.reservaItem.findMany({
+      where: { profesionalId: { in: ids }, ocupaDesde: { lt: hasta }, ocupaHasta: { gt: desde }, reserva: { AND: [{ sedeId }, reservaActiva(ahora)] } },
+      select: { profesionalId: true, inicio: true, ocupaDesde: true, ocupaHasta: true },
+    }),
+  ]);
+  const aperturaSemanal = apertura.map(semanal);
+  const intervalo = (d: Date, h: Date) => ({ desde: d.getTime(), hasta: h.getTime() });
+  return {
+    fechas,
+    profesionales: profesionales.map(p => {
+      const jornada = horarios.filter(h => h.profesionalId === p.id).map(semanal);
+      const suyos = items.filter(i => i.profesionalId === p.id);
+      const ausencias = bloqueos.filter(b => b.profesionalId === p.id).map(b => intervalo(b.inicio, b.fin));
+      return {
+        id: p.id, nombre: p.nombre, apellido: p.apellido,
+        dias: fechas.map(fecha => {
+          const delDia = excepciones.filter(e => fechaTexto(e.fecha) === fecha);
+          const abre = aperturaDelDia(aperturaSemanal, delDia.filter(e => e.sedeId), delDia.filter(e => !e.sedeId), fecha);
+          const o = ocupacionDelDia({
+            apertura: aIntervalos(abre, fecha, tz), jornada: aIntervalos(jornadaDelDia(jornada, fecha), fecha, tz),
+            bloqueos: ausencias, turnos: suyos.map(i => intervalo(i.ocupaDesde, i.ocupaHasta)),
+          });
+          return { fecha, ...o, turnos: suyos.filter(i => aLocal(i.inicio, tz).fecha === fecha).length };
+        }),
+      };
+    }),
+  };
 }
 
 // ─── Calendario de sede y recursos ────────────────────────────────────────────

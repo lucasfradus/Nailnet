@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { aHora } from "@nailnet/domain/agenda";
 import { calendarioSede } from "@nailnet/database/profesionales";
 import { Formulario } from "@/components/formulario";
-import { CamposSemana, textoSemana } from "@/components/semana";
+import { EditorSemana } from "@/components/editor-semana";
+import { textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
 import { cargarSede, oNulo } from "@/lib/sede";
 import { accionCrearExcepcion, accionEliminarExcepcion, accionHorarioSede } from "../../../acciones";
@@ -22,8 +23,8 @@ export default async function HorariosSede({ params }: { params: Promise<{ sedeI
     <p>{textoSemana(cal.semana)}</p>
     {cal.editable && <details><summary>Editar horario semanal</summary>
       <Formulario accion={accionHorarioSede} boton="Guardar horario">
-        <input type="hidden" name="sedeId" value={sede.id} /><CamposSemana semana={cal.semana} />
-        <p className="ayuda">Formato 10:00-14:00, 15:00-20:00. Los turnos online se ofrecen dentro de este horario y de la jornada de cada profesional.</p>
+        <input type="hidden" name="sedeId" value={sede.id} /><EditorSemana semana={cal.semana} verbo="Atiende" />
+        <p className="ayuda">Los turnos se ofrecen dentro de este horario y de la jornada de cada profesional, que no puede salirse de él.</p>
       </Formulario>
     </details>}
 

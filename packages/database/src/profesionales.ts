@@ -225,6 +225,36 @@ async function exigirSede(db: Database | Tx, actorId: string, organizacionId: st
   return r;
 }
 
+/**
+ * Equipo de una sede: profesionales vinculados (también desvinculados, para poder reactivarlos) con su
+ * jornada allí, y los activos que se pueden sumar. Solo se ofrecen profesionales que ya trabajan en
+ * alguna sede que el actor administra: los de otros alcances no se nombran.
+ */
+export async function equipoSede(db: Database, actorId: string, organizacionId: string, sedeId: string) {
+  await exigirSede(db, actorId, organizacionId, sedeId, "sede:leer");
+  const admin = await sedesConPermiso(db, actorId, organizacionId, "profesional:administrar");
+  const editable = admin.ids.has(sedeId);
+  const [vinculos, horarios, disponibles] = await Promise.all([
+    db.profesionalSede.findMany({
+      where: { organizacionId, sedeId },
+      include: { profesional: { select: { id: true, nombre: true, apellido: true, activo: true, fotoId: true, _count: { select: { servicios: true } } } } },
+    }),
+    db.horarioProfesional.findMany({ where: { sedeId, vigenteDesde: null, vigenteHasta: null }, orderBy: [{ diaSemana: "asc" }, { inicioMinutos: "asc" }] }),
+    editable ? db.profesional.findMany({
+      where: { organizacionId, activo: true, AND: [{ sedes: { none: { sedeId } } }, admin.organizacional ? {} : { sedes: { some: { sedeId: { in: [...admin.ids] } } } }] },
+      select: { id: true, nombre: true, apellido: true }, orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
+    }) : [],
+  ]);
+  const profesionales = vinculos.map(v => ({
+    id: v.profesional.id, nombre: v.profesional.nombre, apellido: v.profesional.apellido, fotoId: v.profesional.fotoId,
+    activo: v.profesional.activo, vinculado: v.activo, servicios: v.profesional._count.servicios,
+    semana: agruparSemana(horarios.filter(h => h.profesionalId === v.profesionalId)),
+  }));
+  // Primero quienes atienden en la sede; después desvinculados e inactivos.
+  profesionales.sort((a, b) => Number(b.vinculado && b.activo) - Number(a.vinculado && a.activo) || a.nombre.localeCompare(b.nombre, "es"));
+  return { editable, profesionales, disponibles };
+}
+
 export async function calendarioSede(db: Database, actorId: string, organizacionId: string, sedeId: string) {
   await exigirSede(db, actorId, organizacionId, sedeId, "sede:leer");
   const actor = await asignacionesActor(db, actorId, organizacionId);

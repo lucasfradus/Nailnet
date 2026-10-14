@@ -6,7 +6,7 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { SecretoIlegible, llaveroDesde } from "@nailnet/domain/secretos";
 import { createDatabase } from "../src/client.ts";
 import { DatosInvalidos } from "../src/access.ts";
-import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configuracionEfectiva, eliminarCredencial, guardarCredencial, leerCredencial, listarCredenciales, obtenerConfiguracion, recifrarCredenciales } from "../src/configuracion.ts";
+import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configuracionEfectiva, configuracionFiscal, eliminarConfiguracionFiscal, eliminarCredencial, estadoIntegraciones, guardarConfiguracionFiscal, guardarCredencial, leerCredencial, listarCredenciales, obtenerConfiguracion, recifrarCredenciales } from "../src/configuracion.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
 const k1 = randomBytes(32).toString("base64"), k2 = randomBytes(32).toString("base64");
@@ -89,6 +89,36 @@ test("configuración y secretos por sede", async (t) => {
       assert.ok(await recifrarCredenciales(db, v2) >= 4);
       assert.equal(await recifrarCredenciales(db, v2), 0, "idempotente");
       assert.equal((await leerCredencial(db, a.norte.id, "FACTURANTE", "PRUEBA", llaveroDesde(`v2:${k2}`, "v2")))?.secretos.password, "secreto-facturante");
+    });
+
+    await t.test("identidad fiscal: CUIT compartido, punto de venta propio por sede", async () => {
+      // El fixture asigna el emisor 20000000001 a Centro (PV 1) y Norte (PV 2) en PRUEBA.
+      const emisor = { cuit: "20-00000000-1", razonSocial: "Emisor sintético, no habilitado para emitir" };
+      await assert.rejects(guardarConfiguracionFiscal(db, a.admin.id, a.org.id, a.centro.id, "PRODUCCION", { ...emisor, puntoVenta: 5 }), AccesoDenegado);
+      await assert.rejects(guardarConfiguracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id, "PRODUCCION", { ...emisor, cuit: "20000000002", puntoVenta: 5 }), /CUIT inválido/);
+      await assert.rejects(guardarConfiguracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id, "PRODUCCION", { ...emisor, puntoVenta: 0 }), DatosInvalidos);
+      await assert.rejects(guardarConfiguracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id, "PRUEBA", { ...emisor, puntoVenta: 2 }), /otra sede con el mismo CUIT/);
+      await assert.rejects(guardarConfiguracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id, "PRODUCCION", { ...emisor, razonSocial: "Otra", puntoVenta: 5 }), /ya está registrado como/);
+      await assert.rejects(guardarConfiguracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id, "PRODUCCION", { cuit: "30500010912", razonSocial: " ", puntoVenta: 5 }), /Indicá la razón social/);
+      await guardarConfiguracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id, "PRODUCCION", { cuit: emisor.cuit, razonSocial: "", puntoVenta: 5 });
+      await guardarConfiguracionFiscal(db, a.franquiciado.id, a.org.id, a.norte.id, "PRODUCCION", { cuit: "30500010912", razonSocial: "Norte SRL", puntoVenta: 1 });
+
+      const vista = await configuracionFiscal(db, a.admin.id, a.org.id, a.centro.id);
+      assert.deepEqual(vista.porAmbiente.PRODUCCION, { cuit: "20000000001", razonSocial: emisor.razonSocial, puntoVenta: 5 });
+      assert.deepEqual([vista.puedeEditar, vista.emisores.length], [false, 0], "sin permiso no se listan emisores");
+      assert.equal((await configuracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id)).emisores.length, 2);
+      await guardarConfiguracionFiscal(db, a.master.id, a.org.id, a.sur.id, "PRUEBA", { cuit: "30500010912", razonSocial: "Norte S.R.L.", puntoVenta: 9 });
+      assert.equal((await db.emisorFiscal.findFirstOrThrow({ where: { organizacionId: a.org.id, cuit: "30500010912" } })).razonSocial, "Norte S.R.L.", "el master corrige la razón social");
+      const otroFranquiciado = await db.usuario.create({ data: { email: `fran-b-${a.org.id}@example.invalid`, nombre: "FB", membresias: { create: { organizacionId: a.org.id } } } });
+      await db.asignacionRol.create({ data: { organizacionId: a.org.id, usuarioId: otroFranquiciado.id, rol: "FRANQUICIADO", alcance: "FRANQUICIADO", franquiciadoId: a.franB.id } });
+      assert.deepEqual((await configuracionFiscal(db, otroFranquiciado.id, a.org.id, a.sur.id)).emisores.map(e => e.cuit), ["30500010912"], "no ve el CUIT que solo usa el otro franquiciado");
+      await assert.rejects(configuracionFiscal(db, b.master.id, b.org.id, a.centro.id), AccesoDenegado);
+
+      const estado = await estadoIntegraciones(db, a.recepcion.id, a.org.id, a.centro.id);
+      assert.deepEqual(estado.fiscal.sort(), ["PRODUCCION", "PRUEBA"]);
+      await eliminarConfiguracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id, "PRODUCCION");
+      assert.equal((await configuracionFiscal(db, a.franquiciado.id, a.org.id, a.centro.id)).porAmbiente.PRODUCCION, null);
+      await assert.rejects(eliminarConfiguracionFiscal(db, a.admin.id, a.org.id, a.centro.id, "PRUEBA"), AccesoDenegado);
     });
   } finally { await db.$disconnect(); }
 });

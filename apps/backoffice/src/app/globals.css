@@ -178,3 +178,21 @@ button.bloqueado{cursor:not-allowed;opacity:.45}
   .contenido{padding:20px 16px 32px}
   main{padding:24px 16px}
 }
+
+/* Ficha con pestañas (sede) */
+.pestanas{display:flex;gap:4px;margin:0 0 4px;border-bottom:1px solid var(--color-border);overflow-x:auto;scrollbar-width:none}
+.pestanas::-webkit-scrollbar{display:none}
+.pestanas a{flex:none;padding:8px 10px;margin-bottom:-1px;border-bottom:2px solid transparent;font-size:13px;font-weight:500;color:var(--color-muted-foreground);text-decoration:none;white-space:nowrap}
+.pestanas a:hover{color:var(--color-foreground)}
+.pestanas a[aria-current=page]{color:var(--color-primary);border-bottom-color:var(--color-primary)}
+.pestanas a:focus-visible{outline:2px solid var(--color-ring);outline-offset:-2px}
+.pestanas+.subtitulo{margin-top:24px}
+.subtitulo .tag{margin-left:8px;vertical-align:1px}
+.checklist{gap:0;padding:0;max-width:760px}
+.checklist li{display:flex;gap:12px;align-items:center;padding:10px 14px}.checklist li+li{border-top:1px solid var(--gris-200)}
+.checklist .marca{display:inline-grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;font-size:12px;font-weight:700}
+.checklist .ok .marca{background:var(--color-success-soft);color:var(--color-success)}
+.checklist .falta .marca{background:var(--color-warning-soft);color:var(--color-warning)}
+.checklist-texto{display:grid;flex:1;min-width:0}.checklist-texto span{color:var(--color-muted-foreground)}
+.checklist li>a{flex:none;font-size:13px;font-weight:500}
+.dato{display:grid;gap:2px;padding:14px 16px}.dato>span{font-size:12px;color:var(--color-muted-foreground)}.dato>strong{font-weight:600}.dato>a{font-size:13px;margin-top:4px}

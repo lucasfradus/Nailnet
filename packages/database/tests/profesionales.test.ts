@@ -5,7 +5,7 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { createDatabase } from "../src/client.ts";
 import { DatosInvalidos } from "../src/access.ts";
 import { crearCategoria, crearSkill, crearTipoRecurso, guardarServicio } from "../src/catalogo.ts";
-import { actualizarProfesional, calendarioSede, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, listarProfesionales, obtenerProfesional, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
+import { actualizarProfesional, calendarioSede, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, equipoSede, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, listarProfesionales, obtenerProfesional, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
 test("profesionales, jornadas, calendario y recursos", async (t) => {
@@ -104,6 +104,20 @@ test("profesionales, jornadas, calendario y recursos", async (t) => {
       await assert.rejects(crearRecurso(db, a.admin.id, a.org.id, a.centro.id, { tipoRecursoId: tipoB.id, nombre: "X" }), AccesoDenegado);
       await cambiarEstadoRecurso(db, a.admin.id, a.org.id, r1.id, false);
       assert.equal((await calendarioSede(db, a.admin.id, a.org.id, a.centro.id)).recursos[0]?.activo, false);
+    });
+
+    await t.test("equipo de la sede: jornada local y solo se ofrecen profesionales del alcance", async () => {
+      const eva = (await crearProfesional(db, a.master.id, a.org.id, a.sur.id, { nombre: "Eva" })).id;
+      const centro = await equipoSede(db, a.admin.id, a.org.id, a.centro.id);
+      assert.equal(centro.editable, true);
+      assert.deepEqual(centro.profesionales.find(p => p.id === profId)?.semana[1], [{ inicio: 480, fin: 780 }]);
+      assert.deepEqual(centro.disponibles, [], "admin de Centro no ve profesionales de otras sedes");
+      const norte = await equipoSede(db, a.franquiciado.id, a.org.id, a.norte.id);
+      assert.equal(norte.disponibles.some(p => p.id === eva), false, "Eva trabaja en una sede de otro franquiciado");
+      assert.equal((await equipoSede(db, a.master.id, a.org.id, a.norte.id)).disponibles.some(p => p.id === eva), true);
+      const recepcion = await equipoSede(db, a.recepcion.id, a.org.id, a.centro.id);
+      assert.deepEqual([recepcion.editable, recepcion.disponibles.length], [false, 0]);
+      await assert.rejects(equipoSede(db, b.master.id, b.org.id, a.centro.id), AccesoDenegado);
     });
 
     await t.test("desactivar profesional", async () => {

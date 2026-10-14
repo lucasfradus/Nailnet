@@ -114,7 +114,7 @@ La redirect URI tiene que estar registrada tal cual en la aplicación de Mercado
 - **Casos sin probar con Mercado Pago real:** pago rechazado, pago tardío (retención vencida) y reembolso hecho desde el panel de Mercado Pago. El formato de la firma (manifiesto y `ts`) quedó confirmado con la notificación real del 2026-10-14.
 - **Conciliación periódica (M01):** si no llegan ni la notificación ni el retorno, un pago aprobado queda sin aplicar hasta que alguien lo revise. Falta una tarea que busque por `external_reference` los checkouts de retenciones recientes.
 - **Ventana de carrera:** un pago aprobado segundos antes de vencer, pero notificado después de que otra persona tomó el horario, queda `A_DEVOLVER` aunque se pagó en término. La preferencia vence con la retención, así que la ventana es chica; se revisa con datos reales.
-- **Bandeja de pagos a devolver (M04)** y devolución desde el sistema (M01, D7). Hoy los `A_DEVOLVER` solo se ven en la base.
+- **Devolución desde el sistema** (M01, D7). Los `A_DEVOLVER`, las señas sin imputar y los pagos ambiguos ya se ven y se gestionan en la bandeja de incidencias (M04, [28-incidencias.md](28-incidencias.md)); la devolución en sí se hace en Mercado Pago.
 - **Cancelar o reprogramar un turno pagado** no toca su `Pago`: sigue `APROBADO` contra la reserva original. La devolución o el traspaso de la seña son manuales hasta D5/M01.
 - **Reservas de recepción con seña (D6):** el link de pago es solo para el portal. Recepción todavía no puede generar uno para enviar al cliente.
 

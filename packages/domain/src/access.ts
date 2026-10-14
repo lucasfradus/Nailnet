@@ -1,5 +1,7 @@
 export type Rol = "MASTER_FRANQUICIADOR" | "FRANQUICIADO" | "ADMIN_SEDE" | "RECEPCIONISTA" | "PROFESIONAL";
 export type Permiso = "sede:leer" | "sede:administrar" | "sede:crear" | "sede:credenciales" | "franquiciado:administrar" | "organizacion:configurar" | "usuario:leer" | "usuario:administrar" | "cliente:leer" | "cliente:editar" | "consentimiento:administrar" | "catalogo:administrar" | "catalogo:precios" | "profesional:administrar" | "reserva:gestionar"
+  // Incidencias (M04): bandeja de trabajos, pagos y emails con problemas, y acciones sobre ellos.
+  | "incidencia:gestionar"
   // Stock (O03): productos globales; saldos y movimientos por sede.
   | "producto:administrar" | "stock:leer" | "stock:consumir" | "stock:gestionar";
 export type Asignacion = {
@@ -17,6 +19,12 @@ const permisos: Record<Rol, readonly Permiso[]> = {
   // transferencias quedan para administración de sede, franquiciado o master.
   RECEPCIONISTA: ["sede:leer", "cliente:leer", "cliente:editar", "reserva:gestionar", "stock:leer", "stock:consumir"],
   PROFESIONAL: [],
+};
+// Incidencias (M04, doc 28): master, franquiciado y administración de sede, cada uno en su alcance.
+// Recepción y profesional no: es revisión de dinero y de la cola, no operación del día. Va aparte de
+// la tabla principal para que sumar permisos de otros módulos no la toque.
+const permisosIncidencias: Partial<Record<Rol, readonly Permiso[]>> = {
+  MASTER_FRANQUICIADOR: ["incidencia:gestionar"], FRANQUICIADO: ["incidencia:gestionar"], ADMIN_SEDE: ["incidencia:gestionar"],
 };
 /**
  * O04 · Gastos de sede. Tabla propia para no mezclar el módulo con los permisos de estructura.
@@ -60,6 +68,7 @@ export function tienePermiso(a: Asignacion, permiso: Permiso | PermisoGasto | Pe
   if (!asignacionValida(a)) return false;
   if (permiso.startsWith("gasto:")) return permisosGasto[a.rol]?.includes(permiso as PermisoGasto) ?? false;
   if (permiso.startsWith("venta:") || permiso.startsWith("caja:")) return permisosVenta[a.rol]?.includes(permiso as PermisoVenta) ?? false;
+  if (permisosIncidencias[a.rol]?.includes(permiso as Permiso)) return true;
   return permisos[a.rol]?.includes(permiso as Permiso) ?? false;
 }
 export class AccesoDenegado extends Error {

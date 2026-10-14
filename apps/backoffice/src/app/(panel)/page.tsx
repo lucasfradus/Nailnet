@@ -2,9 +2,11 @@ import Link from "next/link";
 import { Svg, type Icono } from "@/components/iconos";
 import { contextoPanel } from "@/lib/contexto";
 import { ROLES } from "@/lib/etiquetas";
+import { incidenciasAbiertas } from "@/lib/incidencias";
 
 export default async function Home() {
   const { sesion, asignaciones, organizacion, sede, puede } = await contextoPanel();
+  const incidencias = await incidenciasAbiertas();
   const atajos: [href: string, icono: Icono, titulo: string, detalle: string, visible: boolean][] = [
     ["/agenda", "agenda", "Agenda", "Turnos del día y de la semana por sede.", puede.verSedes],
     ["/clientes", "clientes", "Clientes", "Fichas, contacto y vínculo con sedes.", puede.verClientes],
@@ -16,10 +18,14 @@ export default async function Home() {
     ["/profesionales", "profesionales", "Profesionales", "Equipo, habilidades y disponibilidad.", puede.verSedes],
     ["/usuarios", "usuarios", "Usuarios", "Accesos y roles del backoffice.", puede.verUsuarios],
     ["/consentimientos", "consentimientos", "Consentimientos", "Textos legales que firman los clientes.", puede.administrarConsentimientos],
+    ["/incidencias", "incidencias", "Incidencias", "Pagos a devolver, emails y trabajos fallidos.", incidencias !== null],
   ];
   return <section className="panel">
     <p className="eyebrow">{organizacion?.nombre ?? "Sin organización"}{sede ? ` · ${sede.nombre}` : ""}</p>
     <h1>Inicio</h1>
+    {!!incidencias && <p className="alerta error" role="status">
+      {incidencias === 1 ? "Hay 1 incidencia sin revisar" : `Hay ${incidencias} incidencias sin revisar`} (pagos, emails o trabajos de la cola). <Link href="/incidencias">Ver incidencias</Link>
+    </p>}
 
     <h2 className="subtitulo">Tu acceso</h2>
     <div className="tabla">

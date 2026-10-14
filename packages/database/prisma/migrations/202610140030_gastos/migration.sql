@@ -25,7 +25,7 @@ CREATE TABLE "Gasto" (
     "categoriaId" UUID NOT NULL,
     "tipo" "TipoMovimientoGasto" NOT NULL,
     "fecha" DATE NOT NULL,
-    "montoCentavos" BIGINT NOT NULL,
+    "monto" DECIMAL(12,2) NOT NULL,
     "medioPago" "MedioPagoGasto" NOT NULL,
     "descripcion" TEXT NOT NULL,
     "comprobante" TEXT,
@@ -81,8 +81,8 @@ CREATE UNIQUE INDEX "CategoriaGasto_nombre_local" ON "CategoriaGasto"("organizac
 
 -- Forma de cada movimiento (COALESCE: un CHECK que evalúa a NULL se aceptaría).
 ALTER TABLE "Gasto" ADD CONSTRAINT "Gasto_forma" CHECK (COALESCE(
-  ("tipo" = 'GASTO' AND "montoCentavos" > 0 AND "revierteId" IS NULL AND "motivoAnulacion" IS NULL)
-  OR ("tipo" = 'REVERSO' AND "montoCentavos" < 0 AND "revierteId" IS NOT NULL AND length(btrim("motivoAnulacion")) BETWEEN 5 AND 500), false));
+  ("tipo" = 'GASTO' AND "monto" > 0 AND "revierteId" IS NULL AND "motivoAnulacion" IS NULL)
+  OR ("tipo" = 'REVERSO' AND "monto" < 0 AND "revierteId" IS NOT NULL AND length(btrim("motivoAnulacion")) BETWEEN 5 AND 500), false));
 ALTER TABLE "Gasto" ADD CONSTRAINT "Gasto_textos" CHECK (
   length(btrim("descripcion")) BETWEEN 3 AND 500 AND ("comprobante" IS NULL OR length("comprobante") <= 120));
 
@@ -107,7 +107,7 @@ BEGIN
   IF NEW."tipo" = 'REVERSO' THEN
     SELECT * INTO original FROM "Gasto" WHERE "organizacionId" = NEW."organizacionId" AND "id" = NEW."revierteId";
     IF NOT FOUND OR original."tipo" <> 'GASTO' OR original."sedeId" <> NEW."sedeId" OR original."categoriaId" <> NEW."categoriaId"
-      OR original."fecha" <> NEW."fecha" OR original."medioPago" <> NEW."medioPago" OR original."montoCentavos" <> -NEW."montoCentavos" THEN
+      OR original."fecha" <> NEW."fecha" OR original."medioPago" <> NEW."medioPago" OR original."monto" <> -NEW."monto" THEN
       RAISE EXCEPTION 'El reverso no corresponde al gasto original';
     END IF;
   END IF;

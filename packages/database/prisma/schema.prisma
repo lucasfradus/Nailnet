@@ -994,8 +994,8 @@ model Gasto {
   tipo            TipoMovimientoGasto
   // Fecha local de la sede en que se hizo el gasto. El instante de carga (o de anulación) es createdAt.
   fecha           DateTime            @db.Date
-  // ARS en centavos: positivo en GASTO, negativo en REVERSO.
-  montoCentavos   BigInt
+  // ARS: positivo en GASTO, negativo en REVERSO.
+  monto           Decimal             @db.Decimal(12, 2)
   medioPago       MedioPagoGasto
   descripcion     String
   // Referencia libre al comprobante (tipo y número, proveedor). Sin archivo por ahora.

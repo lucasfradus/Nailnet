@@ -12,6 +12,7 @@ import { DatosInvalidos, asignacionesActor, auditar, bloquearOrganizacion, exigi
 type Cliente = Database | Prisma.TransactionClient;
 const fechaDb = (f: string) => new Date(`${f}T00:00:00Z`);
 const fechaTexto = (d: Date) => d.toISOString().slice(0, 10);
+const centavos = (d: Prisma.Decimal) => BigInt(d.mul(100).toFixed(0));
 const esUnico = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
 
 function puede(actor: readonly Asignacion[], permiso: PermisoGasto, sedeId: string, franquiciadoDe: FranquiciadoDeSede) {
@@ -131,7 +132,7 @@ export async function registrarGasto(db: Database, actorId: string, organizacion
     const gasto = await tx.gasto.create({
       data: {
         organizacionId, sedeId: datos.sedeId, categoriaId: datos.categoriaId, tipo: "GASTO", fecha: fechaDb(g.fecha),
-        montoCentavos: g.montoCentavos, medioPago: g.medioPago, descripcion: g.descripcion, comprobante: g.comprobante, registradoPorId: actorId,
+        monto: importe(g.montoCentavos), medioPago: g.medioPago, descripcion: g.descripcion, comprobante: g.comprobante, registradoPorId: actorId,
       },
       select: { id: true },
     });
@@ -158,7 +159,7 @@ export async function anularGasto(db: Database, actorId: string, organizacionId:
       const reverso = await tx.gasto.create({
         data: {
           organizacionId, sedeId: original.sedeId, categoriaId: original.categoriaId, tipo: "REVERSO", fecha: original.fecha,
-          montoCentavos: -original.montoCentavos, medioPago: original.medioPago, descripcion: original.descripcion, comprobante: original.comprobante,
+          monto: original.monto.neg(), medioPago: original.medioPago, descripcion: original.descripcion, comprobante: original.comprobante,
           registradoPorId: actorId, revierteId: original.id, motivoAnulacion: m.motivo,
         },
         select: { id: true },
@@ -197,7 +198,7 @@ export async function listarGastos(db: Database, actorId: string, organizacionId
   const usuarios = await db.usuario.findMany({ where: { id: { in: [...new Set(movimientos.map(m => m.registradoPorId))] } }, select: { id: true, nombre: true } });
   const nombre = new Map(usuarios.map(u => [u.id, u.nombre]));
   const reversos = new Map(movimientos.filter(m => m.revierteId).map(m => [m.revierteId!, m]));
-  const resumen = resumirGastos(movimientos.map(m => ({ montoCentavos: m.montoCentavos, categoriaId: m.categoriaId, medioPago: m.medioPago as MedioPagoGasto })));
+  const resumen = resumirGastos(movimientos.map(m => ({ montoCentavos: centavos(m.monto), categoriaId: m.categoriaId, medioPago: m.medioPago as MedioPagoGasto })));
   const nombreCategoria = new Map(movimientos.map(m => [m.categoriaId, m.categoria.nombre]));
   return {
     desde, hasta,
@@ -206,7 +207,7 @@ export async function listarGastos(db: Database, actorId: string, organizacionId
     gastos: movimientos.filter(m => m.tipo === "GASTO").map(m => {
       const r = reversos.get(m.id);
       return {
-        id: m.id, fecha: fechaTexto(m.fecha), categoriaId: m.categoriaId, categoria: m.categoria.nombre, monto: importe(m.montoCentavos),
+        id: m.id, fecha: fechaTexto(m.fecha), categoriaId: m.categoriaId, categoria: m.categoria.nombre, monto: m.monto.toFixed(2),
         medioPago: m.medioPago as MedioPagoGasto, descripcion: m.descripcion, comprobante: m.comprobante,
         registradoPor: nombre.get(m.registradoPorId) ?? "—", registradoEn: m.createdAt,
         anulacion: r ? { motivo: r.motivoAnulacion!, por: nombre.get(r.registradoPorId) ?? "—", en: r.createdAt } : null,
@@ -226,8 +227,8 @@ export async function obtenerGasto(db: Database, actorId: string, organizacionId
   if (!gasto) throw new AccesoDenegado();
   await exigirSede(db, actorId, organizacionId, gasto.sedeId, "gasto:leer");
   return {
-    id: gasto.id, sedeId: gasto.sedeId, fecha: fechaTexto(gasto.fecha), categoria: gasto.categoria.nombre, monto: importe(gasto.montoCentavos),
+    id: gasto.id, sedeId: gasto.sedeId, fecha: fechaTexto(gasto.fecha), categoria: gasto.categoria.nombre, monto: gasto.monto.toFixed(2),
     medioPago: gasto.medioPago as MedioPagoGasto, descripcion: gasto.descripcion, comprobante: gasto.comprobante, registradoPorId: gasto.registradoPorId, registradoEn: gasto.createdAt,
-    anulacion: gasto.reverso ? { reversoId: gasto.reverso.id, monto: importe(gasto.reverso.montoCentavos), motivo: gasto.reverso.motivoAnulacion!, porId: gasto.reverso.registradoPorId, en: gasto.reverso.createdAt } : null,
+    anulacion: gasto.reverso ? { reversoId: gasto.reverso.id, monto: gasto.reverso.monto.toFixed(2), motivo: gasto.reverso.motivoAnulacion!, porId: gasto.reverso.registradoPorId, en: gasto.reverso.createdAt } : null,
   };
 }

@@ -117,10 +117,10 @@ test("gastos: categorías, alta, alcance por ID y anulación por reverso", async
       await assert.rejects(db.gasto.update({ where: { id: ids.g2! }, data: { descripcion: "Otra cosa" } }), "sin UPDATE");
       await assert.rejects(db.gasto.delete({ where: { id: ids.g2! } }), "sin DELETE");
       const base = { organizacionId: a.org.id, sedeId: a.centro.id, categoriaId: ids.cafeCentro!, fecha: new Date(`${hoy}T00:00:00Z`), medioPago: "EFECTIVO" as const, descripcion: "Directo a la base", registradoPorId: a.admin.id };
-      await assert.rejects(db.gasto.create({ data: { ...base, tipo: "REVERSO", montoCentavos: -1n, revierteId: ids.g2!, motivoAnulacion: "Monto que no coincide" } }), "reverso con otro monto");
-      await assert.rejects(db.gasto.create({ data: { ...base, tipo: "GASTO", montoCentavos: -100n } }), "gasto negativo");
-      await assert.rejects(db.gasto.create({ data: { ...base, tipo: "REVERSO", montoCentavos: -1250050n, revierteId: ids.g2! } }), "reverso sin motivo");
-      await assert.rejects(db.gasto.create({ data: { ...base, sedeId: a.norte.id, tipo: "GASTO", montoCentavos: 100n } }), "categoría local de otra sede");
+      await assert.rejects(db.gasto.create({ data: { ...base, tipo: "REVERSO", monto: "-0.01", revierteId: ids.g2!, motivoAnulacion: "Monto que no coincide" } }), "reverso con otro monto");
+      await assert.rejects(db.gasto.create({ data: { ...base, tipo: "GASTO", monto: "-1.00" } }), "gasto negativo");
+      await assert.rejects(db.gasto.create({ data: { ...base, tipo: "REVERSO", monto: "-12500.50", revierteId: ids.g2! } }), "reverso sin motivo");
+      await assert.rejects(db.gasto.create({ data: { ...base, sedeId: a.norte.id, tipo: "GASTO", monto: "1.00" } }), "categoría local de otra sede");
       await assert.rejects(db.categoriaGasto.create({ data: { organizacionId: a.org.id, sedeId: null, nombre: "alquiler" } }), "nombre global repetido");
     });
   } finally { await db.$disconnect(); }

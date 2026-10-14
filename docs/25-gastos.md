@@ -37,7 +37,7 @@ Se aplica el criterio de D12 (común en la organización, con excepciones locale
 | Sede | Obligatoria y activa al registrar |
 | Categoría | Activa, global o de la misma sede |
 | Fecha | Fecha local de la sede en que se hizo el gasto. No puede ser futura ni tener más de 366 días |
-| Monto | ARS en **centavos enteros** (`BIGINT montoCentavos`). Se ingresa como «12500,50». Nunca `Number` |
+| Monto | ARS en `Decimal(12,2)` (`monto`), como precios y pagos. Se ingresa como «12500,50». Nunca `Number` |
 | Medio de pago | Efectivo, transferencia, tarjeta de débito, tarjeta de crédito, Mercado Pago u otro |
 | Descripción | De 3 a 500 caracteres |
 | Comprobante | Opcional, hasta 120 caracteres: referencia libre (tipo y número, proveedor). Sin archivo |
@@ -78,7 +78,7 @@ Los anulados siguen a la vista, tachados, con quién, cuándo y por qué. El per
 ## Diferencias con el modelo de 02-arquitectura
 
 - **Sin `GastoPago`:** la arquitectura proponía `CategoriaGasto`, `Gasto` y `GastoPago`, separando el devengamiento del pago real. En el MVP un gasto se registra ya pagado, con su medio. Si Sicurella necesita registrar facturas a pagar o pagos en cuotas, se agrega `GastoPago` sin romper lo existente.
-- **Montos en centavos (`BIGINT`), no `Decimal(12,2)`:** por pedido explícito para O04. El dominio ya trabaja en centavos `bigint` y la conversión con el resto (por ejemplo, reportes L03) es exacta.
+- **Montos en `Decimal(12,2)`, como catálogo y pagos:** el dominio calcula en centavos `bigint` (`aCentavos`/`importe`, igual que la seña) y el repositorio convierte en el borde. Así caja (O02) y reportes (L03) suman importes del mismo tipo.
 
 ## A confirmar con Sicurella
 

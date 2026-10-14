@@ -98,8 +98,8 @@ test("configuración y secretos por sede", async (t) => {
 
     await t.test("rotación de clave: recifra y sigue legible", async () => {
       assert.ok((await listarCredenciales(db, a.master.id, a.org.id, a.norte.id, v2)).every(c => c.requiereRecifrado));
-      assert.ok(await recifrarCredenciales(db, v2) >= 4);
-      assert.equal(await recifrarCredenciales(db, v2), 0, "idempotente");
+      assert.ok(await recifrarCredenciales(db, v2, a.org.id) >= 4);
+      assert.equal(await recifrarCredenciales(db, v2, a.org.id), 0, "idempotente");
       assert.equal((await leerCredencial(db, a.norte.id, "FACTURANTE", "PRUEBA", llaveroDesde(`v2:${k2}`, "v2")))?.secretos.password, "secreto-facturante");
     });
 

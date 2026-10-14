@@ -7,6 +7,7 @@ import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds, sedesConPermiso } from "./access.ts";
 import { configuracionEfectiva } from "./configuracion.ts";
 import { cargarConsulta, reservaActiva, type Pedido } from "./disponibilidad.ts";
+import { encolarEmailReserva } from "./emails.ts";
 
 type Tx = Prisma.TransactionClient;
 type Estado = "PENDIENTE_PAGO" | "PAGO_EN_REVISION" | "CONFIRMADA" | "ATENDIDA" | "AUSENTE" | "CANCELADA" | "EXPIRADA";
@@ -39,6 +40,8 @@ export async function conReintento<T>(fn: () => Promise<T>): Promise<T> {
 
 export async function registrarEvento(tx: Tx, organizacionId: string, reservaId: string, tipo: "CREADA" | "CONFIRMADA" | "EXPIRADA" | "CANCELADA" | "REPROGRAMADA" | "ATENDIDA" | "AUSENTE", estadoAnterior: Estado | null, estadoNuevo: Estado, actorId: string | null, detalle?: Prisma.InputJsonValue) {
   await tx.reservaEvento.create({ data: { organizacionId, reservaId, tipo, estadoAnterior, estadoNuevo, actorId, detalle } });
+  // P03: confirmación, cancelación y reprogramación avisan al cliente por email, en esta misma transacción (outbox).
+  await encolarEmailReserva(tx, { organizacionId, reservaId, tipo, estadoNuevo, detalle });
 }
 
 /** Retenciones vencidas de estos profesionales pasan a EXPIRADA. El motor ya las ignora; esto mantiene el estado coherente. */

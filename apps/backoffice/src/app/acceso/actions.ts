@@ -1,7 +1,10 @@
 "use server";
 import { redirect } from "next/navigation";
 import { CredencialesInvalidas, DemasiadosIntentos, PasswordInvalida, TokenInvalido, cerrarSesion, iniciarSesion, restablecerPassword, solicitarRecuperacion } from "@nailnet/database/auth";
+import { llaveroEntorno } from "@nailnet/database/configuracion";
+import { CifradoNoConfigurado, type Llavero } from "@nailnet/domain/secretos";
 import { db } from "@/lib/db";
+import { recuperacionPorEmail } from "@/lib/emails";
 import { urlBackoffice } from "@/lib/red";
 import { borrarCookieSesion, guardarCookieSesion, ipCliente, leerTokenSesion } from "@/lib/sesion";
 
@@ -29,13 +32,16 @@ export async function salir() {
 
 const MENSAJE_RECUPERACION = "Si el email corresponde a un usuario habilitado, vas a recibir un enlace válido por 30 minutos.";
 export async function recuperar(_: EstadoFormulario, form: FormData): Promise<EstadoFormulario> {
-  const resultado = await solicitarRecuperacion(db(), { email: texto(form, "email"), ip: await ipCliente() });
-  // El envío por email llega con Resend y el outbox del worker (P03/F04). Hasta entonces el enlace
-  // solo se muestra en la consola de desarrollo; en producción la página no ofrece este formulario.
-  if (resultado && process.env.NODE_ENV !== "production") {
-    const base = urlBackoffice();
-    console.info(`[desarrollo] Enlace de recuperación para ${resultado.email}: ${base}/restablecer#${resultado.token}`);
-  }
+  // Sin envío de emails habilitado no se emiten enlaces que nadie recibiría (la página tampoco ofrece el formulario).
+  if (!recuperacionPorEmail()) return { ok: MENSAJE_RECUPERACION };
+  const base = urlBackoffice();
+  const enlace = (token: string) => `${base}/restablecer#${token}`;
+  // P03: el email sale del worker por el outbox, con el enlace cifrado con el llavero del servidor. Sin
+  // llavero (desarrollo fuera de Docker) se vuelve al aviso por consola; en producción falla cerrado.
+  let llavero: Llavero | null = null;
+  try { llavero = llaveroEntorno(); } catch (e) { if (!(e instanceof CifradoNoConfigurado) || process.env.NODE_ENV === "production") throw e; }
+  const resultado = await solicitarRecuperacion(db(), { email: texto(form, "email"), ip: await ipCliente(), ...(llavero ? { envio: { enlace, llavero } } : {}) });
+  if (resultado && !llavero) console.info(`[desarrollo, sin NAILNET_CLAVES_CIFRADO] Enlace de recuperación para ${resultado.email}: ${enlace(resultado.token)}`);
   return { ok: MENSAJE_RECUPERACION };
 }
 

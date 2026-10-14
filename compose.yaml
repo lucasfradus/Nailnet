@@ -80,6 +80,10 @@ services:
     environment:
       DATABASE_URL: postgresql://nailnet:nailnet_local_only@postgres:5432/nailnet
       HOST: "0.0.0.0"
+      # Mismo llavero de desarrollo que el backoffice: credenciales de sedes (R04) y enlaces de recuperación (P03).
+      NAILNET_CLAVES_CIFRADO: "v1:BCHvT3OHnS14ri/WyKIl7sGo9I9xw4Lhi0cWeJvlGiM="
+      NAILNET_CLAVE_ACTIVA: v1
+      # Sin RESEND_API_KEY los emails se simulan y se muestran en `docker compose logs worker`.
     command: ["npm", "run", "dev:worker"]
     ports:
       - "127.0.0.1:3001:3001"

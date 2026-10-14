@@ -48,7 +48,7 @@ Rotación:
 1. Agregar la clave nueva a la lista.
 2. Apuntar la versión activa a ella y desplegar.
 3. Ejecutar `npm run secretos:recifrar -w @nailnet/database`. Es idempotente y no pisa credenciales reemplazadas durante el proceso.
-4. Recién después retirar la versión vieja.
+4. Recién después retirar la versión vieja. Los emails de recuperación en cola (doc 24) llevan el enlace cifrado con la versión activa al pedirlo; como vencen a los 30 minutos, alcanza con esperar ese tiempo.
 
 La pantalla marca las credenciales pendientes de rotación.
 

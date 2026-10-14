@@ -942,6 +942,52 @@ model Pago {
   @@index([reservaId])
 }
 
+// P03. Estado de un email transaccional. PENDIENTE: hubo un intento fallido y se reintenta.
+// ENVIADO/SIMULADO: el proveedor (o el transporte falso de desarrollo) lo aceptó. Los demás llegan por
+// el webhook de Resend y solo avanzan (ver RANGO_ENVIO en @nailnet/domain/resend).
+enum EstadoEmail {
+  PENDIENTE
+  ENVIADO
+  SIMULADO
+  OMITIDO
+  FALLIDO
+  DEMORADO
+  ENTREGADO
+  REBOTADO
+  QUEJA
+}
+
+// P03. Evidencia de cada email transaccional: a quién, qué, con qué id del proveedor y cómo terminó.
+// Una fila por clave de idempotencia (la misma del trabajo y del header Idempotency-Key de Resend).
+// Sin claves foráneas a propósito: es un registro de auditoría que sobrevive a la purga de trabajos.
+model EnvioEmail {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizacionId String?     @db.Uuid
+  clave          String      @unique
+  tipo           String
+  reservaId      String?     @db.Uuid
+  usuarioId      String?     @db.Uuid
+  destinatario   String?
+  asunto         String?
+  proveedor      String?
+  proveedorId    String?     @unique
+  estado         EstadoEmail
+  intentos       Int         @default(0)
+  ultimoError    String?
+  // Por qué se omitió, o el detalle del rebote/queja que informó el proveedor.
+  motivo         String?
+  enviadoEn      DateTime?
+  // Último evento de entrega informado por el proveedor (webhook).
+  eventoEn       DateTime?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([reservaId])
+  @@index([usuarioId])
+  @@index([organizacionId, createdAt])
+  @@index([estado, updatedAt])
+}
+
 // ─── Stock ───────────────────────────────────────────────────────────────────
 // O03 (doc 26). Productos e insumos globales de la organización; precio de venta y saldo por sede.
 // El saldo (StockSede) se deriva de movimientos inmutables y nunca es negativo (CHECK + lock de fila).

@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./mercadopago": "./src/mercadopago.ts"
+    "./mercadopago": "./src/mercadopago.ts",
+    "./resend": "./src/resend.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

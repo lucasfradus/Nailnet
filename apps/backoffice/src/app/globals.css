@@ -112,6 +112,11 @@ fieldset{border:1px solid var(--color-border);border-radius:var(--radius-md);pad
 legend{font-size:12px;font-weight:600;color:var(--color-secondary-foreground);padding:0 4px}
 .check{display:inline-flex!important;gap:6px;align-items:center;font-size:13px;font-weight:400!important}.check input{accent-color:var(--color-primary);box-shadow:none}.en-linea .check input[type=checkbox]{flex:none;width:auto}.check{white-space:nowrap}
 .corto{width:84px;flex:0 0 auto!important}
+.ficha-form{max-width:780px}.panel>.form-seccion{margin-bottom:14px}
+.form-seccion{display:grid;gap:12px;padding:16px 18px;border:1px solid var(--color-border);border-radius:var(--radius);background:var(--color-background);box-shadow:var(--shadow-card)}.form-seccion>h2{margin:0;font-size:14px;font-weight:600}
+.opcional{font-weight:400;color:var(--color-muted-foreground)}.check .ayuda{font-size:12px}
+.con-unidad{position:relative;display:block}.con-unidad::before{content:attr(data-unidad);position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:14px;color:var(--color-muted-foreground);pointer-events:none}.con-unidad input{width:100%;padding-left:24px}
+.con-unidad.sufijo::before{left:auto;right:10px}.con-unidad.sufijo input{padding-left:10px;padding-right:26px}.con-unidad:has(input:disabled)::before{opacity:.4}input:disabled{background:var(--gris-50);color:var(--color-muted-foreground);cursor:not-allowed}
 details summary{cursor:pointer;font-size:13px;font-weight:500;color:var(--color-primary);margin:6px 0}
 .semana{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.semana label{display:grid;gap:4px;font-size:13px}
 

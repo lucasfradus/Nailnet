@@ -12,7 +12,7 @@ import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
 import { actualizarCliente, actualizarObservaciones, crearCliente, publicarConsentimiento, registrarConsentimiento, vincularCliente } from "@nailnet/database/clientes";
 import type { Sena, TipoSena } from "@nailnet/domain/catalogo";
-import { crearCategoria, crearSkill, crearTipoRecurso, guardarImagenServicio, guardarServicio, guardarServicioSede } from "@nailnet/database/catalogo";
+import { guardarCategoria, guardarSkill, guardarTipoRecurso, guardarImagenServicio, guardarServicio, guardarServicioSede } from "@nailnet/database/catalogo";
 import { aMinutos, aUtc, validarFecha } from "@nailnet/domain/agenda";
 import { actualizarProfesional, guardarFotoProfesional, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "@nailnet/database/profesionales";
 import { ConfiguracionIncompleta } from "@nailnet/database/disponibilidad";
@@ -193,29 +193,45 @@ const marcado = (f: FormData, k: string) => f.get(k) === "on";
 const entero = (f: FormData, k: string) => { const v = texto(f, k).trim(); return v === "" ? NaN : Number(v); };
 function senaForm(f: FormData, prefijo = ""): Sena {
   const tipo = texto(f, `${prefijo}senaTipo`);
-  if (!tipo) return null;
-  return { tipo: tipo as TipoSena, valor: tipo === "NINGUNA" ? null : texto(f, `${prefijo}senaValor`).trim() || null };
+  const valor = texto(f, `${prefijo}senaValor`).trim();
+  // Un valor sin tipo se descartaba en silencio: mejor pedir el tipo.
+  if (!tipo) { if (valor) throw new DatosInvalidos("Elegí el tipo de seña (monto fijo o porcentaje) para ese valor"); return null; }
+  return { tipo: tipo as TipoSena, valor: tipo === "NINGUNA" ? null : valor || null };
 }
-export async function accionCrearCategoria(_: Estado, form: FormData) {
-  return ejecutar("/catalogo", async (actor, org) => { await crearCategoria(db(), actor, org, texto(form, "nombre"), entero(form, "orden") || 0); }, "Categoría creada");
+export async function accionGuardarCategoria(_: Estado, form: FormData) {
+  const id = texto(form, "categoriaId") || undefined;
+  const r = await ejecutar("/catalogo", async (actor, org) => { await guardarCategoria(db(), actor, org, { nombre: texto(form, "nombre"), orden: entero(form, "orden") || 0 }, id); }, id ? "Categoría actualizada" : "Categoría creada");
+  if (r?.ok && !id) redirect("/catalogo/categorias");
+  return r;
 }
-export async function accionCrearSkill(_: Estado, form: FormData) {
-  return ejecutar("/catalogo", async (actor, org) => { await crearSkill(db(), actor, org, texto(form, "nombre")); }, "Habilidad creada");
+export async function accionGuardarSkill(_: Estado, form: FormData) {
+  const id = texto(form, "skillId") || undefined;
+  const r = await ejecutar("/catalogo", async (actor, org) => { await guardarSkill(db(), actor, org, { nombre: texto(form, "nombre"), servicioIds: form.getAll("servicioId").map(String) }, id); }, id ? "Habilidad actualizada" : "Habilidad creada");
+  if (r?.ok && !id) redirect("/catalogo/habilidades");
+  return r;
 }
-export async function accionCrearTipoRecurso(_: Estado, form: FormData) {
-  return ejecutar("/catalogo", async (actor, org) => { await crearTipoRecurso(db(), actor, org, texto(form, "nombre")); }, "Tipo de recurso creado");
+export async function accionGuardarTipoRecurso(_: Estado, form: FormData) {
+  const id = texto(form, "tipoRecursoId") || undefined;
+  const servicios = form.getAll("servicioId").map(String).map(s => ({ servicioId: s, cantidad: entero(form, `cantidad_${s}`) })).filter(s => s.cantidad > 0);
+  const r = await ejecutar("/catalogo", async (actor, org) => { await guardarTipoRecurso(db(), actor, org, { nombre: texto(form, "nombre"), servicios }, id); }, id ? "Tipo de recurso actualizado" : "Tipo de recurso creado");
+  if (r?.ok && !id) redirect("/catalogo/recursos");
+  return r;
 }
 export async function accionGuardarServicio(_: Estado, form: FormData) {
   const servicioId = texto(form, "servicioId") || undefined;
   const recursos = form.getAll("tipoRecursoId").map(String).map(id => ({ tipoRecursoId: id, cantidad: entero(form, `cantidad_${id}`) })).filter(r => r.cantidad > 0);
-  return ejecutar("/catalogo", async (actor, org) => {
-    await guardarServicio(db(), actor, org, {
+  let id = "";
+  const r = await ejecutar("/catalogo", async (actor, org) => {
+    id = (await guardarServicio(db(), actor, org, {
       categoriaId: texto(form, "categoriaId"), nombre: texto(form, "nombre"), descripcion: texto(form, "descripcion"),
       duracionMinutos: entero(form, "duracionMinutos"), bufferAntesMinutos: entero(form, "bufferAntesMinutos") || 0, bufferDespuesMinutos: entero(form, "bufferDespuesMinutos") || 0,
       sena: senaForm(form), activo: servicioId ? marcado(form, "activo") : true,
       skillIds: form.getAll("skillId").map(String), recursos, consentimientos: form.getAll("consentimiento").map(String),
-    }, servicioId);
+    }, servicioId))!.id;
   }, servicioId ? "Servicio actualizado" : "Servicio creado");
+  // El alta sigue en la ficha del servicio, donde ya se puede subir la imagen.
+  if (r?.ok && !servicioId && id) redirect(`/catalogo/servicios/${id}?creado=1`);
+  return r;
 }
 /** Archivo subido o null si se pidió quitar la imagen. El repositorio la valida y la procesa. */
 async function archivoImagen(form: FormData) {

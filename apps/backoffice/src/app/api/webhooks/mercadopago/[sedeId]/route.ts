@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { tieneCuentaMercadoPago } from "@nailnet/database/configuracion";
 import { ambientePagos, encolarConsultaPago } from "@nailnet/database/pagos";
-import { verificarFirmaMercadoPago } from "@nailnet/domain/mercadopago";
+import { clasificarNotificacionMercadoPago, verificarFirmaMercadoPago } from "@nailnet/domain/mercadopago";
 import { db } from "@/lib/db";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -12,7 +12,7 @@ const respuesta = (status: number) => new NextResponse(null, { status, headers: 
  * con la clave secreta de la aplicación (MP_WEBHOOK_SECRET). Solo encola la consulta del pago y responde enseguida: el estado
  * siempre sale de la API, nunca del cuerpo de la notificación.
  *
- * 200 también para lo que no nos interesa (otros tipos de evento), para que Mercado Pago no reintente.
+ * 200 también para lo que no nos interesa (formato IPN, otros tipos de evento), para que Mercado Pago no reintente.
  * 401 si la firma no cierra, falta x-request-id o la sede no tiene credenciales (indistinguibles a
  * propósito); 500 si no se pudo encolar, para que Mercado Pago reintente.
  */
@@ -25,9 +25,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ sed
   let cuerpo: { type?: unknown; data?: { id?: unknown } } | null = null;
   try { cuerpo = texto ? JSON.parse(texto) : null; } catch { /* algunas notificaciones llegan solo con query */ }
 
-  const tipo = url.searchParams.get("type") ?? url.searchParams.get("topic") ?? (typeof cuerpo?.type === "string" ? cuerpo.type : null);
-  const idCuerpo = cuerpo?.data?.id;
-  const dataId = url.searchParams.get("data.id") ?? url.searchParams.get("id") ?? (typeof idCuerpo === "string" || typeof idCuerpo === "number" ? String(idCuerpo) : null);
+  // IPN y eventos que no usamos (merchant_order, etc.): 200 sin procesar, para que no se reintenten.
+  const clasificacion = clasificarNotificacionMercadoPago(url.searchParams, cuerpo);
+  if (clasificacion.accion === "ignorar") return respuesta(200);
+  const { dataId } = clasificacion;
 
   try {
     const ambiente = ambientePagos();
@@ -40,12 +41,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ sed
     if (!secreto) { console.error("Webhook de Mercado Pago: falta MP_WEBHOOK_SECRET"); return respuesta(401); }
     if (!verificarFirmaMercadoPago({ firma: request.headers.get("x-signature"), requestId, dataId, secreto })) {
       // Sin la firma ni el cuerpo: alcanza para notar una clave de webhook equivocada.
-      console.warn("Webhook de Mercado Pago: firma inválida", { sedeId, tipo, conFirma: request.headers.has("x-signature") });
+      console.warn("Webhook de Mercado Pago: firma inválida", { sedeId, conFirma: request.headers.has("x-signature") });
       return respuesta(401);
     }
     // Misma respuesta que una firma inválida: no revela qué sedes tienen Mercado Pago vinculado.
     if (!await tieneCuentaMercadoPago(db(), sedeId, ambiente)) return respuesta(401);
-    if (tipo !== "payment" || !dataId || !/^\d{1,30}$/.test(dataId)) return respuesta(200);
     await encolarConsultaPago(db(), { sedeId, ambiente, pagoId: dataId, origen: `req:${requestId.slice(0, 100)}` });
     return respuesta(200);
   } catch (e) {

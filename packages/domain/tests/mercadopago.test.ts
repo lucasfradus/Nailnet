@@ -1,7 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { estadoPagoMercadoPago, verificarFirmaMercadoPago } from "../src/mercadopago.ts";
+import { clasificarNotificacionMercadoPago, estadoPagoMercadoPago, verificarFirmaMercadoPago } from "../src/mercadopago.ts";
+
+test("clasificación de notificaciones: solo se procesan Webhooks de pago", () => {
+  const q = (s: string) => new URLSearchParams(s);
+  assert.deepEqual(clasificarNotificacionMercadoPago(q("data.id=183090827545&type=payment"), { type: "payment", data: { id: "183090827545" } }), { accion: "verificar", dataId: "183090827545" });
+  // Sin data.id en la consulta, se toma del cuerpo (también numérico).
+  assert.deepEqual(clasificarNotificacionMercadoPago(q(""), { type: "payment", data: { id: 42 } }), { accion: "verificar", dataId: "42" });
+  // IPN (formato viejo, sin firma): se ignora aunque sea de un pago.
+  assert.deepEqual(clasificarNotificacionMercadoPago(q("topic=payment&id=183090827545"), null), { accion: "ignorar", motivo: "ipn" });
+  assert.deepEqual(clasificarNotificacionMercadoPago(q("topic=merchant_order&id=1"), null), { accion: "ignorar", motivo: "ipn" });
+  // Otros eventos y pedidos mal formados.
+  assert.deepEqual(clasificarNotificacionMercadoPago(q("data.id=1&type=topic_merchant_order_wh"), null), { accion: "ignorar", motivo: "otro_evento" });
+  assert.deepEqual(clasificarNotificacionMercadoPago(q("type=payment"), null), { accion: "ignorar", motivo: "otro_evento" });
+  assert.deepEqual(clasificarNotificacionMercadoPago(q("type=payment&data.id=../x"), null), { accion: "ignorar", motivo: "otro_evento" });
+});
 
 const secreto = "clave-secreta-de-prueba-123";
 const firmar = (manifiesto: string, clave = secreto) => createHmac("sha256", clave).update(manifiesto).digest("hex");

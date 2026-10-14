@@ -18,7 +18,8 @@
     "./jobs": "./src/jobs.ts",
     "./pagos": "./src/pagos.ts",
     "./emails": "./src/emails.ts",
-    "./imagenes": "./src/imagenes.ts"
+    "./imagenes": "./src/imagenes.ts",
+    "./stock": "./src/stock.ts"
   },
   "scripts": {
     "generate": "prisma generate",

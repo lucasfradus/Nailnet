@@ -131,6 +131,7 @@ model Organizacion {
   profesionales   Profesional[]
   excepciones     ExcepcionHorario[]
   imagenes        Imagen[]
+  productos       Producto[]
 }
 
 model Franquiciado {
@@ -170,6 +171,10 @@ model Sede {
   excepciones             ExcepcionHorario[]
   recursos                Recurso[]
   reservas                Reserva[]
+  productos               ProductoSede[]
+  stock                   StockSede[]
+  movimientosStock        MovimientoStock[]
+  compras                 Compra[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -981,4 +986,147 @@ model EnvioEmail {
   @@index([usuarioId])
   @@index([organizacionId, createdAt])
   @@index([estado, updatedAt])
+}
+
+// ─── Stock ───────────────────────────────────────────────────────────────────
+// O03 (doc 26). Productos e insumos globales de la organización; precio de venta y saldo por sede.
+// El saldo (StockSede) se deriva de movimientos inmutables y nunca es negativo (CHECK + lock de fila).
+// Cantidades Decimal(14,3) en la unidad fija del producto; nunca Number.
+
+enum UnidadMedida {
+  UNIDAD
+  MILILITRO
+  LITRO
+  GRAMO
+  KILOGRAMO
+}
+
+enum TipoMovimientoStock {
+  COMPRA
+  CONSUMO_INTERNO
+  AJUSTE
+  VENTA
+  TRANSFERENCIA_SALIDA
+  TRANSFERENCIA_ENTRADA
+  REVERSO
+}
+
+// vendible = puede venderse en recepción (O01); si no, es solo de consumo interno.
+// La unidad no cambia una vez que hay movimientos: reinterpretaría las cantidades ya registradas.
+model Producto {
+  id             String            @id @default(uuid()) @db.Uuid
+  organizacionId String            @db.Uuid
+  nombre         String
+  sku            String?
+  unidad         UnidadMedida
+  vendible       Boolean           @default(false)
+  activo         Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  organizacion   Organizacion      @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sedes          ProductoSede[]
+  saldos         StockSede[]
+  movimientos    MovimientoStock[]
+  itemsCompra    CompraItem[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, nombre])
+  @@unique([organizacionId, sku])
+}
+
+// Condiciones locales del producto (D12): por ahora solo el precio de venta en la sede.
+model ProductoSede {
+  organizacionId String   @db.Uuid
+  productoId     String   @db.Uuid
+  sedeId         String   @db.Uuid
+  precio         Decimal? @db.Decimal(12, 2)
+  updatedAt      DateTime @updatedAt
+  producto       Producto @relation(fields: [organizacionId, productoId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([productoId, sedeId])
+  @@index([organizacionId, sedeId])
+}
+
+// Saldo vigente por sede y producto. Solo lo escribe src/stock.ts, bajo lock de esta fila y junto con
+// el movimiento que lo explica: siempre igual a la suma de los movimientos.
+model StockSede {
+  organizacionId String   @db.Uuid
+  sedeId         String   @db.Uuid
+  productoId     String   @db.Uuid
+  cantidad       Decimal  @default(0) @db.Decimal(14, 3)
+  updatedAt      DateTime @updatedAt
+  sede           Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  producto       Producto @relation(fields: [organizacionId, productoId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@id([sedeId, productoId])
+  @@index([organizacionId, productoId])
+}
+
+// Movimiento inmutable (trigger): no se edita ni se borra; se corrige con un REVERSO que apunta al original.
+// cantidad lleva signo; saldoResultante es el saldo de la sede después de aplicarlo.
+model MovimientoStock {
+  id              String              @id @default(uuid()) @db.Uuid
+  organizacionId  String              @db.Uuid
+  sedeId          String              @db.Uuid
+  productoId      String              @db.Uuid
+  tipo            TipoMovimientoStock
+  cantidad        Decimal             @db.Decimal(14, 3)
+  saldoResultante Decimal             @db.Decimal(14, 3)
+  motivo          String?
+  compraItemId    String?             @db.Uuid
+  // Las dos patas de una transferencia comparten este id.
+  transferenciaId String?             @db.Uuid
+  // Venta que originó el egreso. Sin FK hasta que exista Venta (O01).
+  ventaId         String?             @db.Uuid
+  revierteId      String?             @unique @db.Uuid
+  actorId         String              @db.Uuid
+  orden           Int                 @default(autoincrement())
+  createdAt       DateTime            @default(now())
+  sede            Sede                @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  producto        Producto            @relation(fields: [organizacionId, productoId], references: [organizacionId, id], onDelete: Restrict)
+  compraItem      CompraItem?         @relation(fields: [organizacionId, compraItemId], references: [organizacionId, id], onDelete: Restrict)
+  revierte        MovimientoStock?    @relation("ReversoStock", fields: [revierteId], references: [id], onDelete: Restrict)
+  revertidoPor    MovimientoStock?    @relation("ReversoStock")
+
+  @@unique([organizacionId, compraItemId])
+  @@index([organizacionId, sedeId, productoId, orden])
+  @@index([transferenciaId])
+  @@index([ventaId])
+}
+
+// Compra a proveedor: genera un movimiento COMPRA por ítem. El proveedor es texto libre por ahora.
+model Compra {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  sedeId         String       @db.Uuid
+  proveedor      String
+  comprobante    String?
+  fecha          DateTime     @db.Date
+  total          Decimal      @db.Decimal(12, 2)
+  actorId        String       @db.Uuid
+  createdAt      DateTime     @default(now())
+  sede           Sede         @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  items          CompraItem[]
+
+  @@unique([organizacionId, id])
+  @@index([organizacionId, sedeId, fecha])
+}
+
+// Costo unitario por unidad de medida del producto; subtotal = cantidad × costo, al centavo.
+model CompraItem {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizacionId String           @db.Uuid
+  compraId       String           @db.Uuid
+  posicion       Int
+  productoId     String           @db.Uuid
+  cantidad       Decimal          @db.Decimal(14, 3)
+  costoUnitario  Decimal          @db.Decimal(12, 2)
+  subtotal       Decimal          @db.Decimal(12, 2)
+  compra         Compra           @relation(fields: [organizacionId, compraId], references: [organizacionId, id], onDelete: Restrict)
+  producto       Producto         @relation(fields: [organizacionId, productoId], references: [organizacionId, id], onDelete: Restrict)
+  movimiento     MovimientoStock?
+
+  @@unique([organizacionId, id])
+  @@unique([compraId, posicion])
 }

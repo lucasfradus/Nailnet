@@ -1,6 +1,6 @@
 # Emails transaccionales con Resend · 2026-10-14
 
-Implementa P03. Migración `202610140015_emails`. Lógica en `packages/database/src/emails.ts`, plantillas en `packages/domain/src/emails.ts`, cliente HTTP en `packages/integrations/src/resend.ts` y firma del webhook en `packages/domain/src/resend.ts`. El worker conecta el transporte (`apps/worker/src/manejadores.ts`).
+Implementa P03. Migración `202610140020_emails`. Lógica en `packages/database/src/emails.ts`, plantillas en `packages/domain/src/emails.ts`, cliente HTTP en `packages/integrations/src/resend.ts` y firma del webhook en `packages/domain/src/resend.ts`. El worker conecta el transporte (`apps/worker/src/manejadores.ts`).
 
 **Estado:** probado con transportes falsos y Postgres real. **Falta enviar de verdad:** no hay API key de Resend ni dominio verificado (D03). Sin eso, staging simula y producción deja los emails en cola.
 

@@ -48,8 +48,8 @@ export async function listarCatalogo(db: Database, actorId: string, organizacion
       where: { organizacionId }, orderBy: [{ orden: "asc" }, { nombre: "asc" }],
       include: { servicios: { orderBy: { nombre: "asc" }, include: { skills: { select: { skillId: true } }, recursos: { select: { tipoRecursoId: true, cantidad: true } }, consentimientos: { select: { clave: true } } } } },
     }),
-    db.skill.findMany({ where: { organizacionId }, orderBy: { nombre: "asc" } }),
-    db.tipoRecurso.findMany({ where: { organizacionId }, orderBy: { nombre: "asc" } }),
+    db.skill.findMany({ where: { organizacionId }, orderBy: { nombre: "asc" }, include: { servicios: { select: { servicioId: true } }, _count: { select: { profesionales: true } } } }),
+    db.tipoRecurso.findMany({ where: { organizacionId }, orderBy: { nombre: "asc" }, include: { requisitos: { select: { servicioId: true, cantidad: true } }, _count: { select: { recursos: true } } } }),
     db.consentimientoVersion.findMany({ where: { organizacionId, tipo: "PRACTICA" }, distinct: ["clave"], select: { clave: true, titulo: true }, orderBy: [{ clave: "asc" }, { version: "desc" }] }),
   ]);
   return {
@@ -58,41 +58,79 @@ export async function listarCatalogo(db: Database, actorId: string, organizacion
   };
 }
 
-export async function crearCategoria(db: Database, actorId: string, organizacionId: string, nombre: string, orden = 0) {
-  const n = nombreValido(nombre, 60);
+/** Alta (sin id) o edición. El orden define cómo se listan las categorías (menor primero). */
+export async function guardarCategoria(db: Database, actorId: string, organizacionId: string, datos: { nombre: string; orden?: number }, categoriaId?: string) {
+  exigirIds(categoriaId);
+  const data = { nombre: nombreValido(datos.nombre, 60), orden: Math.trunc(datos.orden ?? 0) || 0 };
+  if (Math.abs(data.orden) > 9999) throw new DatosInvalidos("El orden va de -9999 a 9999");
   try {
     return await db.$transaction(async tx => {
       await exigirOrganizacional(tx, actorId, organizacionId, "catalogo:administrar");
-      const c = await tx.categoriaServicio.create({ data: { organizacionId, nombre: n, orden: Math.trunc(orden) || 0 }, select: { id: true } });
-      await auditar(tx, organizacionId, actorId, "catalogo.categoria", "CategoriaServicio", c.id, { nombre: n });
+      if (categoriaId && !await tx.categoriaServicio.count({ where: { id: categoriaId, organizacionId } })) throw new AccesoDenegado();
+      const c = categoriaId
+        ? await tx.categoriaServicio.update({ where: { id: categoriaId }, data, select: { id: true } })
+        : await tx.categoriaServicio.create({ data: { organizacionId, ...data }, select: { id: true } });
+      await auditar(tx, organizacionId, actorId, categoriaId ? "catalogo.categoria.editar" : "catalogo.categoria", "CategoriaServicio", c.id, data);
       return c;
     });
   } catch (e) { unico(e, "Ya existe una categoría con ese nombre"); }
 }
+export const crearCategoria = (db: Database, actorId: string, organizacionId: string, nombre: string, orden = 0) => guardarCategoria(db, actorId, organizacionId, { nombre, orden });
 
-export async function crearSkill(db: Database, actorId: string, organizacionId: string, nombre: string) {
-  const n = nombreValido(nombre, 60);
+/** Alta o edición. servicioIds reemplaza el conjunto de servicios que exigen esta habilidad. */
+export async function guardarSkill(db: Database, actorId: string, organizacionId: string, datos: { nombre: string; servicioIds?: string[] }, skillId?: string) {
+  const servicioIds = [...new Set(datos.servicioIds ?? [])];
+  exigirIds(skillId, ...servicioIds);
+  const nombre = nombreValido(datos.nombre, 60);
   try {
     return await db.$transaction(async tx => {
       await exigirOrganizacional(tx, actorId, organizacionId, "catalogo:administrar");
-      const s = await tx.skill.create({ data: { organizacionId, nombre: n }, select: { id: true } });
-      await auditar(tx, organizacionId, actorId, "catalogo.skill", "Skill", s.id, { nombre: n });
+      if (skillId && !await tx.skill.count({ where: { id: skillId, organizacionId } })) throw new AccesoDenegado();
+      const s = skillId
+        ? await tx.skill.update({ where: { id: skillId }, data: { nombre }, select: { id: true } })
+        : await tx.skill.create({ data: { organizacionId, nombre }, select: { id: true } });
+      if (datos.servicioIds) {
+        // La FK compuesta (organización, servicio) rechaza servicios de otra organización.
+        await tx.servicioSkill.deleteMany({ where: { skillId: s.id } });
+        await tx.servicioSkill.createMany({ data: servicioIds.map(servicioId => ({ organizacionId, servicioId, skillId: s.id })) });
+      }
+      await auditar(tx, organizacionId, actorId, skillId ? "catalogo.skill.editar" : "catalogo.skill", "Skill", s.id, { nombre, servicioIds });
       return s;
     });
-  } catch (e) { unico(e, "Ya existe una habilidad con ese nombre"); }
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003") throw new AccesoDenegado();
+    unico(e, "Ya existe una habilidad con ese nombre");
+  }
 }
+export const crearSkill = (db: Database, actorId: string, organizacionId: string, nombre: string) => guardarSkill(db, actorId, organizacionId, { nombre });
 
-export async function crearTipoRecurso(db: Database, actorId: string, organizacionId: string, nombre: string) {
-  const n = nombreValido(nombre, 60);
+/** Alta o edición. servicios reemplaza qué servicios ocupan este tipo y cuántas unidades (1 a 10). */
+export async function guardarTipoRecurso(db: Database, actorId: string, organizacionId: string, datos: { nombre: string; servicios?: { servicioId: string; cantidad: number }[] }, tipoRecursoId?: string) {
+  const servicios = datos.servicios ?? [];
+  exigirIds(tipoRecursoId, ...servicios.map(s => s.servicioId));
+  const nombre = nombreValido(datos.nombre, 60);
+  if (servicios.some(s => !Number.isInteger(s.cantidad) || s.cantidad < 1 || s.cantidad > 10)) throw new DatosInvalidos("Cantidad de recursos entre 1 y 10");
+  if (new Set(servicios.map(s => s.servicioId)).size !== servicios.length) throw new DatosInvalidos("Servicio repetido");
   try {
     return await db.$transaction(async tx => {
       await exigirOrganizacional(tx, actorId, organizacionId, "catalogo:administrar");
-      const t = await tx.tipoRecurso.create({ data: { organizacionId, nombre: n }, select: { id: true } });
-      await auditar(tx, organizacionId, actorId, "catalogo.tipoRecurso", "TipoRecurso", t.id, { nombre: n });
+      if (tipoRecursoId && !await tx.tipoRecurso.count({ where: { id: tipoRecursoId, organizacionId } })) throw new AccesoDenegado();
+      const t = tipoRecursoId
+        ? await tx.tipoRecurso.update({ where: { id: tipoRecursoId }, data: { nombre }, select: { id: true } })
+        : await tx.tipoRecurso.create({ data: { organizacionId, nombre }, select: { id: true } });
+      if (datos.servicios) {
+        await tx.servicioRequisitoRecurso.deleteMany({ where: { tipoRecursoId: t.id } });
+        await tx.servicioRequisitoRecurso.createMany({ data: servicios.map(s => ({ organizacionId, tipoRecursoId: t.id, ...s })) });
+      }
+      await auditar(tx, organizacionId, actorId, tipoRecursoId ? "catalogo.tipoRecurso.editar" : "catalogo.tipoRecurso", "TipoRecurso", t.id, { nombre, servicios });
       return t;
     });
-  } catch (e) { unico(e, "Ya existe un tipo de recurso con ese nombre"); }
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2003") throw new AccesoDenegado();
+    unico(e, "Ya existe un tipo de recurso con ese nombre");
+  }
 }
+export const crearTipoRecurso = (db: Database, actorId: string, organizacionId: string, nombre: string) => guardarTipoRecurso(db, actorId, organizacionId, { nombre });
 
 export type DatosServicio = {
   categoriaId: string; nombre: string; descripcion?: string | null;

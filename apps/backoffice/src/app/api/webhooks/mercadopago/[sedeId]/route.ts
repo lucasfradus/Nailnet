@@ -38,7 +38,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ sed
     // de la aplicación, no con una de cada sede.
     const secreto = process.env.MP_WEBHOOK_SECRET;
     if (!secreto) { console.error("Webhook de Mercado Pago: falta MP_WEBHOOK_SECRET"); return respuesta(401); }
-    if (!verificarFirmaMercadoPago({ firma: request.headers.get("x-signature"), requestId, dataId, secreto })) return respuesta(401);
+    if (!verificarFirmaMercadoPago({ firma: request.headers.get("x-signature"), requestId, dataId, secreto })) {
+      // Sin la firma ni el cuerpo: alcanza para notar una clave de webhook equivocada.
+      console.warn("Webhook de Mercado Pago: firma inválida", { sedeId, tipo, conFirma: request.headers.has("x-signature") });
+      return respuesta(401);
+    }
     // Misma respuesta que una firma inválida: no revela qué sedes tienen Mercado Pago vinculado.
     if (!await tieneCuentaMercadoPago(db(), sedeId, ambiente)) return respuesta(401);
     if (tipo !== "payment" || !dataId || !/^\d{1,30}$/.test(dataId)) return respuesta(200);

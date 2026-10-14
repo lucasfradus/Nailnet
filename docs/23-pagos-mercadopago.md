@@ -29,7 +29,7 @@ Implementa R04 (Checkout Pro y webhook). Migración `202610120013_pagos`. Lógic
 - Se excluyen los pagos en efectivo (`ticket`, `atm`), que se acreditan días después de vencida la retención. Una sola cuota.
 - Vence junto con la retención (`expiration_date_to`).
 - `notification_url` solo con HTTPS; en local no se envía.
-- Con credenciales de prueba se usa `sandbox_init_point` si la API lo devuelve.
+- Se usa `init_point`. `sandbox_init_point` solo con credenciales `TEST-` de la aplicación: una cuenta vinculada por OAuth tiene token `APP_USR-` aunque sea un usuario de prueba, y con ella el checkout de sandbox falla al pagar ("Oh, no, algo anduvo mal", probado en staging el 2026-10-14). Entre usuarios de prueba, el checkout normal simula el pago.
 
 ## Aplicación del pago
 

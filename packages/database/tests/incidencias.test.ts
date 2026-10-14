@@ -22,7 +22,8 @@ test("bandeja de incidencias (M04)", async (t) => {
     const rCentro = await reserva(a.centro.id, "CANCELADA");
     const rNorte = await reserva(a.norte.id, "CONFIRMADA");
     const rSur = await reserva(a.sur.id, "CONFIRMADA");
-    let externo = 7_000_000;
+    // Rango propio: ventas.test.ts usa 7_000_000 y los archivos corren en paralelo sobre la misma base.
+    let externo = 8_000_000;
     const pago = async (reservaId: string, sedeId: string, estado: "A_DEVOLVER" | "APROBADO" | "EN_PROCESO" | "REEMBOLSADO", extra: { motivo?: string; updatedAt?: Date } = {}) => {
       const checkout = await db.checkoutPago.create({ data: { organizacionId: O, sedeId, reservaId, proveedor: "MERCADO_PAGO", ambiente: "PRUEBA", monto: "9000", expiraEn: new Date() } });
       return (await db.pago.create({ data: {

@@ -26,6 +26,34 @@ const permisos: Record<Rol, readonly Permiso[]> = {
 const permisosIncidencias: Partial<Record<Rol, readonly Permiso[]>> = {
   MASTER_FRANQUICIADOR: ["incidencia:gestionar"], FRANQUICIADO: ["incidencia:gestionar"], ADMIN_SEDE: ["incidencia:gestionar"],
 };
+/**
+ * O04 · Gastos de sede. Tabla propia para no mezclar el módulo con los permisos de estructura.
+ * Recepción no ve ni registra gastos hasta definir su papel en la caja (O02); ver 25-gastos.md.
+ * Las categorías globales (sin sede) son solo del alcance de organización: ver puedeAdministrarCategoriaGasto.
+ */
+export type PermisoGasto = "gasto:leer" | "gasto:registrar" | "gasto:anular" | "gasto:categorias";
+const GASTOS_COMPLETO: readonly PermisoGasto[] = ["gasto:leer", "gasto:registrar", "gasto:anular", "gasto:categorias"];
+const permisosGasto: Record<Rol, readonly PermisoGasto[]> = {
+  MASTER_FRANQUICIADOR: GASTOS_COMPLETO,
+  FRANQUICIADO: GASTOS_COMPLETO,
+  ADMIN_SEDE: GASTOS_COMPLETO,
+  RECEPCIONISTA: [],
+  PROFESIONAL: [],
+};
+/**
+ * O01/O02 · Ventas y caja. Tabla propia, como gastos. Recepción registra ventas, cobra y opera la caja
+ * de sus sedes (abrir, entradas/salidas, cerrar), pero no anula ventas: la anulación devuelve dinero y
+ * stock, así que queda para administración de sede, franquiciado o master. Ver 27-ventas-caja.md.
+ */
+export type PermisoVenta = "venta:leer" | "venta:registrar" | "venta:anular" | "caja:leer" | "caja:operar";
+const VENTAS_COMPLETO: readonly PermisoVenta[] = ["venta:leer", "venta:registrar", "venta:anular", "caja:leer", "caja:operar"];
+const permisosVenta: Record<Rol, readonly PermisoVenta[]> = {
+  MASTER_FRANQUICIADOR: VENTAS_COMPLETO,
+  FRANQUICIADO: VENTAS_COMPLETO,
+  ADMIN_SEDE: VENTAS_COMPLETO,
+  RECEPCIONISTA: ["venta:leer", "venta:registrar", "caja:leer", "caja:operar"],
+  PROFESIONAL: [],
+};
 export function asignacionValida(a: Asignacion): boolean {
   switch (a.rol) {
     case "MASTER_FRANQUICIADOR": return a.alcance === "ORGANIZACION" && a.franquiciadoId === null && a.sedeId === null;
@@ -36,8 +64,12 @@ export function asignacionValida(a: Asignacion): boolean {
     default: return false;
   }
 }
-export function tienePermiso(a: Asignacion, permiso: Permiso): boolean {
-  return asignacionValida(a) && !!(permisos[a.rol]?.includes(permiso) || permisosIncidencias[a.rol]?.includes(permiso));
+export function tienePermiso(a: Asignacion, permiso: Permiso | PermisoGasto | PermisoVenta): boolean {
+  if (!asignacionValida(a)) return false;
+  if (permiso.startsWith("gasto:")) return permisosGasto[a.rol]?.includes(permiso as PermisoGasto) ?? false;
+  if (permiso.startsWith("venta:") || permiso.startsWith("caja:")) return permisosVenta[a.rol]?.includes(permiso as PermisoVenta) ?? false;
+  if (permisosIncidencias[a.rol]?.includes(permiso as Permiso)) return true;
+  return permisos[a.rol]?.includes(permiso as Permiso) ?? false;
 }
 export class AccesoDenegado extends Error {
   constructor() { super("Acceso denegado"); this.name = "AccesoDenegado"; }

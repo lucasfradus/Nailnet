@@ -10,6 +10,8 @@ export default async function Home() {
   const atajos: [href: string, icono: Icono, titulo: string, detalle: string, visible: boolean][] = [
     ["/agenda", "agenda", "Agenda", "Turnos del día y de la semana por sede.", puede.verSedes],
     ["/clientes", "clientes", "Clientes", "Fichas, contacto y vínculo con sedes.", puede.verClientes],
+    ["/ventas", "ventas", "Ventas", "Cobros del día, turnos atendidos y productos.", puede.verVentas],
+    ["/caja", "caja", "Caja", "Apertura, movimientos de efectivo y cierres.", puede.verCaja],
     ["/stock", "stock", "Stock", "Productos, compras y consumo interno por sede.", puede.verStock],
     ["/sedes", "sedes", "Sedes", "Datos, horarios e integraciones.", puede.verSedes],
     ["/catalogo", "catalogo", "Catálogo", "Servicios, precios y señas.", puede.verSedes],

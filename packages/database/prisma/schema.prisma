@@ -131,6 +131,7 @@ model Organizacion {
   profesionales   Profesional[]
   excepciones     ExcepcionHorario[]
   imagenes        Imagen[]
+  categoriasGasto CategoriaGasto[]
   productos       Producto[]
 }
 
@@ -171,10 +172,16 @@ model Sede {
   excepciones             ExcepcionHorario[]
   recursos                Recurso[]
   reservas                Reserva[]
+  categoriasGasto         CategoriaGasto[]
+  gastos                  Gasto[]
   productos               ProductoSede[]
   stock                   StockSede[]
   movimientosStock        MovimientoStock[]
   compras                 Compra[]
+  ventas                  Venta[]
+  cobrosVenta             CobroVenta[]
+  cajas                   Caja[]
+  movimientosCaja         MovimientoCaja[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -736,6 +743,7 @@ model Reserva {
   tokens         TokenReserva[]
   checkouts      CheckoutPago[]
   pagos          Pago[]
+  ventas         Venta[]
 
   @@unique([organizacionId, id])
   @@index([sedeId, estado])
@@ -762,6 +770,7 @@ model ReservaItem {
   servicio             Servicio             @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
   profesional          Profesional          @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
   recursos             ReservaItemRecurso[]
+  ventaItems           VentaItem[]
 
   @@unique([organizacionId, id])
   @@unique([reservaId, posicion])
@@ -937,9 +946,83 @@ model Pago {
   updatedAt      DateTime     @updatedAt
   reserva        Reserva      @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
   checkout       CheckoutPago @relation(fields: [organizacionId, checkoutId], references: [organizacionId, id], onDelete: Restrict)
+  ventas         Venta[]
 
   @@unique([proveedor, ambiente, externoId])
   @@index([reservaId])
+}
+
+// ─── Gastos ───────────────────────────────────────────────────────────────────
+// O04. Ver docs/25-gastos.md. Bloque propio del módulo; las únicas líneas fuera de él son las
+// relaciones inversas en Organizacion y Sede.
+
+// Medio con que se pagó el gasto. EFECTIVO será un egreso de caja cuando exista O02.
+enum MedioPagoGasto {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA_DEBITO
+  TARJETA_CREDITO
+  MERCADO_PAGO
+  OTRO
+}
+
+enum TipoMovimientoGasto {
+  GASTO
+  // Anulación: copia el gasto con monto negativo; el original nunca se edita ni se borra.
+  REVERSO
+}
+
+// Categoría de gasto (alineado a D12): sedeId null = global de la organización (la define el master);
+// con sede = local de esa sede (la define quien la administra). Se desactiva, no se borra.
+model CategoriaGasto {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  sedeId         String?      @db.Uuid
+  nombre         String
+  activo         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  sede           Sede?        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  gastos         Gasto[]
+
+  @@unique([organizacionId, id])
+  @@index([organizacionId, sedeId])
+}
+
+// Movimiento de gasto, solo inserción (trigger). Un GASTO tiene monto positivo; su REVERSO (único,
+// por revierteId) lleva el monto negado y la misma sede, categoría, fecha y medio, más el motivo.
+// El total de un período es la suma de los montos: un gasto anulado suma cero.
+model Gasto {
+  id              String              @id @default(uuid()) @db.Uuid
+  organizacionId  String              @db.Uuid
+  sedeId          String              @db.Uuid
+  categoriaId     String              @db.Uuid
+  tipo            TipoMovimientoGasto
+  // Fecha local de la sede en que se hizo el gasto. El instante de carga (o de anulación) es createdAt.
+  fecha           DateTime            @db.Date
+  // ARS: positivo en GASTO, negativo en REVERSO.
+  monto           Decimal             @db.Decimal(12, 2)
+  medioPago       MedioPagoGasto
+  descripcion     String
+  // Referencia libre al comprobante (tipo y número, proveedor). Sin archivo por ahora.
+  comprobante     String?
+  // Quien registró el gasto (o lo anuló, en un REVERSO). Sin FK a Usuario, como los actores de ReservaEvento.
+  registradoPorId String              @db.Uuid
+  revierteId      String?             @db.Uuid
+  motivoAnulacion String?
+  createdAt       DateTime            @default(now())
+  sede            Sede                @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  categoria       CategoriaGasto      @relation(fields: [organizacionId, categoriaId], references: [organizacionId, id], onDelete: Restrict)
+  revierte        Gasto?              @relation("ReversoGasto", fields: [organizacionId, revierteId], references: [organizacionId, id], onDelete: Restrict)
+  reverso         Gasto?              @relation("ReversoGasto")
+  movimientoCaja  MovimientoCaja?
+
+  @@unique([organizacionId, id])
+  // Un gasto tiene a lo sumo un reverso: dos anulaciones simultáneas no pasan las dos.
+  @@unique([organizacionId, revierteId])
+  @@index([sedeId, fecha])
+  @@index([organizacionId, fecha])
 }
 
 // P03. Estado de un email transaccional. PENDIENTE: hubo un intento fallido y se reintenta.
@@ -1028,6 +1111,7 @@ model Producto {
   saldos         StockSede[]
   movimientos    MovimientoStock[]
   itemsCompra    CompraItem[]
+  itemsVenta     VentaItem[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, nombre])
@@ -1077,7 +1161,7 @@ model MovimientoStock {
   compraItemId    String?             @db.Uuid
   // Las dos patas de una transferencia comparten este id.
   transferenciaId String?             @db.Uuid
-  // Venta que originó el egreso. Sin FK hasta que exista Venta (O01).
+  // Venta que originó el egreso (O01, doc 27).
   ventaId         String?             @db.Uuid
   revierteId      String?             @unique @db.Uuid
   actorId         String              @db.Uuid
@@ -1088,6 +1172,7 @@ model MovimientoStock {
   compraItem      CompraItem?         @relation(fields: [organizacionId, compraItemId], references: [organizacionId, id], onDelete: Restrict)
   revierte        MovimientoStock?    @relation("ReversoStock", fields: [revierteId], references: [id], onDelete: Restrict)
   revertidoPor    MovimientoStock?    @relation("ReversoStock")
+  venta           Venta?              @relation(fields: [organizacionId, ventaId], references: [organizacionId, id], onDelete: Restrict)
 
   @@unique([organizacionId, compraItemId])
   @@index([organizacionId, sedeId, productoId, orden])
@@ -1172,4 +1257,203 @@ model AccionIncidencia {
 
   @@index([fuente, entidadId, createdAt])
   @@index([organizacionId, createdAt])
+}
+
+// ─── Ventas y caja ───────────────────────────────────────────────────────────
+// O01 y O02 (doc 27). Venta por sede con ítems de servicio (desde un turno atendido, precio congelado)
+// y de producto; cobros manuales con su medio; la seña aprobada por Mercado Pago se aplica como anticipo
+// sin volver a ingresar. Caja por sede: solo efectivo; los cobros digitales se informan aparte.
+// Todo es de solo inserción salvo las transiciones de estado de Venta y Caja, acotadas por trigger.
+// Las líneas fuera del bloque son solo relaciones inversas (Sede, Reserva, ReservaItem, Pago, Producto, Gasto).
+
+enum MedioCobro {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA_DEBITO
+  TARJETA_CREDITO
+  MERCADO_PAGO
+  OTRO
+}
+
+enum EstadoVenta {
+  // Falta cobrar parte del total.
+  PENDIENTE
+  // Anticipo + cobros = total. Punto de enganche de la facturación cuando se defina D9.
+  COMPLETADA
+  // Anulada por reverso: cobros revertidos, anticipo liberado y, si se pidió, stock repuesto.
+  ANULADA
+}
+
+enum TipoItemVenta {
+  SERVICIO
+  PRODUCTO
+}
+
+enum TipoCobro {
+  COBRO
+  // Anulación de un cobro: monto negado, mismo medio. El cobro original no cambia.
+  REVERSO
+}
+
+enum EstadoCaja {
+  ABIERTA
+  CERRADA
+}
+
+enum TipoMovimientoCaja {
+  INGRESO_COBRO
+  EGRESO_GASTO
+  ENTRADA
+  SALIDA
+  REVERSO
+}
+
+// Venta de recepción. Importes en ARS Decimal(12,2). total = subtotal − descuento; el anticipo (seña
+// aprobada de la reserva) cubre parte del total y nunca es un ingreso de caja. Los importes y los ítems
+// no cambian: solo el estado avanza (PENDIENTE → COMPLETADA → ANULADA), controlado por trigger.
+model Venta {
+  id                String            @id @default(uuid()) @db.Uuid
+  organizacionId    String            @db.Uuid
+  sedeId            String            @db.Uuid
+  // Turno atendido que se cobra (opcional: una venta de productos sueltos no tiene reserva).
+  reservaId         String?           @db.Uuid
+  // Fecha local de la sede en que se registró la venta.
+  fecha             DateTime          @db.Date
+  subtotal          Decimal           @db.Decimal(12, 2)
+  descuento         Decimal           @default(0) @db.Decimal(12, 2)
+  total             Decimal           @db.Decimal(12, 2)
+  // Seña de Mercado Pago aplicada (0 si no hubo) y el pago que la respalda.
+  anticipo          Decimal           @default(0) @db.Decimal(12, 2)
+  pagoAnticipoId    String?           @db.Uuid
+  estado            EstadoVenta
+  // Clave del formulario: un doble envío devuelve la misma venta en vez de crear otra.
+  claveIdempotencia String
+  registradoPorId   String            @db.Uuid
+  createdAt         DateTime          @default(now())
+  completadaEn      DateTime?
+  anuladaEn         DateTime?
+  anuladaPorId      String?           @db.Uuid
+  motivoAnulacion   String?
+  sede              Sede              @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  reserva           Reserva?          @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+  pagoAnticipo      Pago?             @relation(fields: [pagoAnticipoId], references: [id], onDelete: Restrict)
+  items             VentaItem[]
+  cobros            CobroVenta[]
+  movimientosStock  MovimientoStock[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, claveIdempotencia])
+  @@index([sedeId, fecha])
+  @@index([reservaId])
+}
+
+// Ítem inmutable. SERVICIO: un ítem de la reserva con su precio pactado. PRODUCTO: cantidad en la unidad
+// del producto y precio de la sede al momento de vender; su egreso de stock es un MovimientoStock VENTA.
+model VentaItem {
+  id             String        @id @default(uuid()) @db.Uuid
+  organizacionId String        @db.Uuid
+  ventaId        String        @db.Uuid
+  posicion       Int
+  tipo           TipoItemVenta
+  reservaItemId  String?       @db.Uuid
+  productoId     String?       @db.Uuid
+  // Snapshot legible (servicio y profesional, o producto).
+  descripcion    String
+  cantidad       Decimal       @db.Decimal(14, 3)
+  precioUnitario Decimal       @db.Decimal(12, 2)
+  subtotal       Decimal       @db.Decimal(12, 2)
+  venta          Venta         @relation(fields: [organizacionId, ventaId], references: [organizacionId, id], onDelete: Restrict)
+  reservaItem    ReservaItem?  @relation(fields: [organizacionId, reservaItemId], references: [organizacionId, id], onDelete: Restrict)
+  producto       Producto?     @relation(fields: [organizacionId, productoId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([ventaId, posicion])
+}
+
+// Cobro manual de una venta, solo inserción. Un COBRO en efectivo lleva la caja abierta en que entró;
+// los demás medios la llevan si había una abierta (para el resumen por medio del cierre). El REVERSO
+// (único por cobro) niega el monto y, si es efectivo, sale de la caja abierta al momento de anular.
+model CobroVenta {
+  id                String          @id @default(uuid()) @db.Uuid
+  organizacionId    String          @db.Uuid
+  sedeId            String          @db.Uuid
+  ventaId           String          @db.Uuid
+  tipo              TipoCobro
+  medio             MedioCobro
+  monto             Decimal         @db.Decimal(12, 2)
+  // Número de operación, últimos dígitos de la tarjeta, etc. Texto libre opcional.
+  referencia        String?
+  cajaId            String?         @db.Uuid
+  revierteId        String?         @db.Uuid
+  motivo            String?
+  claveIdempotencia String?
+  registradoPorId   String          @db.Uuid
+  createdAt         DateTime        @default(now())
+  sede              Sede            @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  venta             Venta           @relation(fields: [organizacionId, ventaId], references: [organizacionId, id], onDelete: Restrict)
+  caja              Caja?           @relation(fields: [organizacionId, cajaId], references: [organizacionId, id], onDelete: Restrict)
+  revierte          CobroVenta?     @relation("ReversoCobro", fields: [organizacionId, revierteId], references: [organizacionId, id], onDelete: Restrict)
+  reverso           CobroVenta?     @relation("ReversoCobro")
+  movimientoCaja    MovimientoCaja?
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, revierteId])
+  @@unique([organizacionId, claveIdempotencia])
+  @@index([ventaId])
+  @@index([cajaId])
+  @@index([sedeId, createdAt])
+}
+
+// Caja de una sede desde su apertura hasta su cierre. Una sola ABIERTA por sede (índice único parcial).
+// El cierre guarda esperado, contado y diferencia, y ya no cambia: las correcciones posteriores son
+// movimientos de la caja que esté abierta.
+model Caja {
+  id             String           @id @default(uuid()) @db.Uuid
+  organizacionId String           @db.Uuid
+  sedeId         String           @db.Uuid
+  estado         EstadoCaja
+  montoInicial   Decimal          @db.Decimal(12, 2)
+  abiertaPorId   String           @db.Uuid
+  abiertaEn      DateTime         @default(now())
+  cerradaPorId   String?          @db.Uuid
+  cerradaEn      DateTime?
+  esperado       Decimal?         @db.Decimal(12, 2)
+  contado        Decimal?         @db.Decimal(12, 2)
+  diferencia     Decimal?         @db.Decimal(12, 2)
+  observaciones  String?
+  sede           Sede             @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  movimientos    MovimientoCaja[]
+  cobros         CobroVenta[]
+
+  @@unique([organizacionId, id])
+  @@index([sedeId, abiertaEn])
+}
+
+// Movimiento de efectivo, solo inserción. monto con signo; esperado = montoInicial + suma de montos.
+model MovimientoCaja {
+  id              String             @id @default(uuid()) @db.Uuid
+  organizacionId  String             @db.Uuid
+  sedeId          String             @db.Uuid
+  cajaId          String             @db.Uuid
+  tipo            TipoMovimientoCaja
+  monto           Decimal            @db.Decimal(12, 2)
+  motivo          String?
+  // Origen: el cobro en efectivo (o su reverso), el gasto en efectivo (o su reverso), o el movimiento revertido.
+  cobroId         String?            @db.Uuid
+  gastoId         String?            @db.Uuid
+  revierteId      String?            @db.Uuid
+  registradoPorId String             @db.Uuid
+  orden           Int                @default(autoincrement())
+  createdAt       DateTime           @default(now())
+  sede            Sede               @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  caja            Caja               @relation(fields: [organizacionId, cajaId], references: [organizacionId, id], onDelete: Restrict)
+  cobro           CobroVenta?        @relation(fields: [organizacionId, cobroId], references: [organizacionId, id], onDelete: Restrict)
+  gasto           Gasto?             @relation(fields: [organizacionId, gastoId], references: [organizacionId, id], onDelete: Restrict)
+  revierte        MovimientoCaja?    @relation("ReversoCaja", fields: [organizacionId, revierteId], references: [organizacionId, id], onDelete: Restrict)
+  reverso         MovimientoCaja?    @relation("ReversoCaja")
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, cobroId])
+  @@unique([organizacionId, gastoId])
+  @@unique([organizacionId, revierteId])
+  @@index([cajaId, orden])
 }

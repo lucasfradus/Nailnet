@@ -4,9 +4,16 @@
 *{box-sizing:border-box}
 body{margin:0;background:var(--fondo);color:var(--texto);font-family:var(--font-sans);line-height:1.5}
 main{min-height:100dvh;max-width:720px;margin:auto;padding:24px 16px;display:flex;flex-direction:column;gap:16px}
-header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--borde);padding-bottom:16px}
+header{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px}
 .marca{display:block;line-height:0}.marca img{height:28px;width:auto}
-.progreso{font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--acento)}
+/* Barra de pasos: fija arriba al hacer scroll */
+.barra{position:sticky;top:0;z-index:2;display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:12px;row-gap:10px;margin:-8px -16px 0;padding:10px 16px 12px;background:var(--fondo);border-bottom:1px solid var(--borde)}
+.etapa{margin:0;display:flex;flex-direction:column;line-height:1.25}
+.etapa small{font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--acento)}
+.etapa strong{font-size:16px;font-weight:600}
+.segmentos{grid-column:1/-1;display:flex;gap:4px}
+.segmentos span{flex:1;height:4px;border-radius:2px;background:var(--borde)}
+.segmentos .hecho{background:var(--acento)}
 footer{margin-top:auto;font-size:12px;color:var(--suave);padding-top:24px}
 h2{font:700 clamp(28px,6vw,40px)/1.1 var(--font-sans);letter-spacing:var(--tracking-heading);margin:8px 0 8px;outline:none}
 h3{font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:var(--acento);margin:24px 0 8px}
@@ -15,7 +22,7 @@ h3{font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;co
 button{font:inherit;color:inherit;cursor:pointer}
 button:disabled{cursor:default;opacity:.55}
 button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid var(--acento);outline-offset:2px}
-.volver{align-self:flex-start;background:none;border:0;padding:4px 0;color:var(--acento)}
+.volver{width:40px;height:40px;display:grid;place-items:center;background:var(--color-secondary);border:1px solid var(--borde);border-radius:50%;padding:0;font-size:18px;color:var(--acento)}.volver:hover{background:var(--teal-100)}
 .opciones{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .opcion{width:100%;display:flex;justify-content:space-between;align-items:center;gap:16px;text-align:left;background:var(--superficie);border:1px solid var(--borde);border-radius:var(--radius);padding:16px;min-height:56px}
 .opcion:hover{border-color:var(--acento);background:var(--teal-50)}
@@ -47,7 +54,7 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
 .estado{font-size:17px;margin:0 0 12px}
 .estado-confirmada{color:var(--ok)}
 .retencion{margin:0 0 16px;font-variant-numeric:tabular-nums}
-@media(min-width:640px){main{padding:40px 24px}}
+@media(min-width:640px){main{padding:40px 24px}.barra{margin-inline:-24px;padding-inline:24px}}
 .opcion .flecha{color:var(--acento)}
 .precio{white-space:nowrap;font-weight:600}
 /* Portada del primer paso */
@@ -84,9 +91,10 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
 .resumen.con-foto{display:grid;grid-template-columns:88px 1fr}
 .resumen-foto{width:100%;height:100%;object-fit:cover;display:block;font-size:28px}
 .resumen dl,dl.resumen{margin:0;padding:12px 16px;display:grid;gap:4px}
-.resumen dl div,dl.resumen div{display:flex;gap:12px;justify-content:space-between;align-items:baseline;flex-wrap:wrap}
+.resumen dl div,dl.resumen div{display:grid;gap:0}
 .resumen dt{color:var(--suave);font-size:13px}
-.resumen dd{margin:0;text-align:right}
+.resumen dd{margin:0;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.cambiar{flex:none;font-size:14px;padding:4px 0}
 .con-avatar{display:inline-flex;align-items:center;gap:6px}
 @media(min-width:640px){.servicios{grid-template-columns:1fr 1fr}.servicio{grid-template-columns:1fr;grid-template-rows:180px auto}.servicio-foto{min-height:0}}
 .sin-foto.avatar,.sin-foto.servicio-foto,.sin-foto.resumen-foto{display:grid}
@@ -103,4 +111,7 @@ button:focus-visible,input:focus-visible,summary:focus-visible{outline:2px solid
 .ticket dt{color:var(--suave);font-size:13px}
 .ticket dd{margin:0}
 .sin-foto.ticket-foto{display:grid}
-.resumen.con-foto dl div{flex-direction:column;gap:0}.resumen.con-foto dd{text-align:left}
+/* Lo elegido antes, al volver a un paso */
+.opcion[aria-current=true],.servicio[aria-current=true],.profesional[aria-current=true]{border-color:var(--acento);box-shadow:inset 0 0 0 1px var(--acento);background:var(--teal-50)}
+.horario[aria-current=true]{background:var(--acento);border-color:var(--acento);color:var(--acento-texto)}
+.dias{position:relative;scroll-behavior:smooth}

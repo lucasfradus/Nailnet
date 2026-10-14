@@ -49,7 +49,8 @@ function useRetornoDePago(token: string) {
   });
   useEffect(() => {
     if (!retorno) return;
-    window.history.replaceState(null, "", window.location.pathname);
+    // Conserva el estado de la entrada: ahí guarda App el paso y la selección.
+    window.history.replaceState(window.history.state, "", window.location.pathname);
     if (retorno.pagoId && /^\d{1,30}$/.test(retorno.pagoId)) api.verificarPago(token, retorno.pagoId).catch(() => { /* la notificación de Mercado Pago llega igual */ });
   }, [retorno, token]);
   return retorno !== null;

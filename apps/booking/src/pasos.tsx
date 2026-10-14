@@ -2,14 +2,15 @@ import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "rea
 import { validarReservaPublica, type ProfesionalPublico, type ReservaPublicaRespuesta, type SedePublica, type ServicioPublico, type TurnoPublico } from "@nailnet/contracts/publico";
 import { api, ErrorApi, urlImagen, useCarga, type Carga } from "./api";
 import { dinero, duracion, fechaEn, fechaLarga, hora, partesDia, sumarDias } from "./formato";
+import type { NombrePaso } from "./navegacion";
 
 /** Días que ofrece el selector. El horizonte real lo aplica el backend por sede: un día fuera de él viene sin turnos. */
 const DIAS_VISIBLES = 14;
 
 export function Paso({ titulo, ayuda, children }: { titulo: string; ayuda?: string; children: ReactNode }) {
   const encabezado = useRef<HTMLHeadingElement>(null);
-  // Al cambiar de paso, el foco va al título para lectores de pantalla y teclado.
-  useEffect(() => { encabezado.current?.focus(); }, [titulo]);
+  // Al cambiar de paso se vuelve arriba (barra y resumen a la vista) y el foco va al título para lectores de pantalla y teclado.
+  useEffect(() => { window.scrollTo(0, 0); encabezado.current?.focus({ preventScroll: true }); }, [titulo]);
   return <section className="paso"><h2 tabIndex={-1} ref={encabezado}>{titulo}</h2>{ayuda && <p className="ayuda">{ayuda}</p>}{children}</section>;
 }
 
@@ -32,31 +33,27 @@ export function Foto({ ruta, nombre, className }: { ruta: string | null; nombre:
   return <img src={src} alt="" className={className} loading="lazy" decoding="async" onError={() => setFallo(true)} />;
 }
 
-export function PasoSede({ onElegir }: { onElegir: (sede: SedePublica, unica: boolean) => void }) {
-  const carga = useCarga(s => api.sedes(s), []);
-  const sedes = carga.datos;
-  useEffect(() => { if (sedes?.length === 1) onElegir(sedes[0]!, true); }, [sedes, onElegir]);
-  return <>
-    <div className="portada">
-      <img src="/portada.webp" alt="" width={1600} height={800} />
-      <div><p className="etiqueta">Tu momento, a tu tiempo</p><p className="lema">Reservá tu turno en un minuto.</p></div>
-    </div>
-    <Paso titulo="¿En qué sede?">
-      <Cargado carga={carga} vacio="Por ahora no hay sedes con reservas online.">
-        {lista => <ul className="opciones">{lista.map(s => <li key={s.id}><button type="button" className="opcion" onClick={() => onElegir(s, false)}><strong>{s.nombre}</strong><span className="flecha" aria-hidden="true">→</span></button></li>)}</ul>}
-      </Cargado>
-    </Paso>
-  </>;
+/** Marca la opción elegida antes, para que al volver a un paso se vea qué se había elegido. */
+const marcada = (si: boolean) => (si ? "true" : undefined);
+
+/** Con una sola sede la elige App: mientras tanto no se muestra la pregunta, para que no aparezca y desaparezca. */
+export function PasoSede({ carga, elegida, onElegir }: { carga: Carga<SedePublica[]>; elegida?: string; onElegir: (sede: SedePublica) => void }) {
+  if ((carga.cargando && !carga.datos) || carga.datos?.length === 1) return <p className="cargando" role="status">Cargando…</p>;
+  return <Paso titulo="¿En qué sede?">
+    <Cargado carga={carga} vacio="Por ahora no hay sedes con reservas online.">
+      {lista => <ul className="opciones">{lista.map(s => <li key={s.id}><button type="button" className="opcion" aria-current={marcada(s.id === elegida)} onClick={() => onElegir(s)}><strong>{s.nombre}</strong><span className="flecha" aria-hidden="true">→</span></button></li>)}</ul>}
+    </Cargado>
+  </Paso>;
 }
 
-export function PasoServicio({ sede, onElegir }: { sede: SedePublica; onElegir: (servicio: ServicioPublico) => void }) {
+export function PasoServicio({ sede, elegido, onElegir }: { sede: SedePublica; elegido?: string; onElegir: (servicio: ServicioPublico) => void }) {
   const carga = useCarga(s => api.servicios(sede.id, s), [sede.id]);
   return <Paso titulo="Elegí el servicio" ayuda="La seña se descuenta del precio y se abona al reservar.">
     <Cargado carga={carga} vacio="Esta sede todavía no tiene servicios para reservar online.">
       {lista => [...new Set(lista.map(s => s.categoria))].map(categoria => <div key={categoria} className="grupo">
         <h3>{categoria}</h3>
         <ul className="servicios">{lista.filter(s => s.categoria === categoria).map(s => <li key={s.id}>
-          <button type="button" className="servicio" onClick={() => onElegir(s)}>
+          <button type="button" className="servicio" aria-current={marcada(s.id === elegido)} onClick={() => onElegir(s)}>
             <Foto ruta={s.imagenUrl} nombre={s.nombre} className="servicio-foto" />
             <span className="servicio-cuerpo">
               <strong>{s.nombre}</strong>
@@ -71,16 +68,18 @@ export function PasoServicio({ sede, onElegir }: { sede: SedePublica; onElegir: 
   </Paso>;
 }
 
-export function PasoProfesional({ sede, servicio, onElegir }: { sede: SedePublica; servicio: ServicioPublico; onElegir: (profesional: ProfesionalPublico | null) => void }) {
+export function PasoProfesional({ sede, servicio, elegido, onElegir }: {
+  sede: SedePublica; servicio: ServicioPublico; elegido: ProfesionalPublico | null | undefined; onElegir: (profesional: ProfesionalPublico | null) => void;
+}) {
   const carga = useCarga(s => api.profesionales(sede.id, servicio.id, s), [sede.id, servicio.id]);
   return <Paso titulo="¿Con quién?" ayuda="Si te da lo mismo, te mostramos todos los horarios disponibles.">
     <Cargado carga={carga} vacio="No hay profesionales disponibles para este servicio en esta sede.">
       {lista => <ul className="profesionales">
-        <li><button type="button" className="profesional cualquiera" onClick={() => onElegir(null)}>
+        <li><button type="button" className="profesional cualquiera" aria-current={marcada(elegido === null)} onClick={() => onElegir(null)}>
           <span className="grupo-fotos" aria-hidden="true">{lista.slice(0, 3).map(p => <Foto key={p.id} ruta={p.fotoUrl} nombre={p.nombre} className="avatar" />)}</span>
           <span><strong>Cualquier profesional</strong><small>Más horarios disponibles</small></span>
         </button></li>
-        {lista.map(p => <li key={p.id}><button type="button" className="profesional" onClick={() => onElegir(p)}>
+        {lista.map(p => <li key={p.id}><button type="button" className="profesional" aria-current={marcada(p.id === elegido?.id)} onClick={() => onElegir(p)}>
           <Foto ruta={p.fotoUrl} nombre={p.nombre} className="avatar grande" />
           <strong>{p.nombre}</strong>
         </button></li>)}
@@ -89,21 +88,27 @@ export function PasoProfesional({ sede, servicio, onElegir }: { sede: SedePublic
   </Paso>;
 }
 
-export function PasoHorario({ sede, servicio, profesional, fecha, aviso, onFecha, onElegir }: {
-  sede: SedePublica; servicio: ServicioPublico; profesional: ProfesionalPublico | null; fecha: string; aviso: string | null;
+export function PasoHorario({ sede, servicio, profesional, fecha, elegido, aviso, onFecha, onElegir }: {
+  sede: SedePublica; servicio: ServicioPublico; profesional: ProfesionalPublico | null; fecha: string; elegido?: TurnoPublico; aviso: string | null;
   onFecha: (fecha: string) => void; onElegir: (turno: TurnoPublico) => void;
 }) {
   const hoy = fechaEn(sede.timezone);
   const dias = Array.from({ length: DIAS_VISIBLES }, (_, i) => sumarDias(hoy, i));
+  // El día elegido queda a la vista en la tira aunque esté lejos (al volver a este paso, por ejemplo).
+  const tira = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const t = tira.current, dia = t?.querySelector<HTMLElement>("[aria-pressed=true]");
+    if (t && dia) t.scrollLeft = dia.offsetLeft - (t.clientWidth - dia.offsetWidth) / 2;
+  }, [fecha]);
   const carga = useCarga(s => api.disponibilidad(sede.id, fecha, servicio.id, profesional?.id ?? null, s), [sede.id, servicio.id, profesional?.id, fecha]);
   return <Paso titulo="Elegí día y horario">
     {aviso && <p className="error" role="alert">{aviso}</p>}
-    <div className="dias" role="group" aria-label="Día">
+    <div className="dias" role="group" aria-label="Día" ref={tira}>
       {dias.map(d => { const p = partesDia(d); return <button type="button" key={d} className="dia" aria-pressed={d === fecha} onClick={() => onFecha(d)}><small>{p.semana}</small><strong>{p.numero}</strong><small>{p.mes}</small></button>; })}
     </div>
     <Cargado carga={carga} vacio="No quedan horarios este día. Probá con otro.">
       {turnos => <ul className="horarios" aria-label={`Horarios del ${partesDia(fecha).semana} ${partesDia(fecha).numero}`}>
-        {turnos.map(t => <li key={t.inicio}><button type="button" className="horario" onClick={() => onElegir(t)}>{hora(t.inicio, sede.timezone)}</button></li>)}
+        {turnos.map(t => <li key={t.inicio}><button type="button" className="horario" aria-current={marcada(t.inicio === elegido?.inicio)} onClick={() => onElegir(t)}>{hora(t.inicio, sede.timezone)}</button></li>)}
       </ul>}
     </Cargado>
   </Paso>;
@@ -168,15 +173,25 @@ export function PasoDatos({ sede, servicio, profesional, turno, contacto, onCont
   </Paso>;
 }
 
-export function Resumen({ sede, servicio, profesional, turno }: { sede?: SedePublica; servicio?: ServicioPublico; profesional?: ProfesionalPublico | null; turno?: TurnoPublico }) {
+type Cambiable = Exclude<NombrePaso, "datos">;
+
+/** Lo elegido hasta ahora; cada dato lleva a su paso para cambiarlo sin retroceder de a uno. */
+export function Resumen({ sede, servicio, profesional, turno, cambiarSede, onCambiar }: {
+  sede?: SedePublica; servicio?: ServicioPublico; profesional?: ProfesionalPublico | null; turno?: TurnoPublico;
+  cambiarSede: boolean; onCambiar: (paso: Cambiable) => void;
+}) {
   if (!sede) return null;
+  const dato = (paso: Cambiable, etiqueta: string, valor: ReactNode, cambiable = true) => <div>
+    <dt>{etiqueta}</dt>
+    <dd><span className="con-avatar">{valor}</span>{cambiable && <button type="button" className="enlace cambiar" aria-label={`Cambiar ${etiqueta.toLowerCase()}`} onClick={() => onCambiar(paso)}>Cambiar</button>}</dd>
+  </div>;
   return <div className={servicio ? "resumen con-foto" : "resumen"}>
     {servicio && <Foto ruta={servicio.imagenUrl} nombre={servicio.nombre} className="resumen-foto" />}
     <dl>
-      <div><dt>Sede</dt><dd>{sede.nombre}</dd></div>
-      {servicio && <div><dt>Servicio</dt><dd>{servicio.nombre} · {dinero(servicio.precio)}</dd></div>}
-      {profesional !== undefined && <div><dt>Profesional</dt><dd className="con-avatar">{profesional && <Foto ruta={profesional.fotoUrl} nombre={profesional.nombre} className="avatar mini" />}{profesional?.nombre ?? "Cualquiera"}</dd></div>}
-      {turno && <div><dt>Turno</dt><dd>{fechaLarga(turno.inicio, sede.timezone)}, {hora(turno.inicio, sede.timezone)} h</dd></div>}
+      {dato("sede", "Sede", sede.nombre, cambiarSede)}
+      {servicio && dato("servicio", "Servicio", `${servicio.nombre} · ${dinero(servicio.precio)}`)}
+      {profesional !== undefined && dato("profesional", "Profesional", <>{profesional && <Foto ruta={profesional.fotoUrl} nombre={profesional.nombre} className="avatar mini" />}{profesional?.nombre ?? "Cualquiera"}</>)}
+      {turno && dato("horario", "Turno", `${fechaLarga(turno.inicio, sede.timezone)}, ${hora(turno.inicio, sede.timezone)} h`)}
     </dl>
   </div>;
 }

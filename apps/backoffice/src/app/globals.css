@@ -5,7 +5,7 @@
  * textos usan grises neutros y la escala tipográfica es compacta, para que se lea como herramienta
  * de trabajo y no como el portal de clientes.
  */
-:root{--color-foreground:#101828;--color-muted:#F5F6F8;--color-muted-foreground:#5D6B7E;--color-border:#E4E7EC;--color-input:#D0D5DD;--color-secondary:#FFFFFF;--color-secondary-foreground:#344054;--gris-50:#F9FAFB;--gris-100:#F2F4F7;--gris-200:#EAECF0;--texto-error:#B42318;--fondo-error:#FEF3F2;--radius:8px;--radius-md:6px;--radius-sm:4px;--shadow-card:0 1px 2px rgb(16 24 40 / .04);--alto-barra:56px;color-scheme:light}
+:root{--color-foreground:#101828;--color-muted:#F5F6F8;--color-muted-foreground:#5D6B7E;--color-border:#E4E7EC;--color-input:#D0D5DD;--color-secondary:#FFFFFF;--color-secondary-foreground:#344054;--gris-50:#F9FAFB;--gris-100:#F2F4F7;--gris-200:#EAECF0;--texto-error:#B42318;--fondo-error:#FEF3F2;--fondo-aviso:#FFFAEB;--texto-aviso:#B54708;--radius:8px;--radius-md:6px;--radius-sm:4px;--shadow-card:0 1px 2px rgb(16 24 40 / .04);--alto-barra:56px;color-scheme:light}
 *{box-sizing:border-box}
 body{margin:0;background:var(--color-muted);color:var(--color-foreground);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 a{color:var(--color-primary)}
@@ -83,7 +83,7 @@ details.fila{background:var(--color-background);border:1px solid var(--color-bor
 .estado-pendiente_pago,.estado-pago_en_revision{background:var(--color-warning-soft);border-color:#F5DDB0;color:var(--color-warning)}
 .estado-confirmada,.estado-atendida{background:var(--color-success-soft);border-color:#BFE3CF;color:var(--color-success)}
 .estado-cancelada,.estado-expirada,.estado-ausente{background:var(--fondo-error);border-color:#FECDCA;color:var(--texto-error)}
-.alerta{margin:0;padding:10px 12px;border-radius:var(--radius-md);font-size:13px;border:1px solid transparent}.alerta.error{background:var(--fondo-error);border-color:#FECDCA;color:var(--texto-error)}.alerta.ok{background:var(--color-success-soft);border-color:#BFE3CF;color:var(--color-success)}
+.alerta{margin:0;padding:10px 12px;border-radius:var(--radius-md);font-size:13px;border:1px solid transparent}.alerta.error{background:var(--fondo-error);border-color:#FECDCA;color:var(--texto-error)}.alerta.ok{background:var(--color-success-soft);border-color:#BFE3CF;color:var(--color-success)}.alerta.aviso{background:var(--fondo-aviso);border-color:#FEDF89;color:var(--texto-aviso)}
 
 /* Controles */
 input,select,textarea{font:inherit;font-size:14px;padding:7px 10px;border:1px solid var(--color-input);border-radius:var(--radius-md);background:var(--color-background);color:inherit;max-width:100%;box-shadow:0 1px 2px rgb(16 24 40 / .04)}

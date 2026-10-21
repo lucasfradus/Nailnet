@@ -90,6 +90,9 @@ test("profesionales, jornadas, calendario y recursos", async (t) => {
       await assert.rejects(crearExcepcion(db, a.admin.id, a.org.id, { sedeId: a.centro.id, fecha: "2099-02-30", rango: null }), DatosInvalidos);
       const cal = await calendarioSede(db, a.recepcion.id, a.org.id, a.centro.id);
       assert.deepEqual([cal.editable, cal.semana[6]?.[0]?.fin, cal.excepciones.filter(e => e.fecha === "2099-10-12").length], [false, 840, 2]);
+      // La jornada del lunes en Centro es 08:00-13:00 y la sede abre a las 09:00.
+      const centro = (await obtenerProfesional(db, a.admin.id, a.org.id, profId)).sedes.find(s => s.sedeId === a.centro.id);
+      assert.deepEqual(centro?.fueraDelHorario, { 1: [{ inicio: 480, fin: 540 }] }, "jornada fuera del horario de la sede");
       await assert.rejects(eliminarExcepcion(db, a.admin.id, a.org.id, feriado.id), AccesoDenegado);
       await assert.rejects(db.excepcionHorario.create({ data: { organizacionId: a.org.id, fecha: new Date("2099-01-01"), cerrado: false } }), "abierto sin rango");
     });

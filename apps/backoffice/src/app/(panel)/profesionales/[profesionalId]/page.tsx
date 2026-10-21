@@ -50,6 +50,7 @@ export default async function Profesional({ params }: { params: Promise<{ profes
     <div className="tabla">{p.sedes.map(s => <article key={s.sedeId} className={s.activo ? "fila" : "fila inactiva"}>
       <div className="fila-cabecera"><h2>{s.nombre}</h2><span className="tag">{s.activo ? "Activa" : "Desvinculada"}</span></div>
       <p>{textoSemana(s.semana)}</p>
+      {Object.keys(s.fueraDelHorario).length > 0 && <p className="alerta aviso">Fuera del horario de la sede, no se ofrecen turnos: {textoSemana(s.fueraDelHorario)}</p>}
       {s.editable && <details><summary>Editar jornada</summary>
         <Formulario accion={accionHorarioProfesional} boton="Guardar jornada">
           <input type="hidden" name="profesionalId" value={p.id} /><input type="hidden" name="sedeId" value={s.sedeId} />

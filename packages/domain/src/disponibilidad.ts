@@ -34,6 +34,35 @@ export function aIntervalos(rangos: readonly Rango[], fecha: string, tz: string)
   return rangos.map(r => ({ desde: aUtc(fecha, r.inicio, tz).getTime(), hasta: aUtc(fecha, r.fin, tz).getTime() }));
 }
 
+// ─── Ocupación ────────────────────────────────────────────────────────────────
+
+function interseccion(a: readonly Intervalo[], b: readonly Intervalo[]): Intervalo[] {
+  return a.flatMap(x => b.filter(y => cruza(x, y)).map(y => ({ desde: Math.max(x.desde, y.desde), hasta: Math.min(x.hasta, y.hasta) })));
+}
+function restar(base: readonly Intervalo[], quitar: readonly Intervalo[]): Intervalo[] {
+  return quitar.reduce<Intervalo[]>((resto, q) => resto.flatMap(r => !cruza(r, q) ? [r]
+    : [...(r.desde < q.desde ? [{ desde: r.desde, hasta: q.desde }] : []), ...(q.hasta < r.hasta ? [{ desde: q.hasta, hasta: r.hasta }] : [])]), [...base]);
+}
+/** Funde los intervalos que se pisan, para no contar dos veces el mismo tramo. */
+function unir(xs: readonly Intervalo[]): Intervalo[] {
+  return [...xs].sort((a, b) => a.desde - b.desde).reduce<Intervalo[]>((acc, x) => {
+    const ultimo = acc[acc.length - 1];
+    if (ultimo && x.desde <= ultimo.hasta) ultimo.hasta = Math.max(ultimo.hasta, x.hasta);
+    else acc.push({ ...x });
+    return acc;
+  }, []);
+}
+const minutos = (xs: readonly Intervalo[]) =>xs.reduce((m, x) => m + (x.hasta - x.desde), 0) / MIN;
+
+/**
+ * Ocupación de un profesional en un día: tiempo disponible (jornada dentro de la apertura de la sede,
+ * menos ausencias) contra el tiempo tomado por turnos dentro de ese disponible.
+ */
+export function ocupacionDelDia(d: { apertura: readonly Intervalo[]; jornada: readonly Intervalo[]; bloqueos: readonly Intervalo[]; turnos: readonly Intervalo[] }) {
+  const disponible = restar(interseccion(d.jornada, d.apertura), d.bloqueos);
+  return { disponibleMinutos: minutos(disponible), ocupadoMinutos: minutos(interseccion(disponible, unir(d.turnos))) };
+}
+
 // ─── Búsqueda ─────────────────────────────────────────────────────────────────
 
 export type ItemPedido = {

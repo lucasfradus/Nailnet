@@ -36,6 +36,23 @@ export function parsearRangos(texto: string): { error: string } | { rangos: Rang
 export function formatearRangos(rangos: readonly Rango[]): string {
   return [...rangos].sort((a, b) => a.inicio - b.inicio).map(r => `${aHora(r.inicio)}-${aHora(r.fin)}`).join(", ");
 }
+/** Partes de `rangos` que no cubre `contenedor` (p. ej. jornada fuera del horario de la sede). */
+export function fueraDe(rangos: readonly Rango[], contenedor: readonly Rango[]): Rango[] {
+  const cubre = [...contenedor].sort((a, b) => a.inicio - b.inicio);
+  const fuera: Rango[] = [];
+  for (const r of rangos) {
+    let desde = r.inicio;
+    for (const c of cubre) {
+      if (c.fin <= desde) continue;
+      if (c.inicio >= r.fin) break;
+      if (c.inicio > desde) fuera.push({ inicio: desde, fin: c.inicio });
+      desde = Math.max(desde, c.fin);
+      if (desde >= r.fin) break;
+    }
+    if (desde < r.fin) fuera.push({ inicio: desde, fin: r.fin });
+  }
+  return fuera;
+}
 
 /** Vigencias inclusivas por fecha local; null = sin límite. */
 export function vigenciasSeCruzan(d1: string | null, h1: string | null, d2: string | null, h2: string | null): boolean {

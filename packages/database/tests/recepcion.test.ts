@@ -10,6 +10,7 @@ import { crearCliente } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion, configurarSenaRecepcion } from "../src/configuracion.ts";
 import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
 import { TurnoNoDisponible, agendaSede, expirarRetenciones, tomarTurno } from "../src/reservas.ts";
+import { ocupacionSede } from "../src/disponibilidad.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -97,6 +98,18 @@ test("reserva manual en recepción y agenda (R01)", async (t) => {
       assert.ok(todo.items.length > ag.items.length);
       await assert.rejects(agendaSede(db, a.recepcion.id, O, { sedeId: a.sur.id, desde: FECHA, dias: 1 }, ahora), AccesoDenegado);
       await assert.rejects(agendaSede(db, a.recepcion.id, O, { sedeId: a.centro.id, desde: FECHA, dias: 3 }, ahora), DatosInvalidos);
+    });
+
+    await t.test("ocupación del día: turnos activos dentro de la jornada", async () => {
+      // Turnos con su buffer: 10:00 y 11:00 Semi (60), 14:00 Semi online (60), 11:00 y 15:00 Retiro (30).
+      const total = (o: Awaited<ReturnType<typeof ocupacionSede>>) => o.reduce((m, x) => m + x.ocupadoMinutos, 0);
+      const conPendientes = await ocupacionSede(db, a.recepcion.id, O, a.centro.id, FECHA, ahora);
+      assert.deepEqual(conPendientes.map(o => [o.profesional.nombre, o.disponibleMinutos]), [["Ana", 540], ["Bea", 540]]);
+      assert.equal(total(conPendientes), 240);
+      // Vencidas las pendientes de 11:00 y 14:00, dejan de ocupar.
+      assert.equal(total(await ocupacionSede(db, a.recepcion.id, O, a.centro.id, FECHA, new Date(ahora.getTime() + 16 * 60_000))), 120);
+      assert.deepEqual(await ocupacionSede(db, a.recepcion.id, O, a.centro.id, "2099-10-14", ahora), [], "miércoles: nadie trabaja");
+      await assert.rejects(ocupacionSede(db, a.recepcion.id, O, a.sur.id, FECHA, ahora), AccesoDenegado);
     });
   } finally { await db.$disconnect(); }
 });

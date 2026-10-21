@@ -5,6 +5,7 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { aLocal } from "@nailnet/domain/agenda";
 import { listarProfesionales } from "@nailnet/database/profesionales";
 import { agendaSede } from "@nailnet/database/reservas";
+import { ocupacionSede } from "@nailnet/database/disponibilidad";
 import { ventasDeReservas } from "@nailnet/database/ventas";
 import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
@@ -32,6 +33,8 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
     .catch(e => { if (e instanceof AccesoDenegado) return null; throw e; });
   if (!agenda) notFound();
   const profesionales = await listarProfesionales(db(), actorId, organizacion.id, { sedeId }).catch(() => []);
+  const ocupacion = semana ? [] : (await ocupacionSede(db(), actorId, organizacion.id, sedeId, fecha)).filter(o => !q.profesional || o.profesional.id === q.profesional);
+  const horas = (m: number) => `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60}` : ""}`;
   // O01: los turnos atendidos se cobran desde aquí; si ya tienen venta, se enlaza.
   const atendidas = agenda.items.filter(i => i.estado === "ATENDIDA" && i.posicion === 0).map(i => i.reservaId);
   const ventas = puede.verVentas ? await ventasDeReservas(db(), actorId, organizacion.id, sedeId, atendidas) : new Map<string, { ventaId: string; estado: string }>();
@@ -58,6 +61,10 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
       <label className="check"><input type="checkbox" name="cerrados" value="1" defaultChecked={q.cerrados === "1"} />Incluir cancelados y vencidos</label>
       <button className="secundario">Filtrar</button>
     </form>
+    {ocupacion.length > 0 && <div className="en-linea" aria-label="Ocupación del día">{ocupacion.map(o =>
+      <span key={o.profesional.id} className="tag" title={`${horas(o.ocupadoMinutos)} con turnos de ${horas(o.disponibleMinutos)} disponibles`}>
+        {o.profesional.nombre} {Math.round(100 * o.ocupadoMinutos / o.disponibleMinutos)}% · {horas(o.ocupadoMinutos)} de {horas(o.disponibleMinutos)}
+      </span>)}</div>}
 
     {!agenda.items.length && <p className="intro">Sin turnos{semana ? " esta semana" : " este día"}.</p>}
     {[...porDia.entries()].map(([d, items]) => <div key={d}>

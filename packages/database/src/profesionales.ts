@@ -1,5 +1,5 @@
 import { AccesoDenegado, tienePermiso, type Permiso } from "@nailnet/domain";
-import { aLocal, diaSemana, parsearRangos, solapan, validarFecha, vigenciasSeCruzan, type Rango } from "@nailnet/domain/agenda";
+import { aLocal, diaSemana, fueraDe, parsearRangos, solapan, validarFecha, vigenciasSeCruzan, type Rango } from "@nailnet/domain/agenda";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, exigirIds, sedesConPermiso } from "./access.ts";
@@ -92,11 +92,12 @@ export async function crearProfesional(db: Database, actorId: string, organizaci
 export async function obtenerProfesional(db: Database, actorId: string, organizacionId: string, profesionalId: string) {
   const { prof, visibles, sedes } = await contextoProfesional(db, actorId, organizacionId, profesionalId, "sede:leer");
   const admin = await sedesConPermiso(db, actorId, organizacionId, "profesional:administrar");
-  const [skills, servicios, horarios, bloqueos] = await Promise.all([
+  const [skills, servicios, horarios, bloqueos, horariosSede] = await Promise.all([
     db.profesionalSkill.findMany({ where: { profesionalId }, select: { skillId: true } }),
     db.profesionalServicio.findMany({ where: { profesionalId }, select: { servicioId: true } }),
     db.horarioProfesional.findMany({ where: { profesionalId, sedeId: { in: visibles.map(v => v.sedeId) } }, orderBy: [{ diaSemana: "asc" }, { inicioMinutos: "asc" }] }),
     db.bloqueoAgenda.findMany({ where: { profesionalId, fin: { gt: new Date() } }, orderBy: { inicio: "asc" }, take: 50 }),
+    db.horarioSede.findMany({ where: { sedeId: { in: visibles.map(v => v.sedeId) }, vigenteDesde: null, vigenteHasta: null } }),
   ]);
   const nombres = new Map(sedes.map(s => [s.id, s.nombre]));
   const editable = visibles.some(v => admin.ids.has(v.sedeId)) || admin.organizacional;
@@ -104,10 +105,14 @@ export async function obtenerProfesional(db: Database, actorId: string, organiza
     id: prof.id, nombre: prof.nombre, apellido: prof.apellido, activo: prof.activo, fotoId: prof.fotoId, editable,
     // Las sedes de otros alcances no se nombran: solo se informa que existen.
     otrasSedes: prof.sedes.length - visibles.length,
-    sedes: visibles.map(v => ({
-      sedeId: v.sedeId, nombre: nombres.get(v.sedeId)!, activo: v.activo, editable: admin.ids.has(v.sedeId),
-      semana: agruparSemana(horarios.filter(h => h.sedeId === v.sedeId && h.vigenteDesde === null && h.vigenteHasta === null)),
-    })),
+    sedes: visibles.map(v => {
+      const semana = agruparSemana(horarios.filter(h => h.sedeId === v.sedeId && h.vigenteDesde === null && h.vigenteHasta === null));
+      const sede = agruparSemana(horariosSede.filter(h => h.sedeId === v.sedeId));
+      // Tramos de la jornada en los que la sede está cerrada: no se van a ofrecer como turnos.
+      const fueraDelHorario: Semana = {};
+      for (const d of DIAS) { const f = fueraDe(semana[d] ?? [], sede[d] ?? []); if (f.length) fueraDelHorario[d] = f; }
+      return { sedeId: v.sedeId, nombre: nombres.get(v.sedeId)!, activo: v.activo, editable: admin.ids.has(v.sedeId), semana, fueraDelHorario };
+    }),
     skillIds: skills.map(s => s.skillId), servicioIds: servicios.map(s => s.servicioId),
     bloqueos: bloqueos.map(b => ({ id: b.id, inicio: b.inicio, fin: b.fin, motivo: b.motivo })),
   };

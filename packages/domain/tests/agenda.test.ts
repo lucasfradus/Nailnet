@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aLocal, aUtc, diaSemana, formatearRangos, parsearRangos, solapan, validarFecha, vigenciasSeCruzan } from "../src/agenda.ts";
+import { aLocal, aUtc, diaSemana, formatearRangos, fueraDe, parsearRangos, solapan, validarFecha, vigenciasSeCruzan } from "../src/agenda.ts";
+
+test("jornada fuera del horario de la sede", () => {
+  const sede = [{ inicio: 540, fin: 780 }, { inicio: 840, fin: 1200 }]; // 09-13, 14-20
+  assert.deepEqual(fueraDe([{ inicio: 540, fin: 780 }], sede), [], "igual al horario");
+  assert.deepEqual(fueraDe([{ inicio: 600, fin: 720 }, { inicio: 900, fin: 1200 }], sede), [], "dentro, con pausa");
+  assert.deepEqual(fueraDe([{ inicio: 480, fin: 600 }], sede), [{ inicio: 480, fin: 540 }], "empieza antes");
+  assert.deepEqual(fueraDe([{ inicio: 720, fin: 900 }], sede), [{ inicio: 780, fin: 840 }], "cruza la pausa");
+  assert.deepEqual(fueraDe([{ inicio: 1140, fin: 1260 }], sede), [{ inicio: 1200, fin: 1260 }], "termina después");
+  assert.deepEqual(fueraDe([{ inicio: 540, fin: 600 }], []), [{ inicio: 540, fin: 600 }], "sede cerrada ese día");
+});
 
 test("rangos horarios: formato, orden, múltiplos de 5 y sin superposición", () => {
   const r = parsearRangos("14:00-20:00, 09:00-13:00");

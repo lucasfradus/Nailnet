@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { aUtc } from "../src/agenda.ts";
-import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, jornadaDelDia, type Consulta, type DatosProfesional, type ItemPedido } from "../src/disponibilidad.ts";
+import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, jornadaDelDia, ocupacionDelDia, type Consulta, type DatosProfesional, type ItemPedido } from "../src/disponibilidad.ts";
 
 const TZ = "America/Argentina/Buenos_Aires";
 const FECHA = "2099-10-13"; // martes
@@ -89,4 +89,13 @@ test("anticipación y horizonte acotan los inicios", () => {
   assert.deepEqual(inicios(consulta({ desdeMs: h("10:30") })), ["11:00", "12:00"]);
   assert.deepEqual(inicios(consulta({ hastaMs: h("10:00") })), ["09:00", "10:00"]);
   assert.equal(asignarEn(consulta({ desdeMs: h("10:30") }), h("10:00")), null);
+});
+
+test("ocupación del día: disponible = jornada ∩ apertura − bloqueos; ocupado = turnos dentro de eso", () => {
+  const base = { apertura: [iv("09:00", "13:00"), iv("14:00", "20:00")], jornada: [iv("08:00", "18:00")], bloqueos: [], turnos: [] };
+  assert.deepEqual(ocupacionDelDia(base), { disponibleMinutos: 480, ocupadoMinutos: 0 }, "jornada recortada a la apertura");
+  assert.deepEqual(ocupacionDelDia({ ...base, bloqueos: [iv("10:00", "11:00"), iv("10:30", "12:00")] }), { disponibleMinutos: 360, ocupadoMinutos: 0 }, "bloqueos superpuestos no restan dos veces");
+  assert.deepEqual(ocupacionDelDia({ ...base, turnos: [iv("12:00", "15:00")] }), { disponibleMinutos: 480, ocupadoMinutos: 120 }, "turno que cruza la pausa solo cuenta lo disponible");
+  assert.deepEqual(ocupacionDelDia({ ...base, turnos: [iv("09:00", "10:00"), iv("09:30", "10:30")] }), { disponibleMinutos: 480, ocupadoMinutos: 90 }, "turnos superpuestos no cuentan dos veces");
+  assert.deepEqual(ocupacionDelDia({ ...base, apertura: [] }), { disponibleMinutos: 0, ocupadoMinutos: 0 }, "sede cerrada");
 });

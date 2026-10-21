@@ -1,7 +1,7 @@
 import { AccesoDenegado } from "@nailnet/domain";
 import { aLocal, aUtc, validarFecha } from "@nailnet/domain/agenda";
 import { servicioEfectivo, type Sena } from "@nailnet/domain/catalogo";
-import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, jornadaDelDia, type Consulta, type DatosProfesional, type Intervalo, type Turno } from "@nailnet/domain/disponibilidad";
+import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, jornadaDelDia, ocupacionDelDia, type Consulta, type DatosProfesional, type Intervalo, type Turno } from "@nailnet/domain/disponibilidad";
 import type { Database } from "./client.ts";
 import type { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds, sedesConPermiso } from "./access.ts";
@@ -24,6 +24,8 @@ const fecha = (d: Date | null) => (d === null ? null : d.toISOString().slice(0, 
 const senaDe = (tipo: string | null, valor: Prisma.Decimal | null): Sena => (tipo ? { tipo: tipo as "FIJA", valor: valor === null ? null : tipo === "PORCENTAJE" ? valor.toFixed(0) : valor.toFixed(2) } : null);
 const sumarDias = (f: string, n: number) => new Date(Date.parse(`${f}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const MARGEN = 4 * 3_600_000;
+const semanal = <T extends { diaSemana: number; inicioMinutos: number; finMinutos: number; vigenteDesde: Date | null; vigenteHasta: Date | null }>(f: T) =>
+  ({ diaSemana: f.diaSemana, inicioMinutos: f.inicioMinutos, finMinutos: f.finMinutos, vigenteDesde: fecha(f.vigenteDesde), vigenteHasta: fecha(f.vigenteHasta) });
 
 /**
  * Arma la consulta del motor desde la base para un pedido ya autorizado. Se usa igual para mostrar
@@ -92,8 +94,6 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
   const bloqueos = await db.bloqueoAgenda.findMany({ where: { profesionalId: { in: profIds }, inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } } });
   const horarioSede = await db.horarioSede.findMany({ where: { sedeId } });
   const excepciones = await db.excepcionHorario.findMany({ where: { organizacionId, fecha: new Date(`${pedido.fecha}T00:00:00Z`), OR: [{ sedeId }, { sedeId: null }] } });
-  const semanal = <T extends { diaSemana: number; inicioMinutos: number; finMinutos: number; vigenteDesde: Date | null; vigenteHasta: Date | null }>(f: T) =>
-    ({ diaSemana: f.diaSemana, inicioMinutos: f.inicioMinutos, finMinutos: f.finMinutos, vigenteDesde: fecha(f.vigenteDesde), vigenteHasta: fecha(f.vigenteHasta) });
   const apertura = aIntervalos(aperturaDelDia(horarioSede.map(semanal), excepciones.filter(e => e.sedeId), excepciones.filter(e => !e.sedeId), pedido.fecha), pedido.fecha, tz);
 
   const datos = new Map<string, DatosProfesional>(profIds.map(id => {
@@ -148,6 +148,39 @@ export async function consultarDisponibilidad(db: Database, actorId: string | nu
   } else if (pedido.canal !== "ONLINE") throw new AccesoDenegado();
   const { consulta, nombres } = await cargarConsulta(db, organizacionId, pedido, ahora);
   return buscarTurnos(consulta).map(t => presentar(t, nombres));
+}
+
+/**
+ * Ocupación del día por profesional activo de la sede: minutos disponibles (jornada dentro de la
+ * apertura, menos ausencias) y minutos tomados por turnos que ocupan agenda.
+ */
+export async function ocupacionSede(db: Database, actorId: string, organizacionId: string, sedeId: string, dia: string, ahora = new Date()) {
+  exigirIds(sedeId);
+  if (!validarFecha(dia)) throw new DatosInvalidos("Fecha inválida");
+  const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
+  if (!ids.has(sedeId)) throw new AccesoDenegado();
+  const { timezone: tz } = await db.sede.findUniqueOrThrow({ where: { id: sedeId }, select: { timezone: true } });
+  const inicioDia = aUtc(dia, 0, tz).getTime(), finDia = aUtc(dia, 1440, tz).getTime();
+  const ventana = { gte: new Date(inicioDia - MARGEN), lt: new Date(finDia + MARGEN) };
+  const profesionales = await db.profesional.findMany({ where: { organizacionId, activo: true, sedes: { some: { sedeId, activo: true } } }, select: { id: true, nombre: true, apellido: true }, orderBy: { nombre: "asc" } });
+  const profIds = profesionales.map(p => p.id);
+  const [horarios, turnos, bloqueos, horarioSede, excepciones] = await Promise.all([
+    db.horarioProfesional.findMany({ where: { profesionalId: { in: profIds }, sedeId } }),
+    db.reservaItem.findMany({ where: { profesionalId: { in: profIds }, ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, reserva: reservaActiva(ahora) }, select: { profesionalId: true, ocupaDesde: true, ocupaHasta: true } }),
+    db.bloqueoAgenda.findMany({ where: { profesionalId: { in: profIds }, inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } } }),
+    db.horarioSede.findMany({ where: { sedeId } }),
+    db.excepcionHorario.findMany({ where: { organizacionId, fecha: new Date(`${dia}T00:00:00Z`), OR: [{ sedeId }, { sedeId: null }] } }),
+  ]);
+  const apertura = aIntervalos(aperturaDelDia(horarioSede.map(semanal), excepciones.filter(e => e.sedeId), excepciones.filter(e => !e.sedeId), dia), dia, tz);
+  return profesionales.map(p => ({
+    profesional: p,
+    ...ocupacionDelDia({
+      apertura,
+      jornada: aIntervalos(jornadaDelDia(horarios.filter(h => h.profesionalId === p.id).map(semanal), dia), dia, tz),
+      bloqueos: bloqueos.filter(b => b.profesionalId === p.id).map(b => ({ desde: b.inicio.getTime(), hasta: b.fin.getTime() })),
+      turnos: turnos.filter(t => t.profesionalId === p.id).map(t => ({ desde: t.ocupaDesde.getTime(), hasta: t.ocupaHasta.getTime() })),
+    }),
+  })).filter(o => o.disponibleMinutos > 0);
 }
 
 export { asignarEn };

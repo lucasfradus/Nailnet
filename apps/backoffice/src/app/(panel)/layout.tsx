@@ -15,7 +15,7 @@ export default async function Panel({ children }: { children: React.ReactNode })
   const grupos: GrupoMenu[] = [
     { items: [
       { href: "/", etiqueta: "Inicio", icono: "inicio" },
-      ...puede.verSedes ? [{ href: "/agenda", etiqueta: "Agenda", icono: "agenda" } as const] : [],
+      ...puede.verSedes ? [{ href: "/recepcion", etiqueta: "Recepción", icono: "recepcion" } as const, { href: "/agenda", etiqueta: "Agenda", icono: "agenda" } as const] : [],
       ...puede.verClientes ? [{ href: "/clientes", etiqueta: "Clientes", icono: "clientes" } as const] : [],
       ...puede.verVentas ? [{ href: "/ventas", etiqueta: "Ventas", icono: "ventas" } as const] : [],
       ...puede.verCaja ? [{ href: "/caja", etiqueta: "Caja", icono: "caja" } as const] : [],

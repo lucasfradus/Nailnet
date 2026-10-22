@@ -182,6 +182,7 @@ model Sede {
   cobrosVenta             CobroVenta[]
   cajas                   Caja[]
   movimientosCaja         MovimientoCaja[]
+  presencias              PresenciaProfesional[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -588,9 +589,30 @@ model Profesional {
   bloqueos       BloqueoAgenda[]
   reservaItems   ReservaItem[]
   ventaItems     VentaItem[]
+  presencias     PresenciaProfesional[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, usuarioId])
+}
+
+// Tablero de recepción (doc 29): la profesional está en el local. Recepción marca la entrada y la salida;
+// puede haber varias por día (turno mañana y tarde). Una sola abierta por profesional, en cualquier sede
+// (índice parcial en la migración).
+model PresenciaProfesional {
+  id             String      @id @default(uuid()) @db.Uuid
+  organizacionId String      @db.Uuid
+  sedeId         String      @db.Uuid
+  profesionalId  String      @db.Uuid
+  entrada        DateTime
+  salida         DateTime?
+  entradaPorId   String      @db.Uuid
+  salidaPorId    String?     @db.Uuid
+  profesional    Profesional @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+  sede           Sede        @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([organizacionId, id])
+  @@index([sedeId, entrada])
+  @@index([profesionalId, entrada])
 }
 
 model ProfesionalSede {
@@ -737,6 +759,10 @@ model Reserva {
   reemplazadaPor Reserva?        @relation("Reprogramacion")
   // O01 «Atender ahora» (doc 27): cliente que llegó sin turno; el turno arranca al crearse. Para reportes.
   sinTurnoPrevio Boolean         @default(false)
+  // Tablero de recepción (doc 29): la atención empezó (al despachar a una clienta sin turno, o cuando llega
+  // la clienta con turno) y terminó («Terminó» libera a la profesional y recorta la agenda a ese minuto).
+  iniciadaEn     DateTime?
+  terminadaEn    DateTime?
   creadoPor      String?         @db.Uuid
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

@@ -266,7 +266,7 @@ La seña ya está identificada (`Venta.pagoAnticipoId`), así que también se pu
 
 - **Cobro en efectivo sin caja abierta:** hoy se rechaza. No se preguntó explícitamente, pero es coherente con el arqueo.
 - **Facturación (D9)** con el contador: cuándo se emite y cómo se trata la seña.
-- **«Atender ahora» con duración real:** el turno ocupa la duración del catálogo. Si un servicio se extiende, la agenda no se corre sola.
+- **«Atender ahora» con duración real:** el turno ocupa la duración del catálogo. Si un servicio se extiende, la agenda no se corre sola. Si termina antes, «Terminó» en el tablero de recepción recorta la agenda (doc 29).
 
 ## Pendiente
 

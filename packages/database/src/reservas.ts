@@ -4,7 +4,7 @@ import { aCentavos } from "@nailnet/domain/catalogo";
 import { asignarEn } from "@nailnet/domain/disponibilidad";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
-import { DatosInvalidos, exigirIds, sedesConPermiso } from "./access.ts";
+import { DatosInvalidos, auditar, exigirIds, sedesConPermiso } from "./access.ts";
 import { configuracionEfectiva } from "./configuracion.ts";
 import { ConfiguracionIncompleta, cargarConsulta, reservaActiva, type Pedido } from "./disponibilidad.ts";
 import { encolarEmailReserva } from "./emails.ts";
@@ -102,7 +102,8 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
     const expiraEn = exigeSena ? new Date(ahora.getTime() + config.retencionMinutos.valor! * 60_000) : null;
 
     const sinTurnoPrevio = !!pedido.sinTurnoPrevio;
-    const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId, sinTurnoPrevio }, turno, efectivos);
+    // Sin turno previo la clienta ya está en el local: la atención empieza con el turno (doc 29).
+    const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId, sinTurnoPrevio, iniciadaEn: sinTurnoPrevio ? pedido.inicio : null }, turno, efectivos);
     await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena, ...(sinTurnoPrevio ? { sinTurnoPrevio } : {}) });
     return r;
   }, { maxWait: 10_000, timeout: 20_000 }));
@@ -143,7 +144,7 @@ export async function atenderAhora(db: Database, actorId: string, organizacionId
 type Asignado = NonNullable<ReturnType<typeof asignarEn>>;
 type Efectivos = Awaited<ReturnType<typeof cargarConsulta>>["efectivos"];
 /** Escribe reserva, ítems y recursos. `congelados` (por posición) conserva precio y seña de una reserva anterior. */
-async function escribirTurno(tx: Tx, organizacionId: string, base: { sedeId: string; clienteId: string | null; canal: "ONLINE" | "RECEPCION"; estado: Estado; expiraEn: Date | null; notas: string | null; creadoPor: string | null; reemplazaId?: string; sinTurnoPrevio?: boolean }, turno: Asignado, efectivos: Efectivos, congelados?: Map<number, { precio: string; sena: string | null }>): Promise<TurnoTomado> {
+async function escribirTurno(tx: Tx, organizacionId: string, base: { sedeId: string; clienteId: string | null; canal: "ONLINE" | "RECEPCION"; estado: Estado; expiraEn: Date | null; notas: string | null; creadoPor: string | null; reemplazaId?: string; sinTurnoPrevio?: boolean; iniciadaEn?: Date | null }, turno: Asignado, efectivos: Efectivos, congelados?: Map<number, { precio: string; sena: string | null }>): Promise<TurnoTomado> {
   const reserva = await tx.reserva.create({ data: { organizacionId, ...base }, select: { id: true } });
   if (base.clienteId) await tx.clienteSede.upsert({ where: { clienteId_sedeId: { clienteId: base.clienteId, sedeId: base.sedeId } }, create: { organizacionId, clienteId: base.clienteId, sedeId: base.sedeId }, update: {} });
   const items: TurnoTomado["items"] = [];
@@ -233,8 +234,8 @@ async function reservaParaOperar(tx: Tx, actorId: string, organizacionId: string
   if (!ids.has(reserva.sedeId)) throw new AccesoDenegado();
   await bloquearAgenda(tx, ordenar(reserva.items.map(i => i.profesionalId)), []);
   // Releer el estado después del lock: otra operación pudo cambiarlo mientras esperábamos.
-  const actual = await tx.reserva.findUniqueOrThrow({ where: { id: reservaId }, select: { estado: true, expiraEn: true } });
-  return { ...reserva, estado: actual.estado as Estado, expiraEn: actual.expiraEn };
+  const actual = await tx.reserva.findUniqueOrThrow({ where: { id: reservaId }, select: { estado: true, expiraEn: true, iniciadaEn: true } });
+  return { ...reserva, estado: actual.estado as Estado, expiraEn: actual.expiraEn, iniciadaEn: actual.iniciadaEn };
 }
 
 async function transicion(tx: Tx, organizacionId: string, reservaId: string, de: Estado, a: Estado, tipo: Parameters<typeof registrarEvento>[3], actorId: string, detalle?: Prisma.InputJsonValue) {
@@ -258,24 +259,80 @@ export async function cancelarReserva(db: Database, actorId: string, organizacio
   });
 }
 
+/** Los servicios del turno que exigen consentimiento lo tienen vigente y aceptado por el cliente. */
+async function exigirConsentimientos(tx: Tx, organizacionId: string, r: { clienteId: string | null; items: { servicioId: string }[] }) {
+  const exigidos = await tx.servicioConsentimiento.findMany({ where: { servicioId: { in: r.items.map(i => i.servicioId) } }, select: { clave: true } });
+  if (!exigidos.length) return;
+  if (!r.clienteId) throw new DatosInvalidos("El turno no tiene cliente para verificar los consentimientos");
+  const faltan: string[] = [];
+  for (const clave of new Set(exigidos.map(e => e.clave))) {
+    const vigente = await tx.consentimientoVersion.findFirst({ where: { organizacionId, clave }, orderBy: { version: "desc" } });
+    const ultimo = await tx.clienteConsentimiento.findFirst({ where: { clienteId: r.clienteId, version: { clave } }, orderBy: { orden: "desc" } });
+    if (!vigente || !ultimo || ultimo.accion !== "ACEPTA" || ultimo.versionId !== vigente.id) faltan.push(vigente?.titulo ?? clave);
+  }
+  if (faltan.length) throw new DatosInvalidos(`Falta el consentimiento vigente: ${faltan.join(", ")}. Registralo en la ficha del cliente.`);
+}
+
 /** Atención registrada: solo turnos confirmados, desde una hora antes del inicio y con los consentimientos exigidos vigentes. */
 export async function marcarAtendida(db: Database, actorId: string, organizacionId: string, reservaId: string, ahora = new Date()) {
   await db.$transaction(async tx => {
     const r = await reservaParaOperar(tx, actorId, organizacionId, reservaId);
     if (r.estado !== "CONFIRMADA") throw new DatosInvalidos(`No se puede marcar atendido un turno ${ETIQUETA[r.estado]}`);
     if (ahora.getTime() < r.items[0]!.inicio.getTime() - 3_600_000) throw new DatosInvalidos("Todavía falta más de una hora para el turno");
-    const exigidos = await tx.servicioConsentimiento.findMany({ where: { servicioId: { in: r.items.map(i => i.servicioId) } }, select: { clave: true } });
-    if (exigidos.length) {
-      if (!r.clienteId) throw new DatosInvalidos("El turno no tiene cliente para verificar los consentimientos");
-      const faltan: string[] = [];
-      for (const clave of new Set(exigidos.map(e => e.clave))) {
-        const vigente = await tx.consentimientoVersion.findFirst({ where: { organizacionId, clave }, orderBy: { version: "desc" } });
-        const ultimo = await tx.clienteConsentimiento.findFirst({ where: { clienteId: r.clienteId, version: { clave } }, orderBy: { orden: "desc" } });
-        if (!vigente || !ultimo || ultimo.accion !== "ACEPTA" || ultimo.versionId !== vigente.id) faltan.push(vigente?.titulo ?? clave);
-      }
-      if (faltan.length) throw new DatosInvalidos(`Falta el consentimiento vigente: ${faltan.join(", ")}. Registralo en la ficha del cliente.`);
-    }
+    await exigirConsentimientos(tx, organizacionId, r);
     await transicion(tx, organizacionId, reservaId, "CONFIRMADA", "ATENDIDA", "ATENDIDA", actorId);
+  });
+}
+
+/**
+ * Tablero de recepción (doc 29): la clienta con turno llegó y empieza la atención. Desde una hora antes
+ * del turno, como «Atendido». No cambia la agenda: el turno sigue ocupando su horario.
+ */
+export async function marcarLlegada(db: Database, actorId: string, organizacionId: string, reservaId: string, ahora = new Date()) {
+  await db.$transaction(async tx => {
+    const r = await reservaParaOperar(tx, actorId, organizacionId, reservaId);
+    if (r.estado !== "CONFIRMADA") throw new DatosInvalidos(`No se puede marcar la llegada de un turno ${ETIQUETA[r.estado]}`);
+    if (r.iniciadaEn) throw new DatosInvalidos("La clienta ya está en atención");
+    if (ahora.getTime() < r.items[0]!.inicio.getTime() - 3_600_000) throw new DatosInvalidos("Todavía falta más de una hora para el turno");
+    const { count } = await tx.reserva.updateMany({ where: { id: reservaId, estado: "CONFIRMADA", iniciadaEn: null }, data: { iniciadaEn: ahora } });
+    if (count !== 1) throw new DatosInvalidos("El turno cambió mientras tanto; actualizá la pantalla");
+    await auditar(tx, organizacionId, actorId, "reserva.llegada", "Reserva", reservaId);
+  });
+}
+
+/**
+ * Tablero de recepción (doc 29): «Terminó». Recepción ve a la profesional libre o recibe la comanda: el
+ * turno pasa a atendido (por cobrar) y la agenda se recorta a este momento, así la profesional y sus
+ * recursos quedan libres para otra clienta y el portal vuelve a ofrecer ese horario.
+ *
+ * - Un servicio en curso termina ahora (fin y ocupación).
+ * - Un servicio encadenado que todavía no empezó se quita del turno y queda anotado en el evento: la
+ *   profesional terminó antes. Si igual se hizo, recepción lo agrega en la comanda al cobrar.
+ * - Un servicio ya terminado no cambia.
+ *
+ * A diferencia de «Atendido» en la agenda (que se puede marcar al llegar la clienta), exige que el turno
+ * haya empezado: recortar antes liberaría un horario que la clienta todavía está usando.
+ */
+export async function terminarAtencion(db: Database, actorId: string, organizacionId: string, reservaId: string, ahora = new Date()) {
+  await db.$transaction(async tx => {
+    const r = await reservaParaOperar(tx, actorId, organizacionId, reservaId);
+    if (r.estado !== "CONFIRMADA") throw new DatosInvalidos(`No se puede terminar un turno ${ETIQUETA[r.estado]}`);
+    // Una clienta que llegó antes de hora y ya terminó: sin horario empezado no hay nada que recortar.
+    if (ahora <= r.items[0]!.inicio) throw new DatosInvalidos("El turno todavía no empezó en la agenda: marcalo atendido desde la agenda");
+    await exigirConsentimientos(tx, organizacionId, r);
+    const quitados: { servicioId: string; profesionalId: string; inicio: string }[] = [];
+    for (const it of r.items) {
+      if (it.inicio >= ahora) {
+        await tx.reservaItemRecurso.deleteMany({ where: { itemId: it.id } });
+        await tx.reservaItem.delete({ where: { id: it.id } });
+        quitados.push({ servicioId: it.servicioId, profesionalId: it.profesionalId, inicio: it.inicio.toISOString() });
+      } else if (it.ocupaHasta > ahora) {
+        await tx.reservaItem.update({ where: { id: it.id }, data: { fin: it.fin < ahora ? it.fin : ahora, ocupaHasta: ahora } });
+        await tx.reservaItemRecurso.updateMany({ where: { itemId: it.id, ocupaHasta: { gt: ahora } }, data: { ocupaHasta: ahora } });
+      }
+    }
+    await tx.reserva.update({ where: { id: reservaId }, data: { iniciadaEn: r.iniciadaEn ?? r.items[0]!.inicio, terminadaEn: ahora } });
+    await transicion(tx, organizacionId, reservaId, "CONFIRMADA", "ATENDIDA", "ATENDIDA", actorId, { terminada: ahora.toISOString(), ...(quitados.length ? { quitados } : {}) });
   });
 }
 

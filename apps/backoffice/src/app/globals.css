@@ -220,3 +220,13 @@ a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-
   .contenido{padding:20px 16px 32px}
   main{padding:24px 16px}
 }
+/* Reportes (L03): indicadores como los totales de gastos y tablas con desplazamiento horizontal en móvil. */
+.indicadores{margin:12px 0 16px}.indicadores p{margin:0;font-size:13px;color:var(--color-muted-foreground)}.indicadores strong{display:block;font-size:22px;font-weight:600;margin:4px 0}.indicadores small{font-size:12px;color:var(--color-muted-foreground)}
+.reporte-titulo{margin:16px 0 8px;font-size:14px;font-weight:600}
+.reporte-tabla{overflow-x:auto;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius-md)}
+.reporte-tabla table{width:100%;border-collapse:collapse;font-size:13px}
+.reporte-tabla th,.reporte-tabla td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--color-border);white-space:nowrap}
+.reporte-tabla thead th{font-weight:600;color:var(--color-muted-foreground);background:var(--color-muted)}
+.reporte-tabla tbody th{font-weight:500}
+.reporte-tabla tr:last-child>*{border-bottom:0}
+.reporte-tabla .num{text-align:right;font-variant-numeric:tabular-nums}

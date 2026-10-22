@@ -87,7 +87,7 @@ Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación ante
 |---|---|---|
 | L01 | Comisión y liquidación profesional | Base/porcentaje versionados, servicio elegible único, ajuste por reembolso |
 | L02 | Royalties, canon y fondo básicos | Configuración y cálculo por período según política; no duplica al recalcular; cierre preservado |
-| L03 | Reportes y CSV | Ventas, cobros, ocupación, atendidos/cancelados/ausentes, nuevos/recurrentes, ticket, comisiones, caja/gastos/stock |
+| L03 | Reportes y CSV · primera parte hecha 2026-10-22 (ventas, cobros, turnos, ocupación, clientes y base comisionable con CSV; falta caja/gastos/stock y el porcentaje de comisión, D10), ver 29-reportes.md | Ventas, cobros, ocupación, atendidos/cancelados/ausentes, nuevos/recurrentes, ticket, comisiones, caja/gastos/stock |
 | L04 | Consolidados | Comparativa sedes, franquiciado y master; exportación no revela sedes ajenas |
 
 ## Fase 9 · días 47–50 · piloto

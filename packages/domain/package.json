@@ -20,7 +20,8 @@
     "./gastos": "./src/gastos.ts",
     "./ventas": "./src/ventas.ts",
     "./caja": "./src/caja.ts",
-    "./incidencias": "./src/incidencias.ts"
+    "./incidencias": "./src/incidencias.ts",
+    "./reportes": "./src/reportes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

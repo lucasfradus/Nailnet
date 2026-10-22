@@ -796,6 +796,8 @@ model ReservaItem {
   bufferDespuesMinutos Int
   precio               Decimal              @db.Decimal(12, 2)
   sena                 Decimal?             @db.Decimal(12, 2)
+  // Tablero de recepción (doc 29): su profesional terminó («Terminó» por profesional, servicios a la vez).
+  terminadoEn          DateTime?
   reserva              Reserva              @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
   servicio             Servicio             @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
   profesional          Profesional          @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)

@@ -40,7 +40,7 @@ export async function registrarSalida(db: Database, actorId: string, organizacio
   if (!p) throw new AccesoDenegado();
   await exigirSede(db, actorId, organizacionId, p.sedeId);
   if (p.salida) throw new DatosInvalidos("La salida ya está marcada");
-  const atendiendo = await db.reserva.count({ where: { organizacionId, estado: "CONFIRMADA", iniciadaEn: { not: null }, items: { some: { profesionalId: p.profesionalId } } } });
+  const atendiendo = await db.reserva.count({ where: { organizacionId, estado: "CONFIRMADA", iniciadaEn: { not: null }, items: { some: { profesionalId: p.profesionalId, terminadoEn: null } } } });
   if (atendiendo) throw new DatosInvalidos("Tiene una clienta en atención: marcá «Terminó» antes de la salida");
   const { count } = await db.presenciaProfesional.updateMany({ where: { id: presenciaId, salida: null }, data: { salida: ahora < p.entrada ? p.entrada : ahora, salidaPorId: actorId } });
   if (count !== 1) throw new DatosInvalidos("La salida ya está marcada");
@@ -87,7 +87,7 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   });
   // Una atención en curso sigue ocupando a la profesional aunque se haya pasado del horario estimado.
   const enCurso = await db.reservaItem.findMany({
-    where: { organizacionId, profesionalId: { in: ids }, reserva: { estado: "CONFIRMADA", iniciadaEn: { not: null } } },
+    where: { organizacionId, profesionalId: { in: ids }, terminadoEn: null, reserva: { estado: "CONFIRMADA", iniciadaEn: { not: null } } },
     select: { profesionalId: true, fin: true, servicio: { select: { nombre: true } }, reserva: { select: { id: true, sedeId: true, iniciadaEn: true, cliente: { select: { id: true, nombre: true, apellido: true } } } } },
     orderBy: { inicio: "asc" },
   });

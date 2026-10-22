@@ -79,13 +79,14 @@ export default async function AtenderAhora({ searchParams }: { searchParams: Pro
         {desdeTablero && <input type="hidden" name="volver" value="recepcion" />}
         {Array.from({ length: SERVICIOS }, (_, i) => <div key={i} className="grilla">
           <select name={`s_${i}`} defaultValue={i === 0 ? q.servicio ?? "" : ""} aria-label={`Servicio ${i + 1}`} required={i === 0}>
-            <option value="">{i === 0 ? "Elegí un servicio" : "+ Otro servicio a continuación"}</option>
+            <option value="">{i === 0 ? "Elegí un servicio" : "+ Otro servicio"}</option>
             {habilitados.map(s => <option key={s.id} value={s.id}>{s.nombre} · {s.efectivo.duracionMinutos} min</option>)}
           </select>
           <select name={`p_${i}`} defaultValue={i === 0 ? q.profesional ?? "" : ""} aria-label={`Profesional del servicio ${i + 1}`} required={i === 0}>
             <option value="">Profesional</option>
             {activas.map(p => <option key={p.id} value={p.id}>{p.nombre} {p.apellido ?? ""}</option>)}
           </select>
+          {i > 0 && <label className="check"><input type="checkbox" name={`j_${i}`} value="1" />A la vez con el anterior (otra profesional)</label>}
         </div>)}
         <label>Notas (opcional)<input name="notas" maxLength={1000} /></label>
         <p className="ayuda">Al terminar, tocá «Terminó» en el tablero de recepción (o marcalo atendido en la agenda) y cobralo con la comanda (podés agregar o quitar servicios y ajustar precios).</p>

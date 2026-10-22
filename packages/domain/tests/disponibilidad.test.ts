@@ -85,6 +85,25 @@ test("varios servicios encadenados con profesionales distintos (D15) y vuelta at
   assert.equal(asignarEn(consulta({ items: [manos, pies], apertura: [iv("09:00", "10:30")], profesionales }), h("09:00")), null, "el segundo servicio no entra en la apertura");
 });
 
+test("servicios a la vez (doc 29): empiezan juntos con profesionales distintas; lo siguiente espera a que terminen", () => {
+  const profesionales = new Map([["ana", pro()], ["bea", pro({ cargaMinutos: 10 })]]);
+  const manos = item({ servicioId: "manos", duracionMinutos: 60, candidatos: ["ana", "bea"] });
+  const pies = item({ servicioId: "pies", duracionMinutos: 45, candidatos: ["ana", "bea"], conAnterior: true });
+  const t = asignarEn(consulta({ items: [manos, pies], profesionales }), h("09:00"))!;
+  assert.deepEqual(t.items.map(i => [i.servicioId, i.profesionalId, hora(i.inicio), hora(i.fin)]), [["manos", "ana", "09:00", "10:00"], ["pies", "bea", "09:00", "09:45"]]);
+  assert.equal(hora(t.fin), "10:00", "el turno termina con el servicio más largo");
+  // Con una sola profesional no se puede a la vez.
+  assert.equal(asignarEn(consulta({ items: [manos, { ...pies, candidatos: ["ana"] }], profesionales: new Map([["ana", pro()]]) }), h("09:00")), null);
+  // Lo que viene después sin la marca empieza cuando terminó todo lo anterior, aunque lo haga la que terminó antes.
+  const retiro = item({ servicioId: "retiro", duracionMinutos: 20, candidatos: ["bea"] });
+  assert.deepEqual(asignarEn(consulta({ items: [manos, pies, retiro], profesionales }), h("09:00"))!.items.map(i => hora(i.inicio)), ["09:00", "09:00", "10:00"]);
+  // El recurso tampoco se comparte entre simultáneos.
+  const sillon = { requisitos: [{ tipoRecursoId: "sillon", cantidad: 1 }] };
+  const recursos = [{ id: "s1", tipoRecursoId: "sillon", ocupado: [] }];
+  assert.equal(asignarEn(consulta({ items: [item({ ...manos, ...sillon }), item({ ...pies, ...sillon })], profesionales, recursos }), h("09:00")), null);
+  assert.ok(asignarEn(consulta({ items: [item({ ...manos, ...sillon }), item({ ...pies, ...sillon })], profesionales, recursos: [...recursos, { id: "s2", tipoRecursoId: "sillon", ocupado: [] }] }), h("09:00")));
+});
+
 test("anticipación y horizonte acotan los inicios", () => {
   assert.deepEqual(inicios(consulta({ desdeMs: h("10:30") })), ["11:00", "12:00"]);
   assert.deepEqual(inicios(consulta({ hastaMs: h("10:00") })), ["09:00", "10:00"]);

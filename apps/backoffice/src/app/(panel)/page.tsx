@@ -8,6 +8,7 @@ export default async function Home() {
   const { sesion, asignaciones, organizacion, sede, puede } = await contextoPanel();
   const incidencias = await incidenciasAbiertas();
   const atajos: [href: string, icono: Icono, titulo: string, detalle: string, visible: boolean][] = [
+    ["/recepcion", "recepcion", "Recepción", "Quién está libre, quién atiende y qué falta cobrar.", puede.verSedes],
     ["/agenda", "agenda", "Agenda", "Turnos del día y de la semana por sede.", puede.verSedes],
     ["/clientes", "clientes", "Clientes", "Fichas, contacto y vínculo con sedes.", puede.verClientes],
     ["/agenda/ahora", "agenda", "Atender ahora", "Cliente sin turno: entra a la agenda en este momento.", puede.verSedes],

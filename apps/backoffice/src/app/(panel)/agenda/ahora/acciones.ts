@@ -28,5 +28,6 @@ export async function accionAtenderAhora(_: Estado, form: FormData): Promise<Est
     throw e;
   }
   revalidatePath("/agenda");
-  redirect("/agenda?ok=ahora");
+  revalidatePath("/recepcion");
+  redirect(texto(form, "volver") === "recepcion" ? "/recepcion?ok=ahora" : "/agenda?ok=ahora");
 }

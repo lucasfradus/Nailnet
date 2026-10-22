@@ -23,7 +23,8 @@
     "./gastos": "./src/gastos.ts",
     "./ventas": "./src/ventas.ts",
     "./caja": "./src/caja.ts",
-    "./incidencias": "./src/incidencias.ts"
+    "./incidencias": "./src/incidencias.ts",
+    "./tablero": "./src/tablero.ts"
   },
   "scripts": {
     "generate": "prisma generate",

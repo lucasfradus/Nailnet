@@ -23,6 +23,7 @@ Las propuestas siguen pendientes salvo donde se registra una confirmación expl�
 | D17 | Grilla de inicio de turnos | Pendiente. Modelado el 2026-10-01 como parámetro heredable `pasoGrillaMinutos` sin valor por defecto: sin definirlo la sede no genera turnos (ver 15-disponibilidad.md). El sistema actual usa paso fijo de 60 min; se busca una definición prolija (configurable por sede y/o derivada de duración y buffers) | Motor de disponibilidad (C04) |
 | D18 | Horizonte y anticipación | Confirmado el 2026-09-30: horizonte máximo y anticipación mínima configurables por sede. Valores iniciales pendientes (referencia del sistema actual: ~14 días) | Resuelto el criterio; valores con D12 |
 | D19 | Operación de recepción: clientes sin turno, comanda, caja | Confirmado por Sicurella el 2026-10-14 (reunión con el usuario): ver «Respuestas de Sicurella · 2026-10-14» abajo y 27-ventas-caja.md | Resuelto |
+| D20 | Tablero de recepción para clientes sin turno | Propuesta del 2026-10-21, tras la visita del usuario a un local (2026-10-20): tablero centrado en la presencia de las profesionales, «Terminó» separado del cobro, servicios en paralelo y lista de espera. Preguntas abiertas en 29-tablero-recepcion.md | Recepción (O05) |
 
 ## Respuestas de Sicurella · 2026-10-14
 

@@ -220,3 +220,15 @@ a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-
   .contenido{padding:20px 16px 32px}
   main{padding:24px 16px}
 }
+
+/* Tablero de recepción (doc 29): una tarjeta por profesional en el local; el borde izquierdo dice su estado. */
+.contadores{display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}
+.contadores p{margin:0;padding:10px 16px;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);box-shadow:var(--shadow-card);font-size:13px;color:var(--color-muted-foreground)}
+.contadores strong{display:block;font-size:22px;font-weight:600;line-height:1.2;color:var(--color-foreground)}
+.tablero{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.puesto{padding:12px 14px;background:var(--color-background);border:1px solid var(--color-border);border-left-width:4px;border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.puesto p{margin:6px 0 0}.puesto .ayuda{font-size:12px}.puesto .acciones{margin-top:10px;padding-top:8px}.puesto>form{margin-top:10px}
+.puesto.libre{border-left-color:var(--color-success)}
+.puesto.justo{border-left-color:var(--gris-200)}
+.puesto.ocupada{border-left-color:var(--color-warning)}
+.puesto.demorada{border-left-color:var(--texto-error)}

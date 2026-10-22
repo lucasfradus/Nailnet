@@ -11,7 +11,7 @@ import { crearCliente } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
 import { crearProfesional, crearRecurso, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
 import { PROFESIONAL_OCUPADA, atenderAhora, marcarLlegada, reprogramarReserva, terminarAtencion, tomarTurno } from "../src/reservas.ts";
-import { registrarEntrada, registrarSalida, tableroSede } from "../src/tablero.ts";
+import { agregarEspera, esperaSeFue, registrarEntrada, registrarSalida, tableroSede } from "../src/tablero.ts";
 import { registrarVenta } from "../src/ventas.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
@@ -138,6 +138,31 @@ test("tablero de recepción (doc 29)", async (t) => {
       assert.equal((await fila(ana, en("16:06"))).presencia, null);
       await registrarEntrada(db, R, O, { sedeId: centro, profesionalId: ana }, en("17:00"));
       assert.equal(await db.presenciaProfesional.count({ where: { profesionalId: ana } }), 2, "turno mañana y turno tarde");
+    });
+
+    await t.test("lista de espera (etapa 3): se anota, se va o se atiende; el despacho la cierra en la misma transacción", async () => {
+      await assert.rejects(agregarEspera(db, R, O, { sedeId: centro, nombre: " ", servicioIds: [manos] }, en("17:05")), /nombre/);
+      await assert.rejects(agregarEspera(db, R, O, { sedeId: centro, nombre: "Sofía", servicioIds: [] }, en("17:05")), /entre 1 y 3/);
+      await assert.rejects(agregarEspera(db, R, O, { sedeId: centro, nombre: "Sofía", servicioIds: [manos], profesionalId: dora }, en("17:05")), /no trabaja en esta sede/);
+      await assert.rejects(agregarEspera(db, a.profesional.id, O, { sedeId: centro, nombre: "Sofía", servicioIds: [manos] }, en("17:05")), AccesoDenegado);
+      const ayer = await agregarEspera(db, R, O, { sedeId: centro, nombre: "Olvidada", servicioIds: [manos] }, new Date(en("17:05").getTime() - 86_400_000));
+      const sofia = await agregarEspera(db, R, O, { sedeId: centro, nombre: "Sofía", telefono: "1166667777", servicioIds: [manos, pies], profesionalId: caro }, en("17:05"));
+      const vera = await agregarEspera(db, R, O, { sedeId: centro, nombre: "Vera", servicioIds: [manos] }, en("17:06"));
+      const lista = (await tableroSede(db, R, O, centro, en("17:08"))).esperas;
+      assert.deepEqual(lista.map(e => [e.nombre, e.servicioIds.length, e.profesionalId]), [["Sofía", 2, caro], ["Vera", 1, null]], "por orden de llegada; la de ayer no se muestra");
+      assert.ok(!lista.some(e => e.id === ayer.id));
+
+      await esperaSeFue(db, R, O, vera.id, en("17:09"));
+      await assert.rejects(esperaSeFue(db, R, O, vera.id, en("17:09")), /ya no está/);
+      const r = await atenderAhora(db, R, O, { sedeId: centro, clienteId: lucia, items: [{ servicioId: manos, profesionalId: caro }], esperaId: sofia.id }, en("17:10"));
+      const cerrada = await db.esperaRecepcion.findUniqueOrThrow({ where: { id: sofia.id } });
+      assert.deepEqual([cerrada.estado, cerrada.reservaId, cerrada.cerradaEn?.toISOString()], ["ATENDIDA", r.reservaId, en("17:10").toISOString()]);
+      // Otra recepcionista la quiere atender también: no se crea el segundo turno.
+      const antes = await db.reserva.count({ where: { organizacionId: O } });
+      await assert.rejects(atenderAhora(db, R, O, { sedeId: centro, clienteId: lucia, items: [{ servicioId: manos, profesionalId: bea }], esperaId: sofia.id }, en("17:10")), /ya no está en la lista de espera/);
+      assert.equal(await db.reserva.count({ where: { organizacionId: O } }), antes);
+      assert.deepEqual((await tableroSede(db, R, O, centro, en("17:11"))).esperas, []);
+      await terminarAtencion(db, R, O, r.reservaId, en("17:50"));
     });
 
     await t.test("a la vez (etapa 2): manos y pies con dos profesionales; «Terminó» por profesional", async () => {

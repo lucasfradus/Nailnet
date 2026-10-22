@@ -67,7 +67,9 @@ export type TurnoTomado = { reservaId: string; estado: Estado; expiraEn: Date | 
  * cliente a asignar.
  */
 export type AntesDeTomar = (tx: Tx) => Promise<{ clienteId?: string } | void>;
-export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; notas?: string | null; sinTurnoPrevio?: boolean }, ahora = new Date(), opciones: { antes?: AntesDeTomar } = {}): Promise<TurnoTomado> {
+/** `despues` corre en la misma transacción con el turno ya escrito: si falla, el turno no se crea. */
+export type DespuesDeTomar = (tx: Tx, turno: TurnoTomado) => Promise<void>;
+export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; notas?: string | null; sinTurnoPrevio?: boolean }, ahora = new Date(), opciones: { antes?: AntesDeTomar; despues?: DespuesDeTomar } = {}): Promise<TurnoTomado> {
   if (actorId) {
     exigirIds(pedido.sedeId);
     const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
@@ -105,6 +107,7 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
     // Sin turno previo la clienta ya está en el local: la atención empieza con el turno (doc 29).
     const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId, sinTurnoPrevio, iniciadaEn: sinTurnoPrevio ? pedido.inicio : null }, turno, efectivos);
     await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena, ...(sinTurnoPrevio ? { sinTurnoPrevio } : {}) });
+    await opciones.despues?.(tx, r);
     return r;
   }, { maxWait: 10_000, timeout: 20_000 }));
 }
@@ -119,11 +122,20 @@ export const PROFESIONAL_OCUPADA = "La profesional no está libre ahora (tiene o
  * manual (R01): mismos locks y el mismo motor, sin grilla porque el inicio es «ahora». Queda confirmado,
  * sin seña y marcado `sinTurnoPrevio` para reportes. No manda email de confirmación.
  */
-export async function atenderAhora(db: Database, actorId: string, organizacionId: string, datos: { sedeId: string; clienteId: string; items: { servicioId: string; profesionalId: string; conAnterior?: boolean }[]; notas?: string | null }, ahora = new Date()) {
+export async function atenderAhora(db: Database, actorId: string, organizacionId: string, datos: { sedeId: string; clienteId: string; items: { servicioId: string; profesionalId: string; conAnterior?: boolean }[]; notas?: string | null; esperaId?: string | null }, ahora = new Date()) {
   if (!datos.items.length) throw new DatosInvalidos("Elegí al menos un servicio");
   if (datos.items.some(i => !i.profesionalId)) throw new DatosInvalidos("Elegí la profesional de cada servicio");
   if (!datos.clienteId) throw new DatosInvalidos("Elegí o creá el cliente");
-  exigirIds(datos.sedeId, datos.clienteId, ...datos.items.flatMap(i => [i.servicioId, i.profesionalId]));
+  exigirIds(datos.sedeId, datos.clienteId, datos.esperaId, ...datos.items.flatMap(i => [i.servicioId, i.profesionalId]));
+  // Etapa 3 (doc 29): si la clienta venía de la lista de espera, sale de la lista en la misma transacción
+  // del turno. Si otra recepcionista ya la atendió (o se fue), el turno no se crea.
+  const despues: DespuesDeTomar | undefined = datos.esperaId ? async (tx, turno) => {
+    const { count } = await tx.esperaRecepcion.updateMany({
+      where: { id: datos.esperaId!, organizacionId, sedeId: datos.sedeId, estado: "ESPERANDO" },
+      data: { estado: "ATENDIDA", reservaId: turno.reservaId, cerradaEn: ahora, cerradaPorId: actorId },
+    });
+    if (count !== 1) throw new DatosInvalidos("Esa clienta ya no está en la lista de espera (la atendió otra recepcionista o se fue)");
+  } : undefined;
   const sede = await db.sede.findFirst({ where: { id: datos.sedeId, organizacionId }, select: { timezone: true } });
   if (!sede) throw new AccesoDenegado();
   // Al minuto: el turno empieza ahora y el motor lo valida con «ahora» como límite inferior.
@@ -132,7 +144,7 @@ export async function atenderAhora(db: Database, actorId: string, organizacionId
     return await tomarTurno(db, actorId, organizacionId, {
       sedeId: datos.sedeId, fecha: aLocal(inicio, sede.timezone).fecha, canal: "RECEPCION", clienteId: datos.clienteId, notas: datos.notas,
       items: datos.items.map((i, n) => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, conAnterior: n > 0 && !!i.conAnterior })), inicio, sinTurnoPrevio: true,
-    }, inicio);
+    }, inicio, { despues });
   } catch (e) {
     if (e instanceof TurnoNoDisponible) throw new DatosInvalidos(PROFESIONAL_OCUPADA);
     if (e instanceof ConfiguracionIncompleta) throw new DatosInvalidos(`Falta definir en la sede: ${e.faltantes.join(", ")}`);

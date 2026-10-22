@@ -73,6 +73,12 @@ enum CanalReserva {
   RECEPCION
 }
 
+enum EstadoEspera {
+  ESPERANDO
+  ATENDIDA
+  SE_FUE
+}
+
 enum EstadoReserva {
   PENDIENTE_PAGO
   PAGO_EN_REVISION
@@ -183,6 +189,7 @@ model Sede {
   cajas                   Caja[]
   movimientosCaja         MovimientoCaja[]
   presencias              PresenciaProfesional[]
+  esperas                 EsperaRecepcion[]
 
   @@unique([organizacionId, id])
   @@index([organizacionId, franquiciadoId])
@@ -590,6 +597,7 @@ model Profesional {
   reservaItems   ReservaItem[]
   ventaItems     VentaItem[]
   presencias     PresenciaProfesional[]
+  esperas        EsperaRecepcion[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, usuarioId])
@@ -613,6 +621,33 @@ model PresenciaProfesional {
   @@unique([organizacionId, id])
   @@index([sedeId, entrada])
   @@index([profesionalId, entrada])
+}
+
+// Tablero de recepción, etapa 3 (doc 29): clienta que llegó sin turno y espera porque no hay nadie libre.
+// Datos mínimos (nombre y, si quiere, teléfono): el cliente se busca o se crea al atenderla. Sale de la
+// lista al crearse su turno (en la misma transacción) o si se fue.
+model EsperaRecepcion {
+  id              String       @id @default(uuid()) @db.Uuid
+  organizacionId  String       @db.Uuid
+  sedeId          String       @db.Uuid
+  nombre          String
+  telefono        String?
+  servicioIds     String[]     @db.Uuid
+  // Profesional que pidió, si pidió una.
+  profesionalId   String?      @db.Uuid
+  notas           String?
+  llegada         DateTime
+  estado          EstadoEspera
+  cerradaEn       DateTime?
+  reservaId       String?      @db.Uuid
+  registradaPorId String       @db.Uuid
+  cerradaPorId    String?      @db.Uuid
+  sede            Sede         @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  profesional     Profesional? @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
+  reserva         Reserva?     @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+
+  @@unique([organizacionId, id])
+  @@index([sedeId, estado, llegada])
 }
 
 model ProfesionalSede {
@@ -774,6 +809,7 @@ model Reserva {
   checkouts      CheckoutPago[]
   pagos          Pago[]
   ventas         Venta[]
+  esperas        EsperaRecepcion[]
 
   @@unique([organizacionId, id])
   @@index([sedeId, estado])

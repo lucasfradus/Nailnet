@@ -1,6 +1,6 @@
 # Tablero de recepción · propuesta · 2026-10-21
 
-Propuesta (D20). Sale de la visita del usuario a un local de Sicurella el 2026-10-20 y extiende el flujo de recepción de 27-ventas-caja.md (D19). **Etapa 1 implementada el 2026-10-21 y etapa 2 el 2026-10-22** (ver «Etapa 1: implementación» y «Etapa 2: servicios a la vez» abajo); las etapas 3 y 4 siguen pendientes.
+Propuesta (D20). Sale de la visita del usuario a un local de Sicurella el 2026-10-20 y extiende el flujo de recepción de 27-ventas-caja.md (D19). **Etapa 1 implementada el 2026-10-21; etapas 2 y 3 el 2026-10-22** (ver «Etapa 1: implementación», «Etapa 2: servicios a la vez» y «Etapa 3: lista de espera» abajo); la etapa 4 (reportes) sigue pendiente.
 
 ## Qué se vio en el local
 
@@ -124,6 +124,23 @@ Migración `202610220010_servicios_a_la_vez`. Pruebas en `packages/domain/tests/
   - Sin profesional (`terminarAtencion` sin opción) termina todo, como antes.
 - **Cabinas:** no requieren código. Se cargan como tipo de recurso y unidades (Catálogo → Recursos y la ficha de la sede), y el servicio las pide como requisito. El motor ya las valida y «Terminó» las libera.
 - **Masajes dobles** (pregunta abierta). Si son dos clientas en una sala, la sala se carga como dos unidades de un tipo «sala doble», y cada clienta es su propio turno. Si es una clienta con dos profesionales, son dos servicios a la vez.
+
+## Etapa 3: lista de espera · 2026-10-22
+
+Migración `202610220020_lista_espera`. Repositorio en `packages/database/src/tablero.ts` (`agregarEspera`, `esperaSeFue` y la lista en `tableroSede`). Pruebas en `packages/database/tests/tablero.test.ts`.
+
+- **`EsperaRecepcion`:** nombre, teléfono opcional, de 1 a 3 servicios, profesional que pidió (opcional), nota y hora de llegada.
+  - Estados: `ESPERANDO`, `ATENDIDA` (con su turno) y `SE_FUE`. Un CHECK exige la forma de cada estado.
+  - Es un dato aparte del cliente, para no frenar la cola: el cliente se busca o se crea recién al atenderla.
+- **Validaciones:** los servicios tienen que estar habilitados en la sede y la profesional pedida, trabajar en ella.
+- **Despacho:** «Atender» abre «Atender ahora» con la búsqueda de cliente (teléfono o nombre), el alta rápida con nombre y teléfono, el primer servicio y la profesional pedida (si está libre) o la primera libre que lo hace.
+  - Al empezar, la espera pasa a atendida **en la misma transacción del turno**, con un gancho `despues` de `tomarTurno`.
+  - Si otra recepcionista ya la atendió o se fue, el turno no se crea («Esa clienta ya no está en la lista de espera»).
+- **Tablero:**
+  - Sección «En espera» por orden de llegada, con cuánto lleva esperando, qué pidió, quiénes pueden atenderla ahora (libres que hacen el primer servicio), «Atender» y «Se fue».
+  - «+ Anotar en espera» y un contador.
+  - Solo muestra las esperas de hoy: una olvidada de otro día no aparece.
+- Probado en Chrome contra la demo: anotar, sugerencia de quién puede, «Atender» con todo cargado, salida de la lista al empezar y «Se fue».
 
 ## Preguntas para Sicurella
 

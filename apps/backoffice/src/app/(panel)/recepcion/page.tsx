@@ -7,7 +7,7 @@ import { Formulario } from "@/components/formulario";
 import { Refresco } from "@/components/refresco";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
-import { accionEntrada, accionLlegada, accionSalida, accionTermino } from "./acciones";
+import { accionAgregarEspera, accionEntrada, accionLlegada, accionSalida, accionSeFue, accionTermino } from "./acciones";
 
 export const metadata: Metadata = { title: "Recepción · Sicurella" };
 type Params = { servicio?: string; ok?: string };
@@ -55,7 +55,43 @@ export default async function Recepcion({ searchParams }: { searchParams: Promis
       <p><strong>{atendiendo.length}</strong>atendiendo</p>
       <p><strong>{tablero.porCobrar.length}</strong>por cobrar</p>
       <p><strong>{tablero.porLlegar.length}</strong>turnos por llegar</p>
+      <p><strong>{tablero.esperas.length}</strong>en espera</p>
     </div>
+
+    <h2 className="subtitulo">En espera</h2>
+    {tablero.esperas.length > 0 && <div className="tabla">{tablero.esperas.map(e => {
+      // Quiénes podrían atenderla ahora: libres en el local que hacen el primer servicio que pidió.
+      const pueden = libres.filter(p => p.servicioIds.includes(e.servicioIds[0]!));
+      const pedida = e.profesionalId ? tablero.profesionales.find(p => p.id === e.profesionalId) : null;
+      const sugerida = pedida && pueden.some(p => p.id === pedida.id) ? pedida : pueden[0];
+      const minutos = Math.max(0, Math.round((ahora.getTime() - e.llegada.getTime()) / 60_000));
+      const atender = `/agenda/ahora?${new URLSearchParams({ volver: "recepcion", espera: e.id, servicio: e.servicioIds[0]!, buscar: e.telefono ?? e.nombre, nombre: e.nombre, ...(sugerida ? { profesional: sugerida.id } : {}) })}`;
+      return <article key={e.id} className="fila">
+        <div className="fila-cabecera"><h2>{e.nombre}{e.telefono ? ` · ${e.telefono}` : ""}</h2><span className="ayuda">llegó {hora(e.llegada)} · espera hace {minutos} min</span></div>
+        <p>{e.servicioIds.map(id => tablero.servicios.find(s => s.id === id)?.nombre ?? "Servicio").join(" + ")}{pedida ? ` · pidió a ${pedida.nombre}` : ""}{e.notas ? ` · ${e.notas}` : ""}</p>
+        <p className="ayuda">{pueden.length ? `Pueden ahora: ${pueden.map(p => p.nombre).join(", ")}` : "Nadie libre para esto todavía"}</p>
+        <div className="acciones">
+          <Link className={pueden.length ? "boton" : "boton secundario"} href={atender}>Atender</Link>
+          <Formulario accion={accionSeFue} boton="Se fue" className="en-linea" secundario confirmar={`¿${e.nombre} se fue sin atenderse?`}><input type="hidden" name="esperaId" value={e.id} /></Formulario>
+        </div>
+      </article>;
+    })}</div>}
+    <details className="desplegable">
+      <summary>+ Anotar en espera</summary>
+      <Formulario accion={accionAgregarEspera} boton="Anotar">
+        <input type="hidden" name="sedeId" value={sede.id} />
+        <div className="grilla">
+          <label>Nombre<input name="nombre" required maxLength={80} autoComplete="off" /></label>
+          <label>Teléfono (opcional)<input name="telefono" inputMode="tel" maxLength={40} autoComplete="off" /></label>
+        </div>
+        <div className="grilla">
+          <select name="s_0" required defaultValue={servicio?.id ?? ""} aria-label="Servicio"><option value="">Servicio</option>{tablero.servicios.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+          <select name="s_1" defaultValue="" aria-label="Otro servicio"><option value="">+ Otro servicio (opcional)</option>{tablero.servicios.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
+          <select name="profesionalId" defaultValue="" aria-label="Profesional que pidió"><option value="">Cualquier profesional</option>{tablero.profesionales.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select>
+        </div>
+        <label>Nota (opcional)<input name="notas" maxLength={300} /></label>
+      </Formulario>
+    </details>
 
     <form className="en-linea">
       <select name="servicio" defaultValue={servicio?.id ?? ""} aria-label="Servicio que pide la clienta">

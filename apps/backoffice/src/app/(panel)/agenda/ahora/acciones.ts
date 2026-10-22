@@ -22,7 +22,7 @@ export async function accionAtenderAhora(_: Estado, form: FormData): Promise<Est
   }
   try {
     const { sesion, organizacion } = await requerirOrganizacion();
-    await atenderAhora(db(), sesion.usuario.id, organizacion.id, { sedeId: texto(form, "sedeId"), clienteId: texto(form, "clienteId"), items, notas: texto(form, "notas") });
+    await atenderAhora(db(), sesion.usuario.id, organizacion.id, { sedeId: texto(form, "sedeId"), clienteId: texto(form, "clienteId"), items, notas: texto(form, "notas"), esperaId: texto(form, "esperaId") || null });
   } catch (e) {
     if (e instanceof AccesoDenegado) return { error: "No tenés permiso para esa operación" };
     if (e instanceof DatosInvalidos) return { error: e.message };

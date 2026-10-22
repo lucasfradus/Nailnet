@@ -19,11 +19,11 @@ const SERVICIOS = 3;
  * la profesional y los servicios, y el turno arranca en este momento ocupando la agenda de la profesional.
  * Al terminar, se marca atendido y se cobra con la comanda, como cualquier turno.
  */
-export default async function AtenderAhora({ searchParams }: { searchParams: Promise<{ cliente?: string; buscar?: string; profesional?: string; servicio?: string; volver?: string }> }) {
+export default async function AtenderAhora({ searchParams }: { searchParams: Promise<{ cliente?: string; buscar?: string; profesional?: string; servicio?: string; volver?: string; espera?: string; nombre?: string }> }) {
   const q = await searchParams;
   // Desde el tablero de recepción (doc 29) llegan la profesional y el servicio elegidos, y se vuelve ahí.
   const desdeTablero = q.volver === "recepcion";
-  const contexto = new URLSearchParams({ ...(desdeTablero ? { volver: "recepcion" } : {}), ...(q.profesional ? { profesional: q.profesional } : {}), ...(q.servicio ? { servicio: q.servicio } : {}) });
+  const contexto = new URLSearchParams({ ...(desdeTablero ? { volver: "recepcion" } : {}), ...(q.profesional ? { profesional: q.profesional } : {}), ...(q.servicio ? { servicio: q.servicio } : {}), ...(q.espera ? { espera: q.espera } : {}) });
   const aqui = (extra: Record<string, string> = {}) => `/agenda/ahora?${new URLSearchParams([...contexto, ...Object.entries(extra)])}`;
   const { sesion, organizacion, sede, puede } = await requerirOrganizacion();
   if (!puede.verSedes) notFound();
@@ -38,11 +38,13 @@ export default async function AtenderAhora({ searchParams }: { searchParams: Pro
   const habilitados = catalogo.servicios.filter(s => s.efectivo.habilitado);
   const activas = profesionales.filter(p => p.activo);
   const sugerido = q.buscar?.trim() ?? "";
-  const valores = sugerido.includes("@") ? { email: sugerido } : /^[\d\s+()-]+$/.test(sugerido) ? { telefono: sugerido } : { nombre: sugerido };
+  // Desde la lista de espera llega también el nombre, para el alta rápida.
+  const valores: { nombre?: string; telefono?: string; email?: string } = { ...(sugerido.includes("@") ? { email: sugerido } : /^[\d\s+()-]+$/.test(sugerido) ? { telefono: sugerido } : { nombre: sugerido }), ...(q.nombre ? { nombre: q.nombre } : {}) };
 
   return <section className="panel">
     <p className="eyebrow">{desdeTablero ? <Link href="/recepcion">RECEPCIÓN</Link> : <Link href="/agenda">AGENDA</Link>} · {sede.nombre.toUpperCase()}</p>
     <h1>Atender ahora</h1>
+    {q.espera && <p className="alerta ok">Clienta de la lista de espera: al empezar sale de la lista.</p>}
     <p className="intro">Para un cliente que llegó sin turno. El turno empieza ahora y ocupa la agenda de la profesional: el portal deja de ofrecer ese horario. Si la profesional está ocupada, elegí otra.</p>
 
     <h2 className="subtitulo">1. Cliente</h2>
@@ -77,6 +79,7 @@ export default async function AtenderAhora({ searchParams }: { searchParams: Pro
         <input type="hidden" name="sedeId" value={sede.id} />
         <input type="hidden" name="clienteId" value={cliente.id} />
         {desdeTablero && <input type="hidden" name="volver" value="recepcion" />}
+        {q.espera && <input type="hidden" name="esperaId" value={q.espera} />}
         {Array.from({ length: SERVICIOS }, (_, i) => <div key={i} className="grilla">
           <select name={`s_${i}`} defaultValue={i === 0 ? q.servicio ?? "" : ""} aria-label={`Servicio ${i + 1}`} required={i === 0}>
             <option value="">{i === 0 ? "Elegí un servicio" : "+ Otro servicio"}</option>

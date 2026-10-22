@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { AccesoDenegado } from "@nailnet/domain";
 import { DatosInvalidos } from "@nailnet/database/access";
 import { marcarLlegada, terminarAtencion } from "@nailnet/database/reservas";
-import { registrarEntrada, registrarSalida } from "@nailnet/database/tablero";
+import { agregarEspera, esperaSeFue, registrarEntrada, registrarSalida } from "@nailnet/database/tablero";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
@@ -38,4 +38,13 @@ export async function accionLlegada(_: Estado, form: FormData) {
 export async function accionTermino(_: Estado, form: FormData) {
   // Termina los servicios de esa profesional; con servicios a la vez, el turno queda por cobrar cuando terminan todas.
   return ejecutar((actor, org) => terminarAtencion(db(), actor, org, texto(form, "reservaId"), new Date(), { profesionalId: texto(form, "profesionalId") || null }), "Terminó");
+}
+export async function accionAgregarEspera(_: Estado, form: FormData) {
+  return ejecutar((actor, org) => agregarEspera(db(), actor, org, {
+    sedeId: texto(form, "sedeId"), nombre: texto(form, "nombre"), telefono: texto(form, "telefono"),
+    servicioIds: [texto(form, "s_0"), texto(form, "s_1")], profesionalId: texto(form, "profesionalId") || null, notas: texto(form, "notas"),
+  }), "Anotada en la lista de espera");
+}
+export async function accionSeFue(_: Estado, form: FormData) {
+  return ejecutar((actor, org) => esperaSeFue(db(), actor, org, texto(form, "esperaId")), "Quitada de la lista de espera");
 }

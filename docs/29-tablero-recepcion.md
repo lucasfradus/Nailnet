@@ -1,6 +1,6 @@
 # Tablero de recepción · propuesta · 2026-10-21
 
-Propuesta (D20). Sale de la visita del usuario a un local de Sicurella el 2026-10-20 y extiende el flujo de recepción de 27-ventas-caja.md (D19). **Etapa 1 implementada el 2026-10-21** (ver «Etapa 1: implementación» abajo); las etapas 2 a 4 siguen pendientes.
+Propuesta (D20). Sale de la visita del usuario a un local de Sicurella el 2026-10-20 y extiende el flujo de recepción de 27-ventas-caja.md (D19). **Etapa 1 implementada el 2026-10-21 y etapa 2 el 2026-10-22** (ver «Etapa 1: implementación» y «Etapa 2: servicios a la vez» abajo); las etapas 3 y 4 siguen pendientes.
 
 ## Qué se vio en el local
 
@@ -105,6 +105,25 @@ Migración `202610210010_tablero_recepcion`. Repositorio en `packages/database/s
 - La presencia no cambia lo que ofrece el portal.
 - La agrupación por especialidad, los servicios en paralelo, la lista de espera y los reportes quedan para las etapas siguientes.
 - Probado en un navegador real (Chrome) contra una base local con la demo: entrada, despacho con cliente nuevo, atención, «Terminó» y por cobrar.
+
+## Etapa 2: servicios a la vez · 2026-10-22
+
+Migración `202610220010_servicios_a_la_vez`. Pruebas en `packages/domain/tests/disponibilidad.test.ts` y `packages/database/tests/tablero.test.ts`.
+
+- **Motor:** un ítem del pedido puede ir marcado `conAnterior`, y entonces empieza junto con el anterior en vez de a continuación.
+  - Lo que sigue sin la marca empieza cuando terminó todo lo anterior.
+  - El fin del turno es el del servicio más largo.
+  - Los simultáneos nunca comparten profesional ni unidad de recurso: el motor ya trata como ocupado lo tentativo. Con «cualquiera», elige dos profesionales distintas.
+- **Solo recepción.** El portal rechaza `conAnterior` («Los servicios a la vez se toman en recepción»).
+- **Reprogramar** conserva los simultáneos: se deducen de que dos ítems seguidos tienen el mismo inicio.
+- **«Atender ahora»:** cada servicio adicional tiene la casilla «A la vez con el anterior (otra profesional)».
+- **«Terminó» por profesional:**
+  - `ReservaItem.terminadoEn` guarda cuándo terminó cada servicio. La tarjeta de cada profesional termina solo sus servicios (recorta o quita, como en la etapa 1) y queda en la auditoría.
+  - El turno pasa a atendido, por cobrar, cuando no queda ningún servicio pendiente.
+  - Mientras tanto, la otra profesional sigue «atendiendo» y la que terminó queda libre, junto con su recurso.
+  - Sin profesional (`terminarAtencion` sin opción) termina todo, como antes.
+- **Cabinas:** no requieren código. Se cargan como tipo de recurso y unidades (Catálogo → Recursos y la ficha de la sede), y el servicio las pide como requisito. El motor ya las valida y «Terminó» las libera.
+- **Masajes dobles** (pregunta abierta). Si son dos clientas en una sala, la sala se carga como dos unidades de un tipo «sala doble», y cada clienta es su propio turno. Si es una clienta con dos profesionales, son dos servicios a la vez.
 
 ## Preguntas para Sicurella
 

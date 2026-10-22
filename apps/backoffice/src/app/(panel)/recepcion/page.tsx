@@ -87,7 +87,7 @@ export default async function Recepcion({ searchParams }: { searchParams: Promis
         <div className="fila-cabecera"><h2>{p.nombre}</h2><span className={`tag ${demorada ? "estado-pendiente" : "estado-pendiente_pago"}`}>{demorada ? "Demorada" : "Atendiendo"}</span></div>
         <p>{a.cliente ? <Link href={`/clientes/${a.cliente.id}`}>{nombreCliente(a.cliente)}</Link> : "Sin cliente"} · {a.servicios.join(", ")}</p>
         <p className="ayuda">Desde las {hora(a.desde)} · estimado hasta las {hora(a.finEstimado)}{a.enOtraSede ? " · en otra sede" : ""}</p>
-        {!a.enOtraSede && <Formulario accion={accionTermino} boton="Terminó" className="en-linea"><input type="hidden" name="reservaId" value={a.reservaId} /></Formulario>}
+        {!a.enOtraSede && <Formulario accion={accionTermino} boton="Terminó" className="en-linea"><input type="hidden" name="reservaId" value={a.reservaId} /><input type="hidden" name="profesionalId" value={p.id} /></Formulario>}
       </article>;
     })}</div>
 

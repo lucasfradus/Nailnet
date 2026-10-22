@@ -36,5 +36,6 @@ export async function accionLlegada(_: Estado, form: FormData) {
   return ejecutar((actor, org) => marcarLlegada(db(), actor, org, texto(form, "reservaId")), "En atención");
 }
 export async function accionTermino(_: Estado, form: FormData) {
-  return ejecutar((actor, org) => terminarAtencion(db(), actor, org, texto(form, "reservaId")), "Terminó: queda por cobrar");
+  // Termina los servicios de esa profesional; con servicios a la vez, el turno queda por cobrar cuando terminan todas.
+  return ejecutar((actor, org) => terminarAtencion(db(), actor, org, texto(form, "reservaId"), new Date(), { profesionalId: texto(form, "profesionalId") || null }), "Terminó");
 }

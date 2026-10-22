@@ -10,7 +10,7 @@ import { crearCategoria, crearTipoRecurso, guardarServicio, guardarServicioSede 
 import { crearCliente } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
 import { crearProfesional, crearRecurso, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
-import { PROFESIONAL_OCUPADA, atenderAhora, marcarLlegada, terminarAtencion, tomarTurno } from "../src/reservas.ts";
+import { PROFESIONAL_OCUPADA, atenderAhora, marcarLlegada, reprogramarReserva, terminarAtencion, tomarTurno } from "../src/reservas.ts";
 import { registrarEntrada, registrarSalida, tableroSede } from "../src/tablero.ts";
 import { registrarVenta } from "../src/ventas.ts";
 import { crearFixture } from "../prisma/fixture.ts";
@@ -138,6 +138,38 @@ test("tablero de recepción (doc 29)", async (t) => {
       assert.equal((await fila(ana, en("16:06"))).presencia, null);
       await registrarEntrada(db, R, O, { sedeId: centro, profesionalId: ana }, en("17:00"));
       assert.equal(await db.presenciaProfesional.count({ where: { profesionalId: ana } }), 2, "turno mañana y turno tarde");
+    });
+
+    await t.test("a la vez (etapa 2): manos y pies con dos profesionales; «Terminó» por profesional", async () => {
+      const r = await atenderAhora(db, R, O, { sedeId: centro, clienteId: lucia, items: [{ servicioId: manos, profesionalId: ana }, { servicioId: pies, profesionalId: bea, conAnterior: true }] }, en("18:00"));
+      assert.deepEqual(r.items.map(i => [i.profesionalId, i.inicio.toISOString()]), [[ana, en("18:00").toISOString()], [bea, en("18:00").toISOString()]]);
+      await assert.rejects(atenderAhora(db, R, O, { sedeId: centro, clienteId: lucia, items: [{ servicioId: manos, profesionalId: caro }, { servicioId: manos, profesionalId: caro, conAnterior: true }] }, en("18:01")), ocupada, "una profesional no hace dos cosas a la vez");
+      const antes = await tableroSede(db, R, O, centro, en("18:20"));
+      assert.deepEqual([ana, bea].map(id => antes.profesionales.find(p => p.id === id)!.atencion?.reservaId), [r.reservaId, r.reservaId]);
+
+      // Bea termina los pies: queda libre (y el sillón también), Ana sigue con las manos.
+      await terminarAtencion(db, R, O, r.reservaId, en("18:30"), { profesionalId: bea });
+      const medio = await tableroSede(db, R, O, centro, en("18:31"));
+      assert.deepEqual([ana, bea].map(id => medio.profesionales.find(p => p.id === id)!.atencion?.reservaId ?? null), [r.reservaId, null]);
+      assert.equal((await db.reserva.findUniqueOrThrow({ where: { id: r.reservaId } })).estado, "CONFIRMADA", "todavía no está por cobrar");
+      assert.ok(!medio.porCobrar.some(p => p.reservaId === r.reservaId));
+      await assert.rejects(terminarAtencion(db, R, O, r.reservaId, en("18:32"), { profesionalId: bea }), /no tiene servicios pendientes/);
+      const otra = await atenderAhora(db, R, O, { sedeId: centro, clienteId: lucia, items: [{ servicioId: pies, profesionalId: bea }] }, en("18:31"));
+
+      // Ana termina: el turno pasa a atendido y queda por cobrar.
+      await terminarAtencion(db, R, O, r.reservaId, en("18:50"), { profesionalId: ana });
+      const fin = await db.reserva.findUniqueOrThrow({ where: { id: r.reservaId }, include: { items: { orderBy: { posicion: "asc" } } } });
+      assert.deepEqual([fin.estado, fin.terminadaEn?.toISOString(), ...fin.items.map(i => i.terminadoEn?.toISOString())], ["ATENDIDA", en("18:50").toISOString(), en("18:50").toISOString(), en("18:30").toISOString()]);
+      assert.ok((await tableroSede(db, R, O, centro, en("18:51"))).porCobrar.some(p => p.reservaId === r.reservaId));
+      await terminarAtencion(db, R, O, otra.reservaId, en("19:20"));
+    });
+
+    await t.test("a la vez: el portal no lo ofrece y reprogramar lo conserva", async () => {
+      await assert.rejects(tomarTurno(db, null, O, { sedeId: centro, fecha: FECHA, canal: "ONLINE", items: [{ servicioId: manos }, { servicioId: pies, conAnterior: true }], inicio: en("20:00") }, en("08:00")), /en recepción/);
+      const turno = await tomarTurno(db, R, O, { sedeId: centro, fecha: FECHA, canal: "RECEPCION", clienteId: lucia, items: [{ servicioId: manos }, { servicioId: pies, conAnterior: true }], inicio: en("20:00") }, en("08:00"));
+      assert.equal(new Set(turno.items.map(i => i.profesionalId)).size, 2, "«cualquiera» elige dos profesionales distintas");
+      const nueva = await reprogramarReserva(db, R, O, turno.reservaId, { fecha: FECHA, inicio: en("20:30") }, en("08:00"));
+      assert.deepEqual(nueva.items.map(i => i.inicio.toISOString()), [en("20:30").toISOString(), en("20:30").toISOString()]);
     });
   } finally {
     await db.$disconnect();

@@ -55,6 +55,15 @@ const permisosVenta: Record<Rol, readonly PermisoVenta[]> = {
   RECEPCIONISTA: VENTAS_COMPLETO,
   PROFESIONAL: [],
 };
+/**
+ * L03 · Reportes del período (ventas, cobros, turnos, ocupación, clientes y base comisionable). Tabla
+ * propia, como ventas. Recepción no: opera ventas y caja del día, pero no ve totales del período ni
+ * comisiones (confirmado por el usuario el 2026-10-22). Ver 29-reportes.md.
+ */
+export type PermisoReporte = "reporte:leer";
+const permisosReporte: Partial<Record<Rol, readonly PermisoReporte[]>> = {
+  MASTER_FRANQUICIADOR: ["reporte:leer"], FRANQUICIADO: ["reporte:leer"], ADMIN_SEDE: ["reporte:leer"],
+};
 export function asignacionValida(a: Asignacion): boolean {
   switch (a.rol) {
     case "MASTER_FRANQUICIADOR": return a.alcance === "ORGANIZACION" && a.franquiciadoId === null && a.sedeId === null;
@@ -65,8 +74,9 @@ export function asignacionValida(a: Asignacion): boolean {
     default: return false;
   }
 }
-export function tienePermiso(a: Asignacion, permiso: Permiso | PermisoGasto | PermisoVenta): boolean {
+export function tienePermiso(a: Asignacion, permiso: Permiso | PermisoGasto | PermisoVenta | PermisoReporte): boolean {
   if (!asignacionValida(a)) return false;
+  if (permiso.startsWith("reporte:")) return permisosReporte[a.rol]?.includes(permiso as PermisoReporte) ?? false;
   if (permiso.startsWith("gasto:")) return permisosGasto[a.rol]?.includes(permiso as PermisoGasto) ?? false;
   if (permiso.startsWith("venta:") || permiso.startsWith("caja:")) return permisosVenta[a.rol]?.includes(permiso as PermisoVenta) ?? false;
   if (permisosIncidencias[a.rol]?.includes(permiso as Permiso)) return true;

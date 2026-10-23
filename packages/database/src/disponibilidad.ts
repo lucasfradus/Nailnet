@@ -24,7 +24,7 @@ const fecha = (d: Date | null) => (d === null ? null : d.toISOString().slice(0, 
 const senaDe = (tipo: string | null, valor: Prisma.Decimal | null): Sena => (tipo ? { tipo: tipo as "FIJA", valor: valor === null ? null : tipo === "PORCENTAJE" ? valor.toFixed(0) : valor.toFixed(2) } : null);
 const sumarDias = (f: string, n: number) => new Date(Date.parse(`${f}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const MARGEN = 4 * 3_600_000;
-const semanal = <T extends { diaSemana: number; inicioMinutos: number; finMinutos: number; vigenteDesde: Date | null; vigenteHasta: Date | null }>(f: T) =>
+export const semanal = <T extends { diaSemana: number; inicioMinutos: number; finMinutos: number; vigenteDesde: Date | null; vigenteHasta: Date | null }>(f: T) =>
   ({ diaSemana: f.diaSemana, inicioMinutos: f.inicioMinutos, finMinutos: f.finMinutos, vigenteDesde: fecha(f.vigenteDesde), vigenteHasta: fecha(f.vigenteHasta) });
 
 /**

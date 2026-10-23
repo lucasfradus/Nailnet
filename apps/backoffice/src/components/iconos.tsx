@@ -14,6 +14,7 @@ export const ICONOS = {
   stock: "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16zM3.3 7 12 12l8.7-5M12 22V12",
   ventas: "M2 7h20v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zM2 11h20M6 15h4",
   caja: "M4 10h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1zM2 10h20M8 6h8l2 4H6zM12 14v3M10 15.5h4",
+  reportes: "M3 3v18h18M7 16v-3M12 16V8M17 16v-6",
   flecha: "m9 18 6-6-6-6",
   menu: "M4 6h16M4 12h16M4 18h16",
   cerrar: "M18 6 6 18M6 6l12 12",

@@ -1,4 +1,4 @@
-// L03 · Reportes de una sede para un período de fechas locales. Ver docs/29-reportes.md.
+// L03 · Reportes de una sede para un período de fechas locales. Ver docs/30-reportes.md.
 // Solo lectura. Cada sección declara su fecha de corte: ventas por fecha de venta, cobros por fecha del
 // cobro, turnos por el inicio del primer servicio, base comisionable por la fecha en que la venta quedó
 // cobrada completa. Dinero en centavos (bigint); nunca Number.
@@ -6,7 +6,7 @@ import { AccesoDenegado, cubreSede, tienePermiso } from "@nailnet/domain";
 import { aUtc } from "@nailnet/domain/agenda";
 import { aIntervalos, aperturaDelDia, jornadaDelDia, ocupacionDelDia, type Intervalo } from "@nailnet/domain/disponibilidad";
 import { sumarDias, validarPeriodo } from "@nailnet/domain/gastos";
-import { porcentaje, prorratearDescuento } from "@nailnet/domain/reportes";
+import { minutosEnVentana, porcentaje, promedio, prorratearDescuento } from "@nailnet/domain/reportes";
 import type { MedioCobro } from "@nailnet/domain/ventas";
 import type { Database } from "./client.ts";
 import { DatosInvalidos, asignacionesActor, exigirIds, mapaSedes } from "./access.ts";
@@ -37,6 +37,7 @@ export async function reporteSede(db: Database, actorId: string, organizacionId:
     ocupacion: await ocupacion(db, base, desde, hasta, sede.timezone, ahora),
     clientes: await clientes(db, base, periodo),
     comisiones: await comisiones(db, base, periodo),
+    recepcion: await recepcion(db, base, periodo, ahora),
   };
 }
 export type ReporteSede = Awaited<ReturnType<typeof reporteSede>>;
@@ -179,6 +180,63 @@ async function clientes(db: Database, base: Base, periodo: { gte: Date; lt: Date
     select: { clienteId: true }, distinct: ["clienteId"],
   }) : [];
   return { atendidos: ids.length, recurrentes: previos.length, nuevos: ids.length - previos.length, atencionesSinCliente: atendidas.filter(r => !r.clienteId).length };
+}
+
+// ─── Recepción: lo que registra el tablero (doc 29) ───────────────────────────
+// Presencia: minutos entre entrada y salida dentro del período (una abierta cuenta hasta ahora).
+// Atención real: turnos terminados con «Terminó» en el período; cada servicio cuenta desde su inicio
+// hasta que su profesional terminó. Estimado: lo que decía el catálogo. Espera: anotadas en el período.
+
+/** Una atención «se pasó» si duró más que lo estimado más este margen. */
+export const MARGEN_DEMORA_MINUTOS = 5;
+const minutos = (a: Date, b: Date) => (b.getTime() - a.getTime()) / 60_000;
+
+async function recepcion(db: Database, base: Base, periodo: { gte: Date; lt: Date }, ahora: Date) {
+  const ventana = { desde: periodo.gte.getTime(), hasta: periodo.lt.getTime() };
+  const presencias = await db.presenciaProfesional.findMany({
+    where: { ...base, entrada: { lt: periodo.lt }, OR: [{ salida: null }, { salida: { gt: periodo.gte } }] },
+    select: { profesionalId: true, entrada: true, salida: true, profesional: { select: { nombre: true, apellido: true } } },
+  });
+  const atenciones = await db.reserva.findMany({
+    where: { ...base, estado: "ATENDIDA", terminadaEn: periodo, iniciadaEn: { not: null } },
+    select: { id: true, iniciadaEn: true, terminadaEn: true, items: { select: { profesionalId: true, inicio: true, fin: true, duracionMinutos: true, terminadoEn: true, profesional: { select: { nombre: true, apellido: true } } } } },
+  });
+  const esperas = await db.esperaRecepcion.findMany({ where: { ...base, llegada: periodo }, select: { estado: true, llegada: true, cerradaEn: true } });
+
+  const porProfesional = new Map<string, { nombre: string; presenteMinutos: number; atendiendoMinutos: number; atenciones: Set<string> }>();
+  const fila = (id: string, p: { nombre: string; apellido: string | null }) => porProfesional.get(id) ?? porProfesional.set(id, { nombre: nombre(p), presenteMinutos: 0, atendiendoMinutos: 0, atenciones: new Set() }).get(id)!;
+  for (const p of presencias) fila(p.profesionalId, p.profesional).presenteMinutos += minutosEnVentana(p.entrada.getTime(), p.salida?.getTime() ?? null, ventana, ahora.getTime());
+  const reales: number[] = [], estimadas: number[] = [];
+  let demoradas = 0;
+  for (const a of atenciones) {
+    for (const i of a.items) {
+      const f = fila(i.profesionalId, i.profesional);
+      f.atendiendoMinutos += Math.max(0, minutos(i.inicio, i.terminadoEn ?? i.fin));
+      f.atenciones.add(a.id);
+    }
+    const real = minutos(a.iniciadaEn!, a.terminadaEn!);
+    const primero = Math.min(...a.items.map(i => i.inicio.getTime()));
+    const estimada = (Math.max(...a.items.map(i => i.inicio.getTime() + i.duracionMinutos * 60_000)) - primero) / 60_000;
+    reales.push(real); estimadas.push(estimada);
+    if (real > estimada + MARGEN_DEMORA_MINUTOS) demoradas++;
+  }
+  const profesionales = [...porProfesional.values()]
+    .map(p => ({ nombre: p.nombre, presenteMinutos: p.presenteMinutos, atendiendoMinutos: p.atendiendoMinutos, atenciones: p.atenciones.size, porcentaje: porcentaje(p.atendiendoMinutos, p.presenteMinutos) }))
+    // Una presencia abierta de otro día aparece en la consulta pero no suma nada en este período.
+    .filter(p => p.presenteMinutos > 0 || p.atenciones > 0)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+
+  const atendidas = esperas.filter(e => e.estado === "ATENDIDA"), seFueron = esperas.filter(e => e.estado === "SE_FUE").length;
+  const tiempos = atendidas.map(e => minutos(e.llegada, e.cerradaEn!));
+  return {
+    profesionales,
+    atenciones: { cantidad: atenciones.length, duracionReal: promedio(reales), duracionEstimada: promedio(estimadas), demoradas },
+    espera: {
+      anotadas: esperas.length, atendidas: atendidas.length, seFueron, sinCerrar: esperas.filter(e => e.estado === "ESPERANDO").length,
+      promedioMinutos: promedio(tiempos), maximoMinutos: tiempos.length ? Math.round(Math.max(...tiempos)) : null,
+      tasaAbandono: porcentaje(seFueron, atendidas.length + seFueron),
+    },
+  };
 }
 
 // ─── Base comisionable: servicios de ventas cobradas completas en el período ──

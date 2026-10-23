@@ -100,6 +100,17 @@ export default async function Reportes({ searchParams }: { searchParams: Promise
     </div>
     <Tabla seccion="ocupacion" vacio="Ningún profesional tiene jornada en el período." />
 
+    <h2 className="subtitulo">Recepción</h2>
+    <p className="ayuda">Lo que registra el tablero de recepción, {periodo}. En el local: entre la entrada y la salida que marca recepción. Atendiendo: desde que empieza cada servicio hasta «Terminó». Las atenciones cuentan por el día en que terminaron; la espera, por el día en que se anotó la clienta.</p>
+    <div className="resumen indicadores">
+      <Dato titulo="Duración real promedio" valor={r.recepcion.atenciones.duracionReal === null ? "—" : `${numero(r.recepcion.atenciones.duracionReal)} min`}
+        detalle={`Estimada: ${r.recepcion.atenciones.duracionEstimada === null ? "—" : `${numero(r.recepcion.atenciones.duracionEstimada)} min`} · ${r.recepcion.atenciones.demoradas} de ${r.recepcion.atenciones.cantidad} se pasaron`} />
+      <Dato titulo="Espera promedio" valor={r.recepcion.espera.promedioMinutos === null ? "—" : `${numero(r.recepcion.espera.promedioMinutos)} min`} detalle={`${r.recepcion.espera.atendidas} atendidas de la lista`} />
+      <Dato titulo="Se fueron sin atenderse" valor={numero(r.recepcion.espera.seFueron)} detalle={`Abandono: ${pct(r.recepcion.espera.tasaAbandono)}`} />
+    </div>
+    <Tabla seccion="recepcion" vacio="Sin presencias ni atenciones terminadas en el tablero en el período." />
+    <Tabla seccion="espera" vacio="Nadie se anotó en la lista de espera en el período." />
+
     <h2 className="subtitulo">Comisiones</h2>
     <p className="ayuda">Base comisionable: servicios de ventas que quedaron cobradas completas en el período, después de descuentos, sin productos. El porcentaje a pagar todavía no está definido; cuando se defina se agrega el importe.</p>
     <div className="resumen indicadores">

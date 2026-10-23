@@ -10,7 +10,8 @@ import { crearCategoria, guardarServicio, guardarServicioSede } from "../src/cat
 import { crearCliente } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
 import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
-import { cancelarReserva, marcarAtendida, marcarAusente, reprogramarReserva, tomarTurno } from "../src/reservas.ts";
+import { atenderAhora, cancelarReserva, marcarAtendida, marcarAusente, reprogramarReserva, terminarAtencion, tomarTurno } from "../src/reservas.ts";
+import { agregarEspera, esperaSeFue, registrarEntrada, registrarSalida } from "../src/tablero.ts";
 import { reporteSede } from "../src/reportes.ts";
 import { anularVenta, registrarVenta } from "../src/ventas.ts";
 import { crearFixture } from "../prisma/fixture.ts";
@@ -102,6 +103,33 @@ test("reportes de sede (L03)", async (t) => {
       assert.deepEqual(rep.clientes, { atendidos: 2, nuevos: 1, recurrentes: 1, atencionesSinCliente: 0 });
       const vacio = await reporteSede(db, a.admin.id, O, { sedeId: centro, desde: "2099-10-14", hasta: "2099-10-14" }, ahora);
       assert.deepEqual([vacio.turnos.total, vacio.turnos.tasaCancelacion, vacio.ocupacion.porcentaje], [0, null, null], "sin turnos ni jornada: sin tasas");
+    });
+
+    await t.test("recepción (tablero, doc 29): presencia contra atención, duración real y lista de espera", async () => {
+      const F = "2099-10-20"; // otro martes: no toca los números de arriba
+      await registrarEntrada(db, R, O, { sedeId: centro, profesionalId: ana }, en("09:00", F));
+      await registrarEntrada(db, R, O, { sedeId: centro, profesionalId: bea }, en("09:00", F));
+      // Ana: 60 min estimados, terminó a los 80 (se pasó). Bea: terminó a los 40.
+      const deAna = await atenderAhora(db, R, O, { sedeId: centro, clienteId: lucia, items: [{ servicioId: semi, profesionalId: ana }] }, en("09:30", F));
+      const sofia = await agregarEspera(db, R, O, { sedeId: centro, nombre: "Sofía", servicioIds: [semi] }, en("09:40", F));
+      const vera = await agregarEspera(db, R, O, { sedeId: centro, nombre: "Vera", servicioIds: [semi] }, en("09:45", F));
+      const deBea = await atenderAhora(db, R, O, { sedeId: centro, clienteId: marta, items: [{ servicioId: semi, profesionalId: bea }], esperaId: sofia.id }, en("10:00", F));
+      await esperaSeFue(db, R, O, vera.id, en("10:15", F));
+      await terminarAtencion(db, R, O, deBea.reservaId, en("10:40", F));
+      await terminarAtencion(db, R, O, deAna.reservaId, en("10:50", F));
+      await agregarEspera(db, R, O, { sedeId: centro, nombre: "Paula", servicioIds: [semi] }, en("11:00", F));
+      const presAna = await db.presenciaProfesional.findFirstOrThrow({ where: { profesionalId: ana, salida: null } });
+      await registrarSalida(db, R, O, presAna.id, en("13:00", F));
+
+      // A las 14 Bea sigue en el local: su presencia abierta cuenta hasta ese momento.
+      const { recepcion } = await reporteSede(db, a.admin.id, O, { sedeId: centro, desde: F, hasta: F }, en("14:00", F));
+      assert.deepEqual(recepcion.profesionales.map(p => [p.nombre, p.presenteMinutos, p.atendiendoMinutos, p.atenciones, p.porcentaje]),
+        [["Ana Pérez", 240, 80, 1, 33.3], ["Bea", 300, 40, 1, 13.3]]);
+      assert.deepEqual(recepcion.atenciones, { cantidad: 2, duracionReal: 60, duracionEstimada: 60, demoradas: 1 });
+      assert.deepEqual(recepcion.espera, { anotadas: 3, atendidas: 1, seFueron: 1, sinCerrar: 1, promedioMinutos: 20, maximoMinutos: 20, tasaAbandono: 50 });
+      // Otro día no tiene nada del tablero.
+      const otro = await reporteSede(db, a.admin.id, O, { sedeId: centro, desde: "2099-10-21", hasta: "2099-10-21" }, en("12:00", F));
+      assert.deepEqual([otro.recepcion.profesionales, otro.recepcion.atenciones.duracionReal, otro.recepcion.espera.tasaAbandono], [[], null, null]);
     });
 
     await t.test("alcance: recepción no ve reportes; nadie ve sedes ajenas; período acotado", async () => {

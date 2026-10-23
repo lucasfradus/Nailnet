@@ -1,5 +1,7 @@
 # Reportes · 2026-10-22
 
+> Era el doc 29; se renumeró a 30 el 2026-10-23 porque el 29 es el tablero de recepción.
+
 Primera parte de L03: pantalla **Reportes** del backoffice para la sede elegida arriba y un período de fechas locales (por defecto el mes en curso, hasta 366 días). Cada tabla se descarga en CSV. Caja, gastos y stock del período quedan para la segunda parte; los consolidados entre sedes son L04.
 
 Código: `packages/domain/src/reportes.ts` (prorrateo, porcentajes, CSV), `packages/database/src/reportes.ts` (`reporteSede`), `apps/backoffice/src/app/(panel)/reportes/` (pantalla, `tablas.ts` y `csv/route.ts`).
@@ -22,6 +24,19 @@ Cada sección tiene su propia fecha de corte, indicada en pantalla. Las definici
 | Clientes | Inicio del primer servicio | Clientes con al menos una atención en el período. Nuevo: su primera atención en la sede cae en el período; recurrente: ya tenía una anterior. |
 | Base comisionable | Momento en que la venta quedó cobrada completa | Servicios (no productos) de ventas en estado cobrada, netos de su parte del descuento, por profesional. Una venta anulada después deja de contar. |
 
+## Recepción (tablero, doc 29) · 2026-10-23
+
+Sección **Recepción** con lo que registra el tablero de recepción. Tiene dos tablas con CSV (`recepcion` y `espera`).
+
+| Indicador | Fecha de corte | Qué cuenta |
+|---|---|---|
+| En el local | Período | Minutos entre la entrada y la salida que marca recepción, dentro del período. Una presencia sin salida cuenta hasta el momento del reporte. |
+| Atendiendo | Día en que terminó la atención | Por cada servicio de un turno terminado con «Terminó»: desde su inicio hasta que su profesional terminó. Tiempo atendiendo = atendiendo ÷ en el local. |
+| Duración real y estimada | Día en que terminó | Real: de que empezó la atención (despacho o «Llegó») a «Terminó». Estimada: la del catálogo, contando los servicios a la vez. «Se pasó» = duró más que lo estimado más `MARGEN_DEMORA_MINUTOS` (5). |
+| Lista de espera | Día en que se anotó la clienta | Anotadas, atendidas, se fueron, sin cerrar. Espera = de que se anotó a que la atendieron (solo las atendidas). Abandono = se fueron ÷ (atendidas + se fueron). |
+
+Solo cuentan las atenciones cerradas con «Terminó» desde el tablero. Las marcadas «Atendido» en la agenda no tienen hora real de fin. Un profesional sin presencia ni atenciones en el período no aparece.
+
 ## Comisiones: qué falta
 
 D10 sigue pendiente: porcentaje y si se calcula sobre el bruto o el neto impositivo. Por eso el reporte muestra la **base**, no un importe a pagar. Cuando se defina, se agrega el porcentaje (versionado por profesional o por servicio) y la columna a pagar. La liquidación cerrada (que no se recalcula y ajusta reembolsos posteriores) es L01.
@@ -30,7 +45,7 @@ Se eligió devengar al cobro completo (confirmado por el usuario el 2026-10-22):
 
 ## CSV
 
-`GET /reportes/csv?seccion=…&desde=…&hasta=…`, con las secciones `profesionales`, `servicios`, `cobros`, `turnos`, `ocupacion` y `comisiones`. Mismo alcance que la pantalla. Formato pensado para abrir con doble clic en Excel con configuración regional argentina: separador `;`, coma decimal, importes en pesos sin símbolo y BOM UTF-8. Un texto que empieza con `=`, `+`, `-`, `@`, tabulación o retorno se antepone con `'` para que no se ejecute como fórmula. La pantalla y el CSV salen de la misma definición de tabla (`tablas.ts`), así que muestran lo mismo.
+`GET /reportes/csv?seccion=…&desde=…&hasta=…`, con las secciones `profesionales`, `servicios`, `cobros`, `turnos`, `ocupacion`, `comisiones`, `recepcion` y `espera`. Mismo alcance que la pantalla. Formato pensado para abrir con doble clic en Excel con configuración regional argentina: separador `;`, coma decimal, importes en pesos sin símbolo y BOM UTF-8. Un texto que empieza con `=`, `+`, `-`, `@`, tabulación o retorno se antepone con `'` para que no se ejecute como fórmula. La pantalla y el CSV salen de la misma definición de tabla (`tablas.ts`), así que muestran lo mismo.
 
 ## Pendiente
 
@@ -42,5 +57,5 @@ Se eligió devengar al cobro completo (confirmado por el usuario el 2026-10-22):
 ## Verificación
 
 - Dominio: prorrateo exacto (también con restos), porcentajes sin denominador, celdas CSV (números, negativos, comillas, `;` y fórmulas neutralizadas) y permisos por rol.
-- Integración (`packages/database/tests/reportes.test.ts`): una venta cobrada con descuento, una con saldo pendiente y una anulada con reverso; turnos atendidos, ausente, cancelado y reprogramado; clienta nueva y recurrente; ocupación por profesional; recepción, admin de otra sede y franquiciado ajeno rechazados; período inválido.
+- Integración (`packages/database/tests/reportes.test.ts`): una venta cobrada con descuento, una con saldo pendiente y una anulada con reverso; turnos atendidos, ausente, cancelado y reprogramado; clienta nueva y recurrente; ocupación por profesional; recepción, admin de otra sede y franquiciado ajeno rechazados; período inválido; recepción del tablero (presencia abierta y cerrada, una atención que se pasa del estimado y una que termina antes, lista de espera con atendida, ida y sin cerrar, y un día sin datos).
 - Backoffice local con la demo: pantalla del mes en curso y descarga CSV (200 con `text/csv`, 400 con período invertido, 404 con sección inexistente).

@@ -80,7 +80,7 @@ Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación ante
 | O02 | Caja y cierres · hecho 2026-10-14, ver 27-ventas-caja.md | Apertura, entradas/salidas, diferencia y reversos; digitales no inflan efectivo esperado |
 | O03 | Compras, stock y consumo interno · hecho 2026-10-14, ver 26-stock.md | Stock por sede, cantidades fraccionarias, movimientos; venta concurrente no produce negativo |
 | O04 | Gastos · hecho 2026-10-14, ver 25-gastos.md | Categorías y sede, egreso trazable, anulación por reverso |
-| O05 | Tablero de recepción · etapa 1 hecha 2026-10-21 (presencia, despacho, «Terminó», por cobrar), etapa 2 hecha 2026-10-22 (servicios a la vez, «Terminó» por profesional) y etapa 3 hecha 2026-10-22 (lista de espera); reportes pendientes; ver 29-tablero-recepcion.md | Presencia del día; despacho a profesional libre con habilidad y recurso; «Terminó» libera y recorta la agenda; por cobrar; servicios en paralelo; lista de espera |
+| O05 | Tablero de recepción · etapa 1 hecha 2026-10-21 (presencia, despacho, «Terminó», por cobrar), etapa 2 hecha 2026-10-22 (servicios a la vez, «Terminó» por profesional), etapa 3 hecha 2026-10-22 (lista de espera) y etapa 4 hecha 2026-10-23 (sección Recepción en Reportes, ver 30-reportes.md); ver 29-tablero-recepcion.md | Presencia del día; despacho a profesional libre con habilidad y recurso; «Terminó» libera y recorta la agenda; por cobrar; servicios en paralelo; lista de espera |
 
 ## Fase 8 · días 43–46 · liquidaciones e informes
 
@@ -88,7 +88,7 @@ Dependencias: C04–C05 y F05. Primer recorrido reserva-seña-confirmación ante
 |---|---|---|
 | L01 | Comisión y liquidación profesional | Base/porcentaje versionados, servicio elegible único, ajuste por reembolso |
 | L02 | Royalties, canon y fondo básicos | Configuración y cálculo por período según política; no duplica al recalcular; cierre preservado |
-| L03 | Reportes y CSV · primera parte hecha 2026-10-22 (ventas, cobros, turnos, ocupación, clientes y base comisionable con CSV; falta caja/gastos/stock y el porcentaje de comisión, D10), ver 29-reportes.md | Ventas, cobros, ocupación, atendidos/cancelados/ausentes, nuevos/recurrentes, ticket, comisiones, caja/gastos/stock |
+| L03 | Reportes y CSV · primera parte hecha 2026-10-22 (ventas, cobros, turnos, ocupación, clientes y base comisionable con CSV; falta caja/gastos/stock y el porcentaje de comisión, D10), ver 30-reportes.md | Ventas, cobros, ocupación, atendidos/cancelados/ausentes, nuevos/recurrentes, ticket, comisiones, caja/gastos/stock |
 | L04 | Consolidados | Comparativa sedes, franquiciado y master; exportación no revela sedes ajenas |
 
 ## Fase 9 · días 47–50 · piloto

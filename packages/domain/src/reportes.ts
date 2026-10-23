@@ -1,4 +1,4 @@
-// L03 · Reportes. Funciones puras: prorrateo de descuentos, tasas y CSV. Ver docs/29-reportes.md.
+// L03 · Reportes. Funciones puras: prorrateo de descuentos, tasas y CSV. Ver docs/30-reportes.md.
 import { importe } from "./catalogo.ts";
 
 /**
@@ -22,6 +22,20 @@ export function prorratearDescuento(subtotales: readonly bigint[], descuento: bi
 /** Porcentaje con un decimal; null si no hay denominador (se muestra «—», no 0 %). */
 export function porcentaje(parte: number, total: number): number | null {
   return total > 0 ? Math.round((1000 * parte) / total) / 10 : null;
+}
+
+/** Promedio con un decimal; null sin datos (se muestra «—»). */
+export function promedio(valores: readonly number[]): number | null {
+  return valores.length ? Math.round((10 * valores.reduce((a, b) => a + b, 0)) / valores.length) / 10 : null;
+}
+
+/**
+ * Minutos de un intervalo [desde, hasta) que caen dentro de la ventana del período. Un intervalo
+ * abierto (una presencia sin salida) cuenta hasta `ahora`; nada cuenta después de `ahora`.
+ */
+export function minutosEnVentana(desde: number, hasta: number | null, ventana: { desde: number; hasta: number }, ahora: number): number {
+  const fin = Math.min(hasta ?? ahora, ventana.hasta, ahora);
+  return Math.max(0, fin - Math.max(desde, ventana.desde)) / 60_000;
 }
 
 // ─── CSV ──────────────────────────────────────────────────────────────────────

@@ -43,6 +43,20 @@ export const TABLAS = {
     encabezados: ["Profesional", "Servicios", "Bruto", "Descuento", "Base comisionable"],
     filas: r.comisiones.profesionales.map(p => [p.nombre, p.servicios, p.bruto, -p.descuento, p.base]),
   }),
+  recepcion: (r: ReporteSede): Tabla => ({
+    titulo: "Presencia y atención por profesional",
+    encabezados: ["Profesional", "En el local (h)", "Atendiendo (h)", "Tiempo atendiendo (%)", "Atenciones"],
+    filas: r.recepcion.profesionales.map(p => [p.nombre, horas(p.presenteMinutos), horas(p.atendiendoMinutos), p.porcentaje, p.atenciones]),
+  }),
+  espera: (r: ReporteSede): Tabla => ({
+    titulo: "Lista de espera",
+    encabezados: ["Concepto", "Valor"],
+    filas: r.recepcion.espera.anotadas ? [
+      ["Anotadas", r.recepcion.espera.anotadas], ["Atendidas", r.recepcion.espera.atendidas], ["Se fueron sin atenderse", r.recepcion.espera.seFueron],
+      ["Sin cerrar", r.recepcion.espera.sinCerrar], ["Abandono (%)", r.recepcion.espera.tasaAbandono],
+      ["Espera promedio (min)", r.recepcion.espera.promedioMinutos], ["Espera máxima (min)", r.recepcion.espera.maximoMinutos],
+    ] : [],
+  }),
 } satisfies Record<string, (r: ReporteSede) => Tabla>;
 
 export type Seccion = keyof typeof TABLAS;

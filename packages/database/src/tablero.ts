@@ -40,10 +40,41 @@ export async function registrarSalida(db: Database, actorId: string, organizacio
   if (!p) throw new AccesoDenegado();
   await exigirSede(db, actorId, organizacionId, p.sedeId);
   if (p.salida) throw new DatosInvalidos("La salida ya está marcada");
-  const atendiendo = await db.reserva.count({ where: { organizacionId, estado: "CONFIRMADA", iniciadaEn: { not: null }, items: { some: { profesionalId: p.profesionalId } } } });
+  const atendiendo = await db.reserva.count({ where: { organizacionId, estado: "CONFIRMADA", iniciadaEn: { not: null }, items: { some: { profesionalId: p.profesionalId, terminadoEn: null } } } });
   if (atendiendo) throw new DatosInvalidos("Tiene una clienta en atención: marcá «Terminó» antes de la salida");
   const { count } = await db.presenciaProfesional.updateMany({ where: { id: presenciaId, salida: null }, data: { salida: ahora < p.entrada ? p.entrada : ahora, salidaPorId: actorId } });
   if (count !== 1) throw new DatosInvalidos("La salida ya está marcada");
+}
+
+/**
+ * Etapa 3 (doc 29): la clienta espera porque no hay nadie libre. Datos mínimos para no frenar la cola: el
+ * cliente se busca o se crea al atenderla. Los servicios tienen que estar habilitados en la sede y la
+ * profesional pedida, trabajar en ella.
+ */
+export async function agregarEspera(db: Database, actorId: string, organizacionId: string, datos: { sedeId: string; nombre: string; telefono?: string | null; servicioIds: string[]; profesionalId?: string | null; notas?: string | null }, ahora = new Date()) {
+  const servicioIds = [...new Set(datos.servicioIds.filter(Boolean))];
+  exigirIds(datos.profesionalId, ...servicioIds);
+  await exigirSede(db, actorId, organizacionId, datos.sedeId);
+  const nombre = datos.nombre.trim().slice(0, 80);
+  if (!nombre) throw new DatosInvalidos("Indicá el nombre de la clienta");
+  if (!servicioIds.length || servicioIds.length > 3) throw new DatosInvalidos("Elegí entre 1 y 3 servicios");
+  const habilitados = await db.servicioSede.count({ where: { organizacionId, sedeId: datos.sedeId, servicioId: { in: servicioIds }, habilitado: true, servicio: { activo: true } } });
+  if (habilitados !== servicioIds.length) throw new DatosInvalidos("Hay un servicio que no está disponible en esta sede");
+  if (datos.profesionalId && !await db.profesionalSede.count({ where: { organizacionId, sedeId: datos.sedeId, profesionalId: datos.profesionalId, activo: true } })) throw new DatosInvalidos("La profesional no trabaja en esta sede");
+  return db.esperaRecepcion.create({ data: {
+    organizacionId, sedeId: datos.sedeId, nombre, telefono: datos.telefono?.trim().slice(0, 40) || null, servicioIds, profesionalId: datos.profesionalId || null,
+    notas: datos.notas?.trim().slice(0, 300) || null, llegada: ahora, estado: "ESPERANDO", registradaPorId: actorId,
+  }, select: { id: true } });
+}
+
+/** La clienta se fue sin ser atendida. */
+export async function esperaSeFue(db: Database, actorId: string, organizacionId: string, esperaId: string, ahora = new Date()) {
+  exigirIds(esperaId);
+  const e = await db.esperaRecepcion.findFirst({ where: { id: esperaId, organizacionId }, select: { sedeId: true, llegada: true } });
+  if (!e) throw new AccesoDenegado();
+  await exigirSede(db, actorId, organizacionId, e.sedeId);
+  const { count } = await db.esperaRecepcion.updateMany({ where: { id: esperaId, estado: "ESPERANDO" }, data: { estado: "SE_FUE", cerradaEn: ahora < e.llegada ? e.llegada : ahora, cerradaPorId: actorId } });
+  if (count !== 1) throw new DatosInvalidos("Esa clienta ya no está en la lista de espera");
 }
 
 const POR_LLEGAR_MS = 2 * 3_600_000;
@@ -87,7 +118,7 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   });
   // Una atención en curso sigue ocupando a la profesional aunque se haya pasado del horario estimado.
   const enCurso = await db.reservaItem.findMany({
-    where: { organizacionId, profesionalId: { in: ids }, reserva: { estado: "CONFIRMADA", iniciadaEn: { not: null } } },
+    where: { organizacionId, profesionalId: { in: ids }, terminadoEn: null, reserva: { estado: "CONFIRMADA", iniciadaEn: { not: null } } },
     select: { profesionalId: true, fin: true, servicio: { select: { nombre: true } }, reserva: { select: { id: true, sedeId: true, iniciadaEn: true, cliente: { select: { id: true, nombre: true, apellido: true } } } } },
     orderBy: { inicio: "asc" },
   });
@@ -120,6 +151,11 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
     select: { id: true, terminadaEn: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true } }, profesional: { select: { nombre: true, apellido: true } } } } },
     take: 100,
   });
+  // Etapa 3: la lista de espera de hoy, por orden de llegada. Una espera olvidada de otro día no se muestra.
+  const esperas = await db.esperaRecepcion.findMany({
+    where: { organizacionId, sedeId, estado: "ESPERANDO", llegada: { gte: aUtc(aLocal(ahora, tz).fecha, 0, tz) } },
+    select: { id: true, nombre: true, telefono: true, servicioIds: true, profesionalId: true, notas: true, llegada: true }, orderBy: { llegada: "asc" },
+  });
   const nombre = (p: { nombre: string; apellido: string | null }) => [p.nombre, p.apellido].filter(Boolean).join(" ");
   const resumen = (r: (typeof porLlegar)[number]) => ({
     reservaId: r.id, cliente: r.cliente as ClienteBreve, inicio: r.items[0]!.inicio,
@@ -131,6 +167,7 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
     servicios: servicios.map(s => ({ id: s.servicio.id, nombre: s.servicio.nombre, duracionMinutos: s.duracionMinutos ?? s.servicio.duracionMinutos })),
     profesionales: filas,
     porLlegar: porLlegar.map(resumen).sort((a, b) => a.inicio.getTime() - b.inicio.getTime()),
+    esperas,
     porCobrar: porCobrar.map(r => ({ ...resumen(r), terminadaEn: r.terminadaEn ?? r.items.at(-1)!.fin }))
       .sort((a, b) => a.terminadaEn.getTime() - b.terminadaEn.getTime()),
   };

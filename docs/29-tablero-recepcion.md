@@ -1,6 +1,6 @@
 # Tablero de recepción · propuesta · 2026-10-21
 
-Propuesta (D20). Sale de la visita del usuario a un local de Sicurella el 2026-10-20 y extiende el flujo de recepción de 27-ventas-caja.md (D19). **Etapa 1 implementada el 2026-10-21** (ver «Etapa 1: implementación» abajo); las etapas 2 a 4 siguen pendientes.
+Propuesta (D20). Sale de la visita del usuario a un local de Sicurella el 2026-10-20 y extiende el flujo de recepción de 27-ventas-caja.md (D19). **Etapa 1 implementada el 2026-10-21; etapas 2 y 3 el 2026-10-22** (ver «Etapa 1: implementación», «Etapa 2: servicios a la vez» y «Etapa 3: lista de espera» abajo); la etapa 4 (reportes) sigue pendiente.
 
 ## Qué se vio en el local
 
@@ -105,6 +105,42 @@ Migración `202610210010_tablero_recepcion`. Repositorio en `packages/database/s
 - La presencia no cambia lo que ofrece el portal.
 - La agrupación por especialidad, los servicios en paralelo, la lista de espera y los reportes quedan para las etapas siguientes.
 - Probado en un navegador real (Chrome) contra una base local con la demo: entrada, despacho con cliente nuevo, atención, «Terminó» y por cobrar.
+
+## Etapa 2: servicios a la vez · 2026-10-22
+
+Migración `202610220010_servicios_a_la_vez`. Pruebas en `packages/domain/tests/disponibilidad.test.ts` y `packages/database/tests/tablero.test.ts`.
+
+- **Motor:** un ítem del pedido puede ir marcado `conAnterior`, y entonces empieza junto con el anterior en vez de a continuación.
+  - Lo que sigue sin la marca empieza cuando terminó todo lo anterior.
+  - El fin del turno es el del servicio más largo.
+  - Los simultáneos nunca comparten profesional ni unidad de recurso: el motor ya trata como ocupado lo tentativo. Con «cualquiera», elige dos profesionales distintas.
+- **Solo recepción.** El portal rechaza `conAnterior` («Los servicios a la vez se toman en recepción»).
+- **Reprogramar** conserva los simultáneos: se deducen de que dos ítems seguidos tienen el mismo inicio.
+- **«Atender ahora»:** cada servicio adicional tiene la casilla «A la vez con el anterior (otra profesional)».
+- **«Terminó» por profesional:**
+  - `ReservaItem.terminadoEn` guarda cuándo terminó cada servicio. La tarjeta de cada profesional termina solo sus servicios (recorta o quita, como en la etapa 1) y queda en la auditoría.
+  - El turno pasa a atendido, por cobrar, cuando no queda ningún servicio pendiente.
+  - Mientras tanto, la otra profesional sigue «atendiendo» y la que terminó queda libre, junto con su recurso.
+  - Sin profesional (`terminarAtencion` sin opción) termina todo, como antes.
+- **Cabinas:** no requieren código. Se cargan como tipo de recurso y unidades (Catálogo → Recursos y la ficha de la sede), y el servicio las pide como requisito. El motor ya las valida y «Terminó» las libera.
+- **Masajes dobles** (pregunta abierta). Si son dos clientas en una sala, la sala se carga como dos unidades de un tipo «sala doble», y cada clienta es su propio turno. Si es una clienta con dos profesionales, son dos servicios a la vez.
+
+## Etapa 3: lista de espera · 2026-10-22
+
+Migración `202610220020_lista_espera`. Repositorio en `packages/database/src/tablero.ts` (`agregarEspera`, `esperaSeFue` y la lista en `tableroSede`). Pruebas en `packages/database/tests/tablero.test.ts`.
+
+- **`EsperaRecepcion`:** nombre, teléfono opcional, de 1 a 3 servicios, profesional que pidió (opcional), nota y hora de llegada.
+  - Estados: `ESPERANDO`, `ATENDIDA` (con su turno) y `SE_FUE`. Un CHECK exige la forma de cada estado.
+  - Es un dato aparte del cliente, para no frenar la cola: el cliente se busca o se crea recién al atenderla.
+- **Validaciones:** los servicios tienen que estar habilitados en la sede y la profesional pedida, trabajar en ella.
+- **Despacho:** «Atender» abre «Atender ahora» con la búsqueda de cliente (teléfono o nombre), el alta rápida con nombre y teléfono, el primer servicio y la profesional pedida (si está libre) o la primera libre que lo hace.
+  - Al empezar, la espera pasa a atendida **en la misma transacción del turno**, con un gancho `despues` de `tomarTurno`.
+  - Si otra recepcionista ya la atendió o se fue, el turno no se crea («Esa clienta ya no está en la lista de espera»).
+- **Tablero:**
+  - Sección «En espera» por orden de llegada, con cuánto lleva esperando, qué pidió, quiénes pueden atenderla ahora (libres que hacen el primer servicio), «Atender» y «Se fue».
+  - «+ Anotar en espera» y un contador.
+  - Solo muestra las esperas de hoy: una olvidada de otro día no aparece.
+- Probado en Chrome contra la demo: anotar, sugerencia de quién puede, «Atender» con todo cargado, salida de la lista al empezar y «Se fue».
 
 ## Preguntas para Sicurella
 

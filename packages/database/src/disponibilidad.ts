@@ -9,7 +9,8 @@ import { configuracionEfectiva } from "./configuracion.ts";
 
 type Db = Database | Prisma.TransactionClient;
 export type Canal = "ONLINE" | "RECEPCION";
-export type Pedido = { sedeId: string; fecha: string; canal: Canal; items: { servicioId: string; profesionalId?: string | null }[] };
+/** `conAnterior`: el ítem empieza junto con el anterior (doc 29). Solo en recepción. */
+export type Pedido = { sedeId: string; fecha: string; canal: Canal; items: { servicioId: string; profesionalId?: string | null; conAnterior?: boolean }[] };
 
 /** Falta configuración que el negocio todavía no definió: el motor no supone valores. */
 export class ConfiguracionIncompleta extends Error {
@@ -39,6 +40,7 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
   const { sedeId, canal } = pedido;
   if (!validarFecha(pedido.fecha)) throw new DatosInvalidos("Fecha inválida");
   if (!pedido.items.length || pedido.items.length > 4) throw new DatosInvalidos("Elegí entre 1 y 4 servicios");
+  if (canal === "ONLINE" && pedido.items.some(i => i.conAnterior)) throw new DatosInvalidos("Los servicios a la vez se toman en recepción");
   exigirIds(sedeId, ...pedido.items.flatMap(i => [i.servicioId, i.profesionalId]));
   const sede = await db.sede.findFirst({ where: { id: sedeId, organizacionId, activo: true, franquiciado: { activo: true } }, select: { timezone: true } });
   if (!sede) throw new AccesoDenegado();
@@ -122,7 +124,7 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
       const candidatos = aptos(i.servicioId);
       return {
         servicioId: i.servicioId, duracionMinutos: e.duracionMinutos, bufferAntesMinutos: e.bufferAntesMinutos, bufferDespuesMinutos: e.bufferDespuesMinutos,
-        requisitos: e.servicio.recursos, candidatos: i.profesionalId ? candidatos.filter(c => c === i.profesionalId) : candidatos,
+        requisitos: e.servicio.recursos, candidatos: i.profesionalId ? candidatos.filter(c => c === i.profesionalId) : candidatos, conAnterior: !!i.conAnterior,
       };
     }),
     profesionales: datos,

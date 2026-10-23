@@ -70,6 +70,11 @@ export type ItemPedido = {
   requisitos: { tipoRecursoId: string; cantidad: number }[];
   /** Profesionales aptos (sede, skills, habilitación, activos). Si se eligió uno, solo ese. */
   candidatos: string[];
+  /**
+   * Empieza junto con el ítem anterior en vez de a continuación (doc 29: manos y pies a la vez, con
+   * dos profesionales). Lo que sigue sin esta marca empieza cuando terminó todo lo anterior.
+   */
+  conAnterior?: boolean;
 };
 export type DatosProfesional = { jornada: Intervalo[]; ocupado: Intervalo[]; cargaMinutos: number };
 export type DatosRecurso = { id: string; tipoRecursoId: string; ocupado: Intervalo[] };
@@ -107,18 +112,22 @@ function asignarRecursos(item: ItemPedido, intervalo: Intervalo, recursos: Consu
 }
 
 /**
- * Asigna los ítems encadenados a partir de `inicio`. Cada ítem empieza cuando termina el servicio
- * anterior. El profesional ocupa su intervalo con tiempos de preparación, dentro de su jornada;
- * el servicio en sí debe caer dentro de la apertura de la sede. Búsqueda en profundidad acotada:
- * prueba profesionales en orden de preferencia y vuelve atrás si un ítem posterior no tiene lugar.
+ * Asigna los ítems encadenados a partir de `inicio`. Cada ítem empieza cuando termina todo lo anterior,
+ * salvo el marcado `conAnterior`, que empieza junto con el ítem anterior (los simultáneos nunca comparten
+ * profesional: el intervalo tentativo lo impide). El profesional ocupa su intervalo con tiempos de
+ * preparación, dentro de su jornada; el servicio en sí debe caer dentro de la apertura de la sede.
+ * Búsqueda en profundidad acotada: prueba profesionales en orden de preferencia y vuelve atrás si un
+ * ítem posterior no tiene lugar.
  */
 function asignar(c: Consulta, inicio: number): ItemAsignado[] | null {
   const tentProf = new Map<string, Intervalo[]>();
   const tentRec = new Map<string, Intervalo[]>();
   const resultado: ItemAsignado[] = [];
-  const paso = (i: number, desde: number): boolean => {
+  // `finMax`: cuándo terminó todo lo asignado; `previo`: inicio del ítem anterior.
+  const paso = (i: number, finMax: number, previo: number): boolean => {
     if (i === c.items.length) return true;
     const item = c.items[i]!;
+    const desde = i > 0 && item.conAnterior ? previo : finMax;
     const fin = desde + item.duracionMinutos * MIN;
     const servicio = { desde, hasta: fin };
     if (!c.apertura.some(a => contiene(a, servicio))) return false;
@@ -131,15 +140,16 @@ function asignar(c: Consulta, inicio: number): ItemAsignado[] | null {
       tentProf.set(id, [...(tentProf.get(id) ?? []), ocupa]);
       for (const r of recursoIds) tentRec.set(r, [...(tentRec.get(r) ?? []), ocupa]);
       resultado.push({ servicioId: item.servicioId, profesionalId: id, inicio: desde, fin, ocupaDesde: ocupa.desde, ocupaHasta: ocupa.hasta, recursoIds });
-      if (paso(i + 1, fin)) return true;
+      if (paso(i + 1, Math.max(finMax, fin), desde)) return true;
       resultado.pop();
       tentProf.get(id)!.pop();
       for (const r of recursoIds) tentRec.get(r)!.pop();
     }
     return false;
   };
-  return paso(0, inicio) ? resultado : null;
+  return paso(0, inicio, inicio) ? resultado : null;
 }
+const finDe = (items: ItemAsignado[]) => Math.max(...items.map(i => i.fin));
 
 /**
  * Turnos disponibles en la fecha. Los inicios caen en múltiplos de `pasoMinutos` desde la medianoche
@@ -152,7 +162,7 @@ export function buscarTurnos(c: Consulta): Turno[] {
     const inicio = aUtc(c.fecha, minuto, c.tz).getTime();
     if (inicio < c.desdeMs || (c.hastaMs !== null && inicio > c.hastaMs)) continue;
     const items = asignar(c, inicio);
-    if (items) turnos.push({ inicio, fin: items.at(-1)!.fin, items });
+    if (items) turnos.push({ inicio, fin: finDe(items), items });
   }
   return turnos;
 }
@@ -161,6 +171,6 @@ export function buscarTurnos(c: Consulta): Turno[] {
 export function asignarEn(c: Consulta, inicio: number): Turno | null {
   if (inicio < c.desdeMs || (c.hastaMs !== null && inicio > c.hastaMs)) return null;
   const items = asignar(c, inicio);
-  return items ? { inicio, fin: items.at(-1)!.fin, items } : null;
+  return items ? { inicio, fin: finDe(items), items } : null;
 }
 

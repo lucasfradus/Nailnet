@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { tienePermiso, type Asignacion } from "../src/access.ts";
-import { aCsv, celdaCsv, porcentaje, prorratearDescuento } from "../src/reportes.ts";
+import { aCsv, celdaCsv, minutosEnVentana, porcentaje, promedio, prorratearDescuento } from "../src/reportes.ts";
 
 test("descuento prorrateado por línea: proporcional y la suma da exacta", () => {
   assert.deepEqual(prorratearDescuento([3000000n, 1000000n], 400000n), [300000n, 100000n], "$30.000 + $10.000 con $4.000 de descuento");
@@ -19,6 +19,16 @@ test("porcentaje: un decimal y sin denominador no es 0 %", () => {
   assert.equal(porcentaje(2, 3), 66.7);
   assert.equal(porcentaje(0, 5), 0);
   assert.equal(porcentaje(0, 0), null);
+});
+
+test("tablero (doc 29): promedio y minutos dentro del período", () => {
+  assert.equal(promedio([10, 20, 25]), 18.3);
+  assert.equal(promedio([]), null);
+  const h = (n: number) => n * 3_600_000, ventana = { desde: h(10), hasta: h(20) };
+  assert.equal(minutosEnVentana(h(9), h(11), ventana, h(30)), 60, "empezó antes del período");
+  assert.equal(minutosEnVentana(h(19), h(22), ventana, h(30)), 60, "terminó después");
+  assert.equal(minutosEnVentana(h(12), null, ventana, h(13)), 60, "abierta: cuenta hasta ahora");
+  assert.equal(minutosEnVentana(h(21), h(22), ventana, h(30)), 0, "fuera del período");
 });
 
 test("CSV para Excel argentino: «;», coma decimal, BOM y sin fórmulas", () => {

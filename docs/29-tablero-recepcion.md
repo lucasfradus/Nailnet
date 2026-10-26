@@ -1,6 +1,6 @@
 # Tablero de recepción · propuesta · 2026-10-21
 
-Propuesta (D20). Sale de la visita del usuario a un local de Sicurella el 2026-10-20 y extiende el flujo de recepción de 27-ventas-caja.md (D19). **Etapa 1 implementada el 2026-10-21; etapas 2 y 3 el 2026-10-22** (ver «Etapa 1: implementación», «Etapa 2: servicios a la vez» y «Etapa 3: lista de espera» abajo); la etapa 4 (reportes) sigue pendiente.
+Propuesta (D20). Sale de la visita del usuario a un local de Sicurella el 2026-10-20 y extiende el flujo de recepción de 27-ventas-caja.md (D19). **Etapa 1 implementada el 2026-10-21; etapas 2 y 3 el 2026-10-22** (ver «Etapa 1: implementación», «Etapa 2: servicios a la vez» y «Etapa 3: lista de espera» abajo); la etapa 4 (reportes) quedó el 2026-10-23 dentro de Reportes (ver 30-reportes.md, sección «Recepción»).
 
 ## Qué se vio en el local
 

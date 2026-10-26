@@ -58,7 +58,7 @@ const permisosVenta: Record<Rol, readonly PermisoVenta[]> = {
 /**
  * L03 · Reportes del período (ventas, cobros, turnos, ocupación, clientes y base comisionable). Tabla
  * propia, como ventas. Recepción no: opera ventas y caja del día, pero no ve totales del período ni
- * comisiones (confirmado por el usuario el 2026-10-22). Ver 29-reportes.md.
+ * comisiones (confirmado por el usuario el 2026-10-22). Ver 30-reportes.md.
  */
 export type PermisoReporte = "reporte:leer";
 const permisosReporte: Partial<Record<Rol, readonly PermisoReporte[]>> = {

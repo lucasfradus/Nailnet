@@ -13,6 +13,8 @@ const logs = [];
 const pg = new EmbeddedPostgres({
   databaseDir: directory, user: "nailnet", password, port, persistent: true,
   initdbFlags: ["--encoding=UTF8", "--locale=C"],
+  // PostgreSQL no corre como root (p. ej. contenedores de desarrollo): usa/crea el usuario postgres y le cede el directorio.
+  createPostgresUser: process.getuid?.() === 0,
   onLog: () => {}, onError: message => { logs.push(String(message)); },
 });
 const url = `postgresql://nailnet:${password}@localhost:${port}/nailnet_test`;

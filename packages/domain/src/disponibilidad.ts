@@ -174,3 +174,18 @@ export function asignarEn(c: Consulta, inicio: number): Turno | null {
   return items ? { inicio, fin: finDe(items), items } : null;
 }
 
+export type EstadoAhora = { estado: "libre"; hasta: number } | { estado: "ocupada"; hasta: number } | { estado: "fuera" };
+/**
+ * Para «Atender ahora» (doc 29): situación del profesional en este instante. Libre hasta su próximo
+ * turno o bloqueo, o el fin de su jornada; ocupado hasta que termina el bloque que lo ocupa; o fuera
+ * de su horario (o la sede cerrada). Si un servicio entra lo decide `asignarEn`, como al tomar el turno.
+ */
+export function estadoAhora(apertura: readonly Intervalo[], p: DatosProfesional, ahora: number): EstadoAhora {
+  const en = (x: Intervalo) => x.desde <= ahora && ahora < x.hasta;
+  const jornada = p.jornada.find(en);
+  if (!jornada || !apertura.some(en)) return { estado: "fuera" };
+  const bloque = unir(p.ocupado).find(en);
+  if (bloque) return { estado: "ocupada", hasta: bloque.hasta };
+  return { estado: "libre", hasta: Math.min(jornada.hasta, ...p.ocupado.filter(o => o.desde > ahora).map(o => o.desde)) };
+}
+

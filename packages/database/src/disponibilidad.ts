@@ -1,7 +1,7 @@
 import { AccesoDenegado } from "@nailnet/domain";
 import { aLocal, aUtc, validarFecha } from "@nailnet/domain/agenda";
 import { servicioEfectivo, type Sena } from "@nailnet/domain/catalogo";
-import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, jornadaDelDia, ocupacionDelDia, type Consulta, type DatosProfesional, type Intervalo, type Turno } from "@nailnet/domain/disponibilidad";
+import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, estadoAhora, jornadaDelDia, ocupacionDelDia, type Consulta, type DatosProfesional, type EstadoAhora, type Intervalo, type Turno } from "@nailnet/domain/disponibilidad";
 import type { Database } from "./client.ts";
 import type { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds, sedesConPermiso } from "./access.ts";
@@ -183,6 +183,70 @@ export async function ocupacionSede(db: Database, actorId: string, organizacionI
       turnos: turnos.filter(t => t.profesionalId === p.id).map(t => ({ desde: t.ocupaDesde.getTime(), hasta: t.ocupaHasta.getTime() })),
     }),
   })).filter(o => o.disponibleMinutos > 0);
+}
+
+/**
+ * «Atender ahora» (doc 29): por profesional activa de la sede, su estado en este minuto y qué servicios
+ * puede empezar ya. Cada servicio se prueba con el motor, como lo hará `atenderAhora` al tomar el turno.
+ * Una atención en curso la ocupa aunque se haya pasado del fin estimado, como en el tablero. Lo ofrecido
+ * es orientativo: el turno se revalida con locks al tomarlo.
+ */
+export async function disponiblesAhora(db: Database, actorId: string, organizacionId: string, sedeId: string, ahora = new Date()) {
+  exigirIds(sedeId);
+  const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
+  if (!ids.has(sedeId)) throw new AccesoDenegado();
+  const { timezone: tz } = await db.sede.findUniqueOrThrow({ where: { id: sedeId }, select: { timezone: true } });
+  const inicio = Math.floor(ahora.getTime() / 60_000) * 60_000;
+  const dia = aLocal(new Date(inicio), tz).fecha;
+  const ventana = { gte: new Date(inicio - MARGEN), lt: new Date(aUtc(dia, 1440, tz).getTime() + MARGEN) };
+
+  const servicios = (await db.servicio.findMany({
+    where: { organizacionId, activo: true, sedes: { some: { sedeId, habilitado: true } } },
+    include: { sedes: { where: { sedeId } }, skills: { select: { skillId: true } } },
+  })).map(s => ({
+    id: s.id, skills: s.skills.map(k => k.skillId), duracionMinutos: s.sedes[0]!.duracionMinutos ?? s.duracionMinutos,
+    bufferAntesMinutos: s.bufferAntesMinutos, bufferDespuesMinutos: s.bufferDespuesMinutos,
+  }));
+  const profesionales = await db.profesional.findMany({
+    where: { organizacionId, activo: true, sedes: { some: { sedeId, activo: true } } },
+    select: { id: true, nombre: true, apellido: true, servicios: { select: { servicioId: true } }, skills: { select: { skillId: true } } },
+    orderBy: [{ nombre: "asc" }, { apellido: "asc" }],
+  });
+  const profIds = profesionales.map(p => p.id);
+  // Secuencial a propósito, como en la disponibilidad: comparten conexión.
+  const horarios = await db.horarioProfesional.findMany({ where: { profesionalId: { in: profIds }, sedeId } });
+  const ocupaciones = await db.reservaItem.findMany({ where: { profesionalId: { in: profIds }, ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, reserva: reservaActiva(ahora) }, select: { profesionalId: true, ocupaDesde: true, ocupaHasta: true } });
+  const bloqueos = await db.bloqueoAgenda.findMany({ where: { profesionalId: { in: profIds }, inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } } });
+  const enCurso = await db.reservaItem.findMany({ where: { organizacionId, profesionalId: { in: profIds }, terminadoEn: null, reserva: { estado: "CONFIRMADA", iniciadaEn: { not: null } } }, select: { profesionalId: true, fin: true } });
+  const presentes = new Set((await db.presenciaProfesional.findMany({ where: { organizacionId, sedeId, profesionalId: { in: profIds }, salida: null }, select: { profesionalId: true } })).map(p => p.profesionalId));
+  const horarioSede = await db.horarioSede.findMany({ where: { sedeId } });
+  const excepciones = await db.excepcionHorario.findMany({ where: { organizacionId, fecha: new Date(`${dia}T00:00:00Z`), OR: [{ sedeId }, { sedeId: null }] } });
+  const apertura = aIntervalos(aperturaDelDia(horarioSede.map(semanal), excepciones.filter(e => e.sedeId), excepciones.filter(e => !e.sedeId), dia), dia, tz);
+
+  return { timezone: tz, profesionales: profesionales.map(p => {
+    const datos: DatosProfesional = {
+      jornada: aIntervalos(jornadaDelDia(horarios.filter(h => h.profesionalId === p.id).map(semanal), dia), dia, tz),
+      ocupado: [
+        ...ocupaciones.filter(o => o.profesionalId === p.id).map(o => ({ desde: o.ocupaDesde.getTime(), hasta: o.ocupaHasta.getTime() })),
+        ...bloqueos.filter(b => b.profesionalId === p.id).map(b => ({ desde: b.inicio.getTime(), hasta: b.fin.getTime() })),
+      ],
+      cargaMinutos: 0,
+    };
+    // Mismo criterio que el motor: habilitada para el servicio y con todas sus habilidades.
+    const aptos = servicios.filter(s => p.servicios.some(x => x.servicioId === s.id) && s.skills.every(k => p.skills.some(x => x.skillId === k)));
+    const atendiendo = enCurso.filter(i => i.profesionalId === p.id);
+    const estado: EstadoAhora = atendiendo.length ? { estado: "ocupada", hasta: Math.max(inicio, ...atendiendo.map(i => i.fin.getTime())) } : estadoAhora(apertura, datos, inicio);
+    // Sin recursos: los revalida el motor al tomar el turno.
+    const entra = (s: (typeof servicios)[number]) => !!asignarEn({
+      fecha: dia, tz, pasoMinutos: 1, apertura, recursos: [], desdeMs: inicio, hastaMs: null, profesionales: new Map([[p.id, datos]]),
+      items: [{ servicioId: s.id, duracionMinutos: s.duracionMinutos, bufferAntesMinutos: s.bufferAntesMinutos, bufferDespuesMinutos: s.bufferDespuesMinutos, requisitos: [], candidatos: [p.id] }],
+    }, inicio);
+    return {
+      id: p.id, nombre: [p.nombre, p.apellido].filter(Boolean).join(" "), presente: presentes.has(p.id),
+      estado: estado.estado, hasta: "hasta" in estado ? new Date(estado.hasta) : null,
+      servicioIds: aptos.map(s => s.id), entranAhora: estado.estado === "libre" ? aptos.filter(entra).map(s => s.id) : [],
+    };
+  }) };
 }
 
 export { asignarEn };

@@ -4,12 +4,13 @@ import { notFound } from "next/navigation";
 import { AccesoDenegado } from "@nailnet/domain";
 import { catalogoSede } from "@nailnet/database/catalogo";
 import { listarClientes, obtenerCliente } from "@nailnet/database/clientes";
-import { listarProfesionales } from "@nailnet/database/profesionales";
+import { disponiblesAhora } from "@nailnet/database/disponibilidad";
 import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { accionCrearCliente } from "../../acciones";
 import { accionAtenderAhora } from "./acciones";
+import { ServiciosAhora } from "./servicios";
 
 export const metadata: Metadata = { title: "Atender ahora · Sicurella" };
 const SERVICIOS = 3;
@@ -29,14 +30,14 @@ export default async function AtenderAhora({ searchParams }: { searchParams: Pro
   if (!puede.verSedes) notFound();
   if (!sede) return <section className="panel"><h1>Atender ahora</h1><p className="intro">No tenés sedes asignadas.</p></section>;
   const actorId = sesion.usuario.id;
-  const [catalogo, profesionales] = await Promise.all([
+  const [catalogo, disponibles] = await Promise.all([
     catalogoSede(db(), actorId, organizacion.id, sede.id),
-    listarProfesionales(db(), actorId, organizacion.id, { sedeId: sede.id }).catch(e => { if (e instanceof AccesoDenegado) return []; throw e; }),
+    disponiblesAhora(db(), actorId, organizacion.id, sede.id).catch(e => { if (e instanceof AccesoDenegado) return { timezone: "UTC", profesionales: [] }; throw e; }),
   ]);
+  const hora = (d: Date) => d.toLocaleTimeString("es-AR", { timeZone: disponibles.timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const cliente = q.cliente ? await obtenerCliente(db(), actorId, organizacion.id, q.cliente).catch(e => { if (e instanceof AccesoDenegado) return null; throw e; }) : null;
   const candidatos = !cliente && q.buscar?.trim() ? await listarClientes(db(), actorId, organizacion.id, { texto: q.buscar }).catch(e => { if (e instanceof AccesoDenegado) return []; throw e; }) : [];
   const habilitados = catalogo.servicios.filter(s => s.efectivo.habilitado);
-  const activas = profesionales.filter(p => p.activo);
   const sugerido = q.buscar?.trim() ?? "";
   // Desde la lista de espera llega también el nombre, para el alta rápida.
   const valores: { nombre?: string; telefono?: string; email?: string } = { ...(sugerido.includes("@") ? { email: sugerido } : /^[\d\s+()-]+$/.test(sugerido) ? { telefono: sugerido } : { nombre: sugerido }), ...(q.nombre ? { nombre: q.nombre } : {}) };
@@ -45,7 +46,7 @@ export default async function AtenderAhora({ searchParams }: { searchParams: Pro
     <p className="eyebrow">{desdeTablero ? <Link href="/recepcion">RECEPCIÓN</Link> : <Link href="/agenda">AGENDA</Link>} · {sede.nombre.toUpperCase()}</p>
     <h1>Atender ahora</h1>
     {q.espera && <p className="alerta ok">Clienta de la lista de espera: al empezar sale de la lista.</p>}
-    <p className="intro">Para un cliente que llegó sin turno. El turno empieza ahora y ocupa la agenda de la profesional: el portal deja de ofrecer ese horario. Si la profesional está ocupada, elegí otra.</p>
+    <p className="intro">Para un cliente que llegó sin turno. El turno empieza ahora y ocupa la agenda de la profesional: el portal deja de ofrecer ese horario. Solo se pueden elegir las profesionales que pueden empezar ahora; las demás aparecen con el motivo.</p>
 
     <h2 className="subtitulo">1. Cliente</h2>
     {cliente ? <p className="alerta ok">{cliente.nombre} {cliente.apellido ?? ""}{cliente.telefono ? ` · ${cliente.telefono}` : ""} <Link href={aqui()}>Cambiar</Link></p> : <>
@@ -80,17 +81,9 @@ export default async function AtenderAhora({ searchParams }: { searchParams: Pro
         <input type="hidden" name="clienteId" value={cliente.id} />
         {desdeTablero && <input type="hidden" name="volver" value="recepcion" />}
         {q.espera && <input type="hidden" name="esperaId" value={q.espera} />}
-        {Array.from({ length: SERVICIOS }, (_, i) => <div key={i} className="grilla">
-          <select name={`s_${i}`} defaultValue={i === 0 ? q.servicio ?? "" : ""} aria-label={`Servicio ${i + 1}`} required={i === 0}>
-            <option value="">{i === 0 ? "Elegí un servicio" : "+ Otro servicio"}</option>
-            {habilitados.map(s => <option key={s.id} value={s.id}>{s.nombre} · {s.efectivo.duracionMinutos} min</option>)}
-          </select>
-          <select name={`p_${i}`} defaultValue={i === 0 ? q.profesional ?? "" : ""} aria-label={`Profesional del servicio ${i + 1}`} required={i === 0}>
-            <option value="">Profesional</option>
-            {activas.map(p => <option key={p.id} value={p.id}>{p.nombre} {p.apellido ?? ""}</option>)}
-          </select>
-          {i > 0 && <label className="check"><input type="checkbox" name={`j_${i}`} value="1" />A la vez con el anterior (otra profesional)</label>}
-        </div>)}
+        <ServiciosAhora filas={SERVICIOS} clienteId={cliente.id} inicial={{ servicio: q.servicio, profesional: q.profesional }}
+          servicios={habilitados.map(s => ({ id: s.id, nombre: s.nombre, categoria: s.categoria, duracionMinutos: s.efectivo.duracionMinutos }))}
+          profesionales={disponibles.profesionales.map(p => ({ ...p, hasta: p.hasta && hora(p.hasta) }))} />
         <label>Notas (opcional)<input name="notas" maxLength={1000} /></label>
         <p className="ayuda">Al terminar, tocá «Terminó» en el tablero de recepción (o marcalo atendido en la agenda) y cobralo con la comanda (podés agregar o quitar servicios y ajustar precios).</p>
       </Formulario>

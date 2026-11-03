@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { aUtc } from "../src/agenda.ts";
-import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, jornadaDelDia, ocupacionDelDia, type Consulta, type DatosProfesional, type ItemPedido } from "../src/disponibilidad.ts";
+import { aIntervalos, aperturaDelDia, asignarEn, buscarTurnos, estadoAhora, jornadaDelDia, ocupacionDelDia, type Consulta, type DatosProfesional, type ItemPedido } from "../src/disponibilidad.ts";
 
 const TZ = "America/Argentina/Buenos_Aires";
 const FECHA = "2099-10-13"; // martes
@@ -117,4 +117,14 @@ test("ocupación del día: disponible = jornada ∩ apertura − bloqueos; ocupa
   assert.deepEqual(ocupacionDelDia({ ...base, turnos: [iv("12:00", "15:00")] }), { disponibleMinutos: 480, ocupadoMinutos: 120 }, "turno que cruza la pausa solo cuenta lo disponible");
   assert.deepEqual(ocupacionDelDia({ ...base, turnos: [iv("09:00", "10:00"), iv("09:30", "10:30")] }), { disponibleMinutos: 480, ocupadoMinutos: 90 }, "turnos superpuestos no cuentan dos veces");
   assert.deepEqual(ocupacionDelDia({ ...base, apertura: [] }), { disponibleMinutos: 0, ocupadoMinutos: 0 }, "sede cerrada");
+});
+
+test("estado ahora (Atender ahora): libre hasta lo próximo, ocupada hasta que termina el bloque, o fuera", () => {
+  const apertura = [iv("09:00", "20:00")];
+  const p = pro({ jornada: [iv("09:00", "13:00")], ocupado: [iv("10:00", "11:00"), iv("10:30", "11:30"), iv("12:00", "12:30")] });
+  assert.deepEqual(estadoAhora(apertura, p, h("09:15")), { estado: "libre", hasta: h("10:00") });
+  assert.deepEqual(estadoAhora(apertura, p, h("10:15")), { estado: "ocupada", hasta: h("11:30") }, "bloques superpuestos se funden");
+  assert.deepEqual(estadoAhora(apertura, p, h("12:40")), { estado: "libre", hasta: h("13:00") }, "sin más turnos: hasta el fin de la jornada");
+  assert.deepEqual(estadoAhora(apertura, p, h("13:00")), { estado: "fuera" });
+  assert.deepEqual(estadoAhora([iv("10:00", "20:00")], p, h("09:15")), { estado: "fuera" }, "sede todavía cerrada");
 });

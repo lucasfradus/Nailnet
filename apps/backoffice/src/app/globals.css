@@ -242,3 +242,13 @@ a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-
 .puesto.justo{border-left-color:var(--gris-200)}
 .puesto.ocupada{border-left-color:var(--color-warning)}
 .puesto.demorada{border-left-color:var(--texto-error)}
+/* Buscador de servicios (Atender ahora): combo con lista filtrable */
+.buscador{position:relative}.buscador>input:not([type=hidden]){width:100%;padding-right:30px}
+.buscador-limpiar{position:absolute;top:50%;right:4px;transform:translateY(-50%);height:26px;padding:0 8px;border:0;background:none;box-shadow:none;color:var(--color-muted-foreground);font-size:18px;line-height:1}
+.buscador-limpiar:hover{color:var(--color-foreground);background:var(--gris-100)}
+.buscador-lista{position:absolute;z-index:20;top:calc(100% + 4px);left:0;right:0;max-height:340px;overflow:auto;margin:0;padding:4px;list-style:none;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);box-shadow:0 12px 24px rgb(16 24 40 / .12)}
+.buscador-grupo{margin:0;padding:8px 8px 4px;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--color-muted-foreground)}
+.buscador-opcion{display:flex;justify-content:space-between;gap:12px;padding:7px 8px;border-radius:var(--radius-sm);font-size:14px;cursor:pointer}
+.buscador-opcion[aria-selected=true]{background:var(--teal-50);color:var(--color-primary)}
+.buscador-opcion small{flex:none;font-size:12px;color:var(--color-muted-foreground)}
+.buscador-vacio{padding:10px 8px;font-size:13px;color:var(--color-muted-foreground)}

@@ -13,6 +13,7 @@ import { crearProfesional, crearRecurso, guardarHabilidades, guardarHorarioProfe
 import { PROFESIONAL_OCUPADA, atenderAhora, marcarLlegada, reprogramarReserva, terminarAtencion, tomarTurno } from "../src/reservas.ts";
 import { agregarEspera, esperaSeFue, registrarEntrada, registrarSalida, tableroSede } from "../src/tablero.ts";
 import { registrarVenta } from "../src/ventas.ts";
+import { disponiblesAhora } from "../src/disponibilidad.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
 const TZ = "America/Argentina/Buenos_Aires";
@@ -75,6 +76,12 @@ test("tablero de recepción (doc 29)", async (t) => {
       assert.deepEqual([enAtencion.atencion?.reservaId, enAtencion.atencion?.servicios, enAtencion.atencion?.finEstimado.toISOString()], [primera, ["Manos"], en("11:00").toISOString()],
         "pasada del estimado sigue atendiendo (demorada) hasta que recepción marque «Terminó»");
       await assert.rejects(registrarSalida(db, R, O, enAtencion.presencia!.id, en("10:30")), /clienta en atención/);
+      // «Atender ahora» solo ofrece a quien puede empezar ya: Ana sigue ocupada aunque se pasó del estimado.
+      const ahora = (await disponiblesAhora(db, R, O, centro, en("11:15"))).profesionales;
+      assert.deepEqual(ahora.map(p => [p.nombre, p.presente, p.estado, p.hasta?.toISOString(), p.entranAhora.length]), [
+        ["Ana", true, "ocupada", en("11:15").toISOString(), 0], ["Bea", true, "libre", en("22:00").toISOString(), 2], ["Caro", false, "libre", en("22:00").toISOString(), 1],
+      ]);
+      await assert.rejects(disponiblesAhora(db, a.profesional.id, O, centro, en("11:15")), AccesoDenegado);
       await assert.rejects(atenderAhora(db, R, O, { sedeId: centro, clienteId: lucia, items: [{ servicioId: manos, profesionalId: ana }] }, en("10:41")), ocupada);
 
       await assert.rejects(terminarAtencion(db, a.profesional.id, O, primera, en("10:40")), AccesoDenegado);
@@ -106,6 +113,12 @@ test("tablero de recepción (doc 29)", async (t) => {
       const antes = await tableroSede(db, R, O, centro, en("14:30"));
       assert.deepEqual(antes.porLlegar.map(p => p.reservaId), [turno.reservaId]);
       assert.equal(antes.profesionales.find(p => p.id === caro)!.proximo?.inicio.toISOString(), en("15:00").toISOString(), "Caro está libre hasta las 15");
+      const caroAhora = async (hhmm: string) => (await disponiblesAhora(db, R, O, centro, en(hhmm))).profesionales.find(p => p.id === caro)!;
+      assert.deepEqual((await caroAhora("13:30")).entranAhora, [manos]);
+      const justo = await caroAhora("14:30");
+      assert.deepEqual([justo.estado, justo.hasta?.toISOString(), justo.entranAhora], ["libre", en("15:00").toISOString(), []], "la mano de 60 min ya no entra antes del turno");
+      const tarde = await caroAhora("22:30");
+      assert.deepEqual([tarde.estado, tarde.hasta, tarde.entranAhora], ["fuera", null, []], "fuera de su horario");
       await assert.rejects(marcarLlegada(db, R, O, turno.reservaId, en("13:50")), /más de una hora/);
       await marcarLlegada(db, R, O, turno.reservaId, en("14:30"));
       await assert.rejects(marcarLlegada(db, R, O, turno.reservaId, en("14:31")), /ya está en atención/);

@@ -367,15 +367,21 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
   if (reservaId) {
     const r = await db.reserva.findFirst({
       where: { id: reservaId, organizacionId },
-      select: { id: true, sedeId: true, estado: true, cliente: { select: { id: true, nombre: true, apellido: true } },
+      select: { id: true, sedeId: true, estado: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } },
         items: { orderBy: { posicion: "asc" }, select: { id: true, servicioId: true, profesionalId: true, inicio: true, precio: true, servicio: { select: { nombre: true } }, profesional: { select: { nombre: true, apellido: true } } } } },
     });
     if (!r || r.sedeId !== sedeId) throw new AccesoDenegado();
     const vigente = await db.venta.findFirst({ where: { organizacionId, reservaId, estado: { not: "ANULADA" } }, select: { id: true } });
     const anticipo = await db.$transaction(tx => anticipoDe(tx, organizacionId, sedeId, reservaId)).catch(e => { if (e instanceof DatosInvalidos) return { error: e.message }; throw e; });
     const subtotal = r.items.reduce((s, i) => s + centavos(i.precio), 0n);
+    // Doc 31, etapa 2: la espera de la que salió el turno, para precargar el alta de la ficha al cobrar. La
+    // que se cerró con este turno la apunta; un sentado parcial no la cierra y queda en el evento de creación.
+    const creada = await db.reservaEvento.findFirst({ where: { organizacionId, reservaId, tipo: "CREADA" }, select: { detalle: true } });
+    const d = creada?.detalle as { esperaId?: unknown } | null | undefined;
+    const esperaId = typeof d?.esperaId === "string" ? d.esperaId : null;
+    const espera = await db.esperaRecepcion.findFirst({ where: { organizacionId, sedeId, OR: [{ reservaId }, ...(esperaId ? [{ id: esperaId }] : [])] }, select: { nombre: true, telefono: true } });
     turno = {
-      id: r.id, estado: r.estado, cliente: r.cliente, ventaId: vigente?.id ?? null,
+      id: r.id, estado: r.estado, cliente: r.cliente, clienteProvisional: r.clienteProvisional, espera, ventaId: vigente?.id ?? null,
       items: r.items.map(i => ({ reservaItemId: i.id, servicioId: i.servicioId, profesionalId: i.profesionalId, servicio: i.servicio.nombre, profesional: nombreCompleto(i.profesional), inicio: i.inicio, precio: i.precio.toFixed(2) })),
       subtotal: importe(subtotal),
       anticipo: anticipo && "monto" in anticipo ? importe(anticipo.monto) : "0.00",
@@ -411,7 +417,7 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
 const incluirVenta = {
   items: { orderBy: { posicion: "asc" as const }, select: { tipo: true, descripcion: true, cantidad: true, precioLista: true, precioUnitario: true, profesionalId: true, subtotal: true, productoId: true, producto: { select: { unidad: true } } } },
   cobros: { orderBy: { createdAt: "asc" as const }, select: { id: true, tipo: true, medio: true, monto: true, referencia: true, motivo: true, revierteId: true, registradoPorId: true, createdAt: true } },
-  reserva: { select: { id: true, cliente: { select: { id: true, nombre: true, apellido: true } } } },
+  reserva: { select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } } } },
 } satisfies Prisma.VentaInclude;
 type VentaConDetalle = Prisma.VentaGetPayload<{ include: typeof incluirVenta }>;
 
@@ -420,7 +426,7 @@ function presentar(v: VentaConDetalle, nombre: Map<string, string>) {
   const revertidos = new Set(v.cobros.filter(c => c.revierteId).map(c => c.revierteId!));
   return {
     id: v.id, sedeId: v.sedeId, fecha: fechaTexto(v.fecha), estado: v.estado, creadaEn: v.createdAt, registradoPor: nombre.get(v.registradoPorId) ?? "—",
-    reservaId: v.reservaId, cliente: v.reserva?.cliente ?? null,
+    reservaId: v.reservaId, cliente: v.reserva?.cliente ?? null, clienteProvisional: v.reserva?.clienteProvisional ?? null,
     subtotal: v.subtotal.toFixed(2), descuento: v.descuento.toFixed(2), total: v.total.toFixed(2), anticipo: v.anticipo.toFixed(2),
     cobrado: importe(cobrado), saldo: importe(v.estado === "ANULADA" ? 0n : saldoVenta(centavos(v.total), centavos(v.anticipo), cobrado)),
     items: v.items.map(i => ({ tipo: i.tipo, descripcion: i.descripcion, cantidad: cantidadTexto(desdeDecimal(i.cantidad.toFixed(3))), unidad: i.producto?.unidad ?? null, precioLista: i.precioLista?.toFixed(2) ?? null, precioUnitario: i.precioUnitario.toFixed(2), profesionalId: i.profesionalId, subtotal: i.subtotal.toFixed(2) })),

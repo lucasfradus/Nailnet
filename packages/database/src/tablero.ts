@@ -4,7 +4,8 @@ import { UNIVERSOS, type Universo } from "@nailnet/domain/catalogo";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds, sedesConPermiso } from "./access.ts";
-import { reservaActiva } from "./disponibilidad.ts";
+import { ConfiguracionIncompleta, reservaActiva } from "./disponibilidad.ts";
+import { PROFESIONAL_OCUPADA, TurnoNoDisponible, tomarTurno, type TurnoTomado } from "./reservas.ts";
 
 // Tablero de recepción (doc 29, D20): quién está en el local, quién está libre y para qué, quién atiende a
 // quién y qué falta cobrar. Las profesionales no usan el celular en el salón: todo lo marca recepción.
@@ -51,11 +52,16 @@ export async function registrarSalida(db: Database, actorId: string, organizacio
  * Etapa 3 (doc 29): la clienta espera porque no hay nadie libre. Datos mínimos para no frenar la cola: el
  * cliente se busca o se crea al atenderla. Los servicios tienen que estar habilitados en la sede y la
  * profesional pedida, trabajar en ella.
+ *
+ * Universos, etapa 2 (doc 31): si recepción ya encontró la ficha, se anota con `clienteId` (de la
+ * organización) y al sentarla el turno queda a su nombre. El nombre y el teléfono se guardan igual, para
+ * mostrar.
  */
-export async function agregarEspera(db: Database, actorId: string, organizacionId: string, datos: { sedeId: string; nombre: string; telefono?: string | null; servicioIds: string[]; profesionalId?: string | null; notas?: string | null }, ahora = new Date()) {
+export async function agregarEspera(db: Database, actorId: string, organizacionId: string, datos: { sedeId: string; nombre: string; telefono?: string | null; servicioIds: string[]; profesionalId?: string | null; notas?: string | null; clienteId?: string | null }, ahora = new Date()) {
   const servicioIds = [...new Set(datos.servicioIds.filter(Boolean))];
-  exigirIds(datos.profesionalId, ...servicioIds);
+  exigirIds(datos.profesionalId, datos.clienteId, ...servicioIds);
   await exigirSede(db, actorId, organizacionId, datos.sedeId);
+  if (datos.clienteId && !await db.cliente.count({ where: { id: datos.clienteId, organizacionId } })) throw new AccesoDenegado();
   const nombre = datos.nombre.trim().slice(0, 80);
   if (!nombre) throw new DatosInvalidos("Indicá el nombre de la clienta");
   if (!servicioIds.length || servicioIds.length > 3) throw new DatosInvalidos("Elegí entre 1 y 3 servicios");
@@ -63,7 +69,7 @@ export async function agregarEspera(db: Database, actorId: string, organizacionI
   if (habilitados !== servicioIds.length) throw new DatosInvalidos("Hay un servicio que no está disponible en esta sede");
   if (datos.profesionalId && !await db.profesionalSede.count({ where: { organizacionId, sedeId: datos.sedeId, profesionalId: datos.profesionalId, activo: true } })) throw new DatosInvalidos("La profesional no trabaja en esta sede");
   return db.esperaRecepcion.create({ data: {
-    organizacionId, sedeId: datos.sedeId, nombre, telefono: datos.telefono?.trim().slice(0, 40) || null, servicioIds, profesionalId: datos.profesionalId || null,
+    organizacionId, sedeId: datos.sedeId, nombre, telefono: datos.telefono?.trim().slice(0, 40) || null, clienteId: datos.clienteId || null, servicioIds, profesionalId: datos.profesionalId || null,
     notas: datos.notas?.trim().slice(0, 300) || null, llegada: ahora, estado: "ESPERANDO", registradaPorId: actorId,
   }, select: { id: true } });
 }
@@ -76,6 +82,67 @@ export async function esperaSeFue(db: Database, actorId: string, organizacionId:
   await exigirSede(db, actorId, organizacionId, e.sedeId);
   const { count } = await db.esperaRecepcion.updateMany({ where: { id: esperaId, estado: "ESPERANDO" }, data: { estado: "SE_FUE", cerradaEn: ahora < e.llegada ? e.llegada : ahora, cerradaPorId: actorId } });
   if (count !== 1) throw new DatosInvalidos("Esa clienta ya no está en la lista de espera");
+}
+
+const YA_NO_ESPERA = "Esa clienta ya no está en la lista de espera (la atendió otra recepcionista o se fue)";
+
+/**
+ * Universos, etapa 2 (doc 31): sienta ahora a una clienta de la lista de espera, sin pasar por «Atender
+ * ahora». Uno o varios de los servicios que pidió, cada uno con su profesional:
+ * - sin repetir y solo de los que pidió; con varios, empiezan a la vez con profesionales distintas (mismo
+ *   motor que «a la vez», etapa 2 del doc 29);
+ * - con ficha, el turno queda a nombre del cliente; sin ficha, con el nombre de la espera como
+ *   `clienteProvisional`, y no se sienta un servicio que exige consentimiento de práctica (se verifica al
+ *   terminar contra la ficha, que no hay);
+ * - si quedan servicios sin sentar, la espera sigue abierta solo con esos y conserva la llegada; si no
+ *   queda ninguno, se cierra con su turno. Todo en la transacción del turno.
+ *
+ * Mismas garantías que `atenderAhora` (es `tomarTurno` con los mismos locks): la fila de la espera se
+ * bloquea después de las profesionales y se relee, así que si otra recepcionista ya la sentó (o sentó una
+ * parte) o se fue, no se crea nada. El evento de creación del turno guarda `esperaId`: un sentado parcial no
+ * cierra la espera, y el cobro igual encuentra de dónde vino para precargar la ficha.
+ */
+export async function sentarEspera(db: Database, actorId: string, organizacionId: string, datos: { esperaId: string; items: { servicioId: string; profesionalId: string }[] }, ahora = new Date()): Promise<TurnoTomado> {
+  if (!datos.items.length) throw new DatosInvalidos("Elegí al menos un servicio");
+  if (datos.items.some(i => !i.servicioId || !i.profesionalId)) throw new DatosInvalidos("Elegí la profesional de cada servicio");
+  exigirIds(datos.esperaId, ...datos.items.flatMap(i => [i.servicioId, i.profesionalId]));
+  const e = await db.esperaRecepcion.findFirst({ where: { id: datos.esperaId, organizacionId }, select: { sedeId: true, nombre: true, clienteId: true, servicioIds: true, estado: true, llegada: true, sede: { select: { timezone: true } } } });
+  if (!e) throw new AccesoDenegado();
+  await exigirSede(db, actorId, organizacionId, e.sedeId);
+  if (e.estado !== "ESPERANDO") throw new DatosInvalidos(YA_NO_ESPERA);
+  const servicioIds = datos.items.map(i => i.servicioId);
+  if (new Set(servicioIds).size !== servicioIds.length) throw new DatosInvalidos("Elegiste dos veces el mismo servicio");
+  if (servicioIds.some(id => !e.servicioIds.includes(id))) throw new DatosInvalidos("Elegí servicios de los que pidió la clienta");
+  if (new Set(datos.items.map(i => i.profesionalId)).size !== datos.items.length) throw new DatosInvalidos("Los servicios a la vez van con profesionales distintas");
+  const restantes = e.servicioIds.filter(id => !servicioIds.includes(id));
+  const mismos = (a: string[]) => a.length === e.servicioIds.length && a.every((id, n) => id === e.servicioIds[n]);
+
+  const antes = async (tx: Prisma.TransactionClient) => {
+    await tx.$queryRaw`SELECT id FROM "EsperaRecepcion" WHERE id = ${datos.esperaId}::uuid FOR UPDATE`;
+    const actual = await tx.esperaRecepcion.findUniqueOrThrow({ where: { id: datos.esperaId }, select: { estado: true, servicioIds: true } });
+    if (actual.estado !== "ESPERANDO" || !mismos(actual.servicioIds)) throw new DatosInvalidos(YA_NO_ESPERA);
+    if (!e.clienteId && await tx.servicioConsentimiento.count({ where: { organizacionId, servicioId: { in: servicioIds } } }))
+      throw new DatosInvalidos("Ese servicio exige un consentimiento firmado: elegí o cargá la ficha de la clienta antes de sentarla");
+  };
+  const despues = async (tx: Prisma.TransactionClient, turno: TurnoTomado) => {
+    const { count } = await tx.esperaRecepcion.updateMany({
+      where: { id: datos.esperaId, estado: "ESPERANDO" },
+      data: restantes.length ? { servicioIds: restantes } : { estado: "ATENDIDA", reservaId: turno.reservaId, cerradaEn: ahora < e.llegada ? e.llegada : ahora, cerradaPorId: actorId },
+    });
+    if (count !== 1) throw new DatosInvalidos(YA_NO_ESPERA);
+  };
+  // Al minuto, como «Atender ahora»: el turno empieza ahora y el motor lo valida con «ahora» como límite.
+  const inicio = new Date(Math.floor(ahora.getTime() / 60_000) * 60_000);
+  try {
+    return await tomarTurno(db, actorId, organizacionId, {
+      sedeId: e.sedeId, fecha: aLocal(inicio, e.sede.timezone).fecha, canal: "RECEPCION", clienteId: e.clienteId, clienteProvisional: e.clienteId ? null : e.nombre,
+      items: datos.items.map((i, n) => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, conAnterior: n > 0 })), inicio, sinTurnoPrevio: true,
+    }, inicio, { antes, despues, evento: { esperaId: datos.esperaId } });
+  } catch (err) {
+    if (err instanceof TurnoNoDisponible) throw new DatosInvalidos(PROFESIONAL_OCUPADA);
+    if (err instanceof ConfiguracionIncompleta) throw new DatosInvalidos(`Falta definir en la sede: ${err.faltantes.join(", ")}`);
+    throw err;
+  }
 }
 
 const POR_LLEGAR_MS = 2 * 3_600_000;
@@ -92,12 +159,20 @@ type ClienteBreve = { id: string; nombre: string; apellido: string | null } | nu
  * ese universo: sus servicios, las profesionales que hacen alguno, su lista de espera y sus turnos por
  * llegar. Las comandas por cobrar no se separan, porque la caja es una sola. `universos` trae el resumen
  * de cada uno para las pestañas. Sin la opción, o con un solo universo en la sede, devuelve todo junto.
+ *
+ * Universos, etapa 2 (doc 31), para sentar desde el tablero: por profesional, `libreDesde` (lo último
+ * entre su entrada y su último «Terminó» de hoy; nulo si está atendiendo) y `agenda` (sus ocupaciones
+ * entre ahora y dos horas más, recortadas a esa ventana: la atención en curso y los turnos reservados).
+ * Donde hay cliente, también `clienteProvisional` (el nombre de la clienta sentada sin ficha), y en cada
+ * espera, su ficha si la tiene.
  */
 export async function tableroSede(db: Database, actorId: string, organizacionId: string, sedeId: string, ahora = new Date(), opciones: { universo?: Universo | null } = {}) {
   await exigirSede(db, actorId, organizacionId, sedeId);
   const sede = await db.sede.findUniqueOrThrow({ where: { id: sedeId }, select: { timezone: true } });
   const tz = sede.timezone;
-  const finDia = aUtc(aLocal(ahora, tz).fecha, 1440, tz);
+  const inicioDia = aUtc(aLocal(ahora, tz).fecha, 0, tz), finDia = aUtc(aLocal(ahora, tz).fecha, 1440, tz);
+  // Ventana de la franja de cada profesional (doc 31, etapa 2) y de los turnos por llegar.
+  const cerca = new Date(ahora.getTime() + POR_LLEGAR_MS);
 
   const profesionales = await db.profesional.findMany({
     where: { organizacionId, activo: true, sedes: { some: { sedeId, activo: true } } },
@@ -120,58 +195,77 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
 
   // Secuencial a propósito, como en la disponibilidad: comparten conexión.
   const presencias = await db.presenciaProfesional.findMany({ where: { organizacionId, profesionalId: { in: ids }, salida: null }, select: { id: true, sedeId: true, profesionalId: true, entrada: true, sede: { select: { nombre: true } } } });
-  // Turnos que todavía no empezaron y la ocupan hoy: el primero dice hasta cuándo está libre.
+  // Turnos que todavía no empezaron y la ocupan hoy (o en las próximas dos horas, para la franja): el
+  // primero de hoy dice hasta cuándo está libre.
   const reservados = await db.reservaItem.findMany({
-    where: { organizacionId, profesionalId: { in: ids }, ocupaHasta: { gt: ahora }, ocupaDesde: { lt: finDia }, reserva: { AND: [reservaActiva(ahora), { estado: { notIn: ["ATENDIDA", "AUSENTE"] }, iniciadaEn: null }] } },
-    select: { profesionalId: true, inicio: true, ocupaDesde: true, servicio: { select: { nombre: true } }, reserva: { select: { id: true, sedeId: true, cliente: { select: { id: true, nombre: true, apellido: true } } } } },
+    where: { organizacionId, profesionalId: { in: ids }, ocupaHasta: { gt: ahora }, ocupaDesde: { lt: finDia > cerca ? finDia : cerca }, reserva: { AND: [reservaActiva(ahora), { estado: { notIn: ["ATENDIDA", "AUSENTE"] }, iniciadaEn: null }] } },
+    select: { profesionalId: true, inicio: true, ocupaDesde: true, ocupaHasta: true, servicio: { select: { nombre: true } }, reserva: { select: { id: true, sedeId: true, cliente: { select: { id: true, nombre: true, apellido: true } } } } },
     orderBy: { ocupaDesde: "asc" },
   });
   // Una atención en curso sigue ocupando a la profesional aunque se haya pasado del horario estimado.
   const enCurso = await db.reservaItem.findMany({
     where: { organizacionId, profesionalId: { in: ids }, terminadoEn: null, reserva: { estado: "CONFIRMADA", iniciadaEn: { not: null } } },
-    select: { profesionalId: true, fin: true, servicio: { select: { nombre: true } }, reserva: { select: { id: true, sedeId: true, iniciadaEn: true, cliente: { select: { id: true, nombre: true, apellido: true } } } } },
+    select: { profesionalId: true, fin: true, ocupaDesde: true, ocupaHasta: true, servicio: { select: { nombre: true } }, reserva: { select: { id: true, sedeId: true, iniciadaEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } } } } },
     orderBy: { inicio: "asc" },
   });
+  // Último «Terminó» de hoy de cada una, para saber desde cuándo está libre.
+  const terminados = await db.reservaItem.groupBy({
+    by: ["profesionalId"], where: { organizacionId, profesionalId: { in: ids }, terminadoEn: { gte: inicioDia, lte: ahora } }, _max: { terminadoEn: true },
+  });
+  const ultimoTermino = new Map(terminados.map(t => [t.profesionalId, t._max.terminadoEn]));
+  // Recorta una ocupación a la ventana [ahora, ahora + 2 h]. Una atención pasada del estimado sigue
+  // ocupando: queda como un tramo vacío en «ahora» (la pantalla la ve igual en `atencion`).
+  const enVentana = (desde: Date, hasta: Date, tipo: "atencion" | "turno") => {
+    const d = desde < ahora ? ahora : desde > cerca ? cerca : desde;
+    const h = hasta > cerca ? cerca : hasta < d ? d : hasta;
+    return { desde: d, hasta: h, tipo };
+  };
 
   const filas = profesionales.map(p => {
     const presencia = presencias.find(x => x.profesionalId === p.id);
     const propios = enCurso.filter(i => i.profesionalId === p.id);
     const reservaId = propios[0]?.reserva.id;
     const atencion = propios.filter(i => i.reserva.id === reservaId);
-    const proximo = reservados.find(i => i.profesionalId === p.id);
+    const proximo = reservados.find(i => i.profesionalId === p.id && i.ocupaDesde < finDia);
     const servicioIds = servicios.filter(s => puede(p, s)).map(s => s.servicio.id);
+    const desdes = [presencia?.entrada, ultimoTermino.get(p.id)].filter((x): x is Date => !!x && x <= ahora);
+    const agenda = [
+      ...propios.filter(i => i.ocupaDesde < cerca).map(i => enVentana(i.ocupaDesde, i.ocupaHasta, "atencion" as const)),
+      ...reservados.filter(i => i.profesionalId === p.id && i.ocupaDesde < cerca).map(i => enVentana(i.ocupaDesde, i.ocupaHasta, "turno" as const)),
+    ].sort((a, b) => a.desde.getTime() - b.desde.getTime());
     return {
       id: p.id, nombre: [p.nombre, p.apellido].filter(Boolean).join(" "),
       servicioIds, universos: UNIVERSOS.filter(x => servicioIds.some(id => universoDe.get(id) === x)),
       presencia: presencia ? { id: presencia.id, entrada: presencia.entrada, otraSede: presencia.sedeId === sedeId ? null : presencia.sede.nombre } : null,
       atencion: reservaId ? {
-        reservaId, enOtraSede: atencion[0]!.reserva.sedeId !== sedeId, cliente: atencion[0]!.reserva.cliente as ClienteBreve,
+        reservaId, enOtraSede: atencion[0]!.reserva.sedeId !== sedeId, cliente: atencion[0]!.reserva.cliente as ClienteBreve, clienteProvisional: atencion[0]!.reserva.clienteProvisional,
         servicios: atencion.map(i => i.servicio.nombre), desde: atencion[0]!.reserva.iniciadaEn!, finEstimado: atencion.at(-1)!.fin,
       } : null,
       // Desde cuándo deja de estar libre: el próximo turno reservado, con su preparación.
       proximo: proximo ? { reservaId: proximo.reserva.id, inicio: proximo.inicio, ocupaDesde: proximo.ocupaDesde, servicio: proximo.servicio.nombre, cliente: proximo.reserva.cliente as ClienteBreve, otraSede: proximo.reserva.sedeId !== sedeId } : null,
+      libreDesde: reservaId ? null : desdes.length ? new Date(Math.max(...desdes.map(d => d.getTime()))) : null,
+      agenda,
     };
   });
 
   // Se traen los turnos hasta el fin del día: Tratamientos los muestra todos; el resto, solo los cercanos.
-  const cerca = new Date(ahora.getTime() + POR_LLEGAR_MS);
   const porLlegar = await db.reserva.findMany({
     where: { organizacionId, sedeId, estado: "CONFIRMADA", iniciadaEn: null, items: { some: { posicion: 0, inicio: { lt: finDia > cerca ? finDia : cerca, gte: new Date(ahora.getTime() - POR_LLEGAR_MS) } } } },
-    select: { id: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
   });
   const porCobrar = await db.reserva.findMany({
     where: { organizacionId, sedeId, estado: "ATENDIDA", ventas: { none: { estado: { not: "ANULADA" } } }, items: { some: { posicion: 0, inicio: { gte: new Date(ahora.getTime() - POR_COBRAR_DIAS * 86_400_000) } } } },
-    select: { id: true, terminadaEn: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    select: { id: true, terminadaEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
     take: 100,
   });
   // Etapa 3: la lista de espera de hoy, por orden de llegada. Una espera olvidada de otro día no se muestra.
   const esperas = await db.esperaRecepcion.findMany({
-    where: { organizacionId, sedeId, estado: "ESPERANDO", llegada: { gte: aUtc(aLocal(ahora, tz).fecha, 0, tz) } },
-    select: { id: true, nombre: true, telefono: true, servicioIds: true, profesionalId: true, notas: true, llegada: true }, orderBy: { llegada: "asc" },
+    where: { organizacionId, sedeId, estado: "ESPERANDO", llegada: { gte: inicioDia } },
+    select: { id: true, nombre: true, telefono: true, servicioIds: true, profesionalId: true, notas: true, llegada: true, cliente: { select: { id: true, nombre: true, apellido: true } } }, orderBy: { llegada: "asc" },
   });
   const nombre = (p: { nombre: string; apellido: string | null }) => [p.nombre, p.apellido].filter(Boolean).join(" ");
   const resumen = (r: (typeof porLlegar)[number]) => ({
-    reservaId: r.id, cliente: r.cliente as ClienteBreve, inicio: r.items[0]!.inicio,
+    reservaId: r.id, cliente: r.cliente as ClienteBreve, clienteProvisional: r.clienteProvisional, inicio: r.items[0]!.inicio,
     servicios: r.items.map(i => `${i.servicio.nombre} · ${nombre(i.profesional)}`),
     universos: UNIVERSOS.filter(x => r.items.some(i => i.servicio.categoria.universo === x)),
   });

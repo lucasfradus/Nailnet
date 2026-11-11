@@ -399,6 +399,7 @@ model Cliente {
   sedes           ClienteSede[]
   consentimientos ClienteConsentimiento[]
   reservas        Reserva[]
+  esperas         EsperaRecepcion[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, email])
@@ -640,6 +641,8 @@ model EsperaRecepcion {
   sedeId          String       @db.Uuid
   nombre          String
   telefono        String?
+  // Universos, etapa 2 (doc 31): la clienta anotada ya tiene ficha. El nombre y el teléfono se guardan igual.
+  clienteId       String?      @db.Uuid
   servicioIds     String[]     @db.Uuid
   // Profesional que pidió, si pidió una.
   profesionalId   String?      @db.Uuid
@@ -651,6 +654,7 @@ model EsperaRecepcion {
   registradaPorId String       @db.Uuid
   cerradaPorId    String?      @db.Uuid
   sede            Sede         @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  cliente         Cliente?     @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
   profesional     Profesional? @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
   reserva         Reserva?     @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
 
@@ -788,36 +792,39 @@ model BloqueoRecurso {
 // Reserva: agrupa uno o más ítems consecutivos (D15) de un cliente en una sede.
 // Ocupa agenda mientras está CONFIRMADA/ATENDIDA/AUSENTE, o pendiente con expiraEn futuro.
 model Reserva {
-  id             String          @id @default(uuid()) @db.Uuid
-  organizacionId String          @db.Uuid
-  sedeId         String          @db.Uuid
-  clienteId      String?         @db.Uuid
-  canal          CanalReserva
-  estado         EstadoReserva
-  expiraEn       DateTime?
-  notas          String?
+  id                 String            @id @default(uuid()) @db.Uuid
+  organizacionId     String            @db.Uuid
+  sedeId             String            @db.Uuid
+  clienteId          String?           @db.Uuid
+  // Universos, etapa 2 (doc 31): clienta sentada desde la espera con solo el nombre, sin ficha todavía.
+  // Nunca a la vez que clienteId (CHECK en la migración); asignar la ficha lo borra.
+  clienteProvisional String?
+  canal              CanalReserva
+  estado             EstadoReserva
+  expiraEn           DateTime?
+  notas              String?
   // Reprogramación: la reserva nueva apunta a la que reemplaza (cancelada en la misma transacción).
-  reemplazaId    String?         @unique @db.Uuid
-  reemplaza      Reserva?        @relation("Reprogramacion", fields: [reemplazaId], references: [id], onDelete: Restrict)
-  reemplazadaPor Reserva?        @relation("Reprogramacion")
+  reemplazaId        String?           @unique @db.Uuid
+  reemplaza          Reserva?          @relation("Reprogramacion", fields: [reemplazaId], references: [id], onDelete: Restrict)
+  reemplazadaPor     Reserva?          @relation("Reprogramacion")
   // O01 «Atender ahora» (doc 27): cliente que llegó sin turno; el turno arranca al crearse. Para reportes.
-  sinTurnoPrevio Boolean         @default(false)
+  sinTurnoPrevio     Boolean           @default(false)
   // Tablero de recepción (doc 29): la atención empezó (al despachar a una clienta sin turno, o cuando llega
   // la clienta con turno) y terminó («Terminó» libera a la profesional y recorta la agenda a ese minuto).
-  iniciadaEn     DateTime?
-  terminadaEn    DateTime?
-  creadoPor      String?         @db.Uuid
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  sede           Sede            @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
-  cliente        Cliente?        @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
-  items          ReservaItem[]
-  eventos        ReservaEvento[]
-  tokens         TokenReserva[]
-  checkouts      CheckoutPago[]
-  pagos          Pago[]
-  ventas         Venta[]
-  esperas        EsperaRecepcion[]
+  iniciadaEn         DateTime?
+  terminadaEn        DateTime?
+  creadoPor          String?           @db.Uuid
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  sede               Sede              @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  cliente            Cliente?          @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
+  items              ReservaItem[]
+  eventos            ReservaEvento[]
+  tokens             TokenReserva[]
+  checkouts          CheckoutPago[]
+  pagos              Pago[]
+  ventas             Venta[]
+  esperas            EsperaRecepcion[]
 
   @@unique([organizacionId, id])
   @@index([sedeId, estado])

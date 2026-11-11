@@ -69,14 +69,18 @@ export type TurnoTomado = { reservaId: string; estado: Estado; expiraEn: Date | 
 export type AntesDeTomar = (tx: Tx) => Promise<{ clienteId?: string } | void>;
 /** `despues` corre en la misma transacción con el turno ya escrito: si falla, el turno no se crea. */
 export type DespuesDeTomar = (tx: Tx, turno: TurnoTomado) => Promise<void>;
-export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; notas?: string | null; sinTurnoPrevio?: boolean }, ahora = new Date(), opciones: { antes?: AntesDeTomar; despues?: DespuesDeTomar } = {}): Promise<TurnoTomado> {
+export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; clienteProvisional?: string | null; notas?: string | null; sinTurnoPrevio?: boolean }, ahora = new Date(), opciones: { antes?: AntesDeTomar; despues?: DespuesDeTomar; evento?: Record<string, string> } = {}): Promise<TurnoTomado> {
   if (actorId) {
     exigirIds(pedido.sedeId);
     const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
     if (!ids.has(pedido.sedeId)) throw new AccesoDenegado();
   } else if (pedido.canal !== "ONLINE") throw new AccesoDenegado();
   exigirIds(pedido.clienteId);
-  if (pedido.canal === "RECEPCION" && !pedido.clienteId) throw new DatosInvalidos("Elegí el cliente del turno");
+  // Doc 31, etapa 2: solo recepción sienta a una clienta sin ficha, con su nombre (lo usa `sentarEspera`).
+  // Quien no lo pide (la reserva manual, «Atender ahora») sigue necesitando el cliente.
+  const provisional = pedido.clienteProvisional?.trim().slice(0, 80) || null;
+  if (provisional && pedido.canal !== "RECEPCION") throw new AccesoDenegado();
+  if (pedido.canal === "RECEPCION" && !pedido.clienteId && !provisional) throw new DatosInvalidos("Elegí el cliente del turno");
   if (Number.isNaN(pedido.inicio.getTime())) throw new DatosInvalidos("Horario inválido");
   const notas = pedido.notas?.trim().slice(0, 1000) || null;
 
@@ -105,8 +109,8 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
 
     const sinTurnoPrevio = !!pedido.sinTurnoPrevio;
     // Sin turno previo la clienta ya está en el local: la atención empieza con el turno (doc 29).
-    const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId, sinTurnoPrevio, iniciadaEn: sinTurnoPrevio ? pedido.inicio : null }, turno, efectivos);
-    await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena, ...(sinTurnoPrevio ? { sinTurnoPrevio } : {}) });
+    const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, clienteProvisional: clienteId ? null : provisional, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId, sinTurnoPrevio, iniciadaEn: sinTurnoPrevio ? pedido.inicio : null }, turno, efectivos);
+    await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena, ...(sinTurnoPrevio ? { sinTurnoPrevio } : {}), ...opciones.evento });
     await opciones.despues?.(tx, r);
     return r;
   }, { maxWait: 10_000, timeout: 20_000 }));
@@ -156,7 +160,7 @@ export async function atenderAhora(db: Database, actorId: string, organizacionId
 type Asignado = NonNullable<ReturnType<typeof asignarEn>>;
 type Efectivos = Awaited<ReturnType<typeof cargarConsulta>>["efectivos"];
 /** Escribe reserva, ítems y recursos. `congelados` (por posición) conserva precio y seña de una reserva anterior. */
-async function escribirTurno(tx: Tx, organizacionId: string, base: { sedeId: string; clienteId: string | null; canal: "ONLINE" | "RECEPCION"; estado: Estado; expiraEn: Date | null; notas: string | null; creadoPor: string | null; reemplazaId?: string; sinTurnoPrevio?: boolean; iniciadaEn?: Date | null }, turno: Asignado, efectivos: Efectivos, congelados?: Map<number, { precio: string; sena: string | null }>): Promise<TurnoTomado> {
+async function escribirTurno(tx: Tx, organizacionId: string, base: { sedeId: string; clienteId: string | null; clienteProvisional?: string | null; canal: "ONLINE" | "RECEPCION"; estado: Estado; expiraEn: Date | null; notas: string | null; creadoPor: string | null; reemplazaId?: string; sinTurnoPrevio?: boolean; iniciadaEn?: Date | null }, turno: Asignado, efectivos: Efectivos, congelados?: Map<number, { precio: string; sena: string | null }>): Promise<TurnoTomado> {
   const reserva = await tx.reserva.create({ data: { organizacionId, ...base }, select: { id: true } });
   if (base.clienteId) await tx.clienteSede.upsert({ where: { clienteId_sedeId: { clienteId: base.clienteId, sedeId: base.sedeId } }, create: { organizacionId, clienteId: base.clienteId, sedeId: base.sedeId }, update: {} });
   const items: TurnoTomado["items"] = [];
@@ -197,7 +201,7 @@ export async function agendaSede(db: Database, actorId: string, organizacionId: 
       ...(filtro.profesionalId ? { profesionalId: filtro.profesionalId } : {}),
     },
     include: {
-      reserva: { select: { id: true, estado: true, canal: true, sinTurnoPrevio: true, expiraEn: true, notas: true, cliente: { select: { id: true, nombre: true, apellido: true, telefono: true } } } },
+      reserva: { select: { id: true, estado: true, canal: true, sinTurnoPrevio: true, expiraEn: true, notas: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true, telefono: true } } } },
       servicio: { select: { nombre: true } }, profesional: { select: { id: true, nombre: true, apellido: true } },
       recursos: { select: { recurso: { select: { nombre: true } } } },
     },
@@ -206,7 +210,7 @@ export async function agendaSede(db: Database, actorId: string, organizacionId: 
   return { timezone: sede.timezone, items: items.map(i => ({
     itemId: i.id, reservaId: i.reservaId, posicion: i.posicion, inicio: i.inicio, fin: i.fin,
     estado: i.reserva.estado, canal: i.reserva.canal, sinTurnoPrevio: i.reserva.sinTurnoPrevio, expiraEn: i.reserva.expiraEn, notas: i.reserva.notas,
-    cliente: i.reserva.cliente, servicio: i.servicio.nombre, profesional: i.profesional, recursos: i.recursos.map(r => r.recurso.nombre),
+    cliente: i.reserva.cliente, clienteProvisional: i.reserva.clienteProvisional, servicio: i.servicio.nombre, profesional: i.profesional, recursos: i.recursos.map(r => r.recurso.nombre),
     precio: i.precio.toFixed(2), sena: i.sena?.toFixed(2) ?? null,
   })) };
 }
@@ -397,7 +401,7 @@ export async function reprogramarReserva(db: Database, actorId: string, organiza
     const turno = asignarEn(consulta, destino.inicio.getTime());
     if (!turno) throw new TurnoNoDisponible();
     const congelados = new Map(original.items.map(i => [i.posicion, { precio: i.precio.toFixed(2), sena: i.sena?.toFixed(2) ?? null }]));
-    const nueva = await escribirTurno(tx, organizacionId, { sedeId: original.sedeId, clienteId: original.clienteId, canal: original.canal, estado: "CONFIRMADA", expiraEn: null, notas: original.notas, creadoPor: actorId, reemplazaId: original.id, sinTurnoPrevio: original.sinTurnoPrevio }, turno, efectivos, congelados);
+    const nueva = await escribirTurno(tx, organizacionId, { sedeId: original.sedeId, clienteId: original.clienteId, clienteProvisional: original.clienteProvisional, canal: original.canal, estado: "CONFIRMADA", expiraEn: null, notas: original.notas, creadoPor: actorId, reemplazaId: original.id, sinTurnoPrevio: original.sinTurnoPrevio }, turno, efectivos, congelados);
     await registrarEvento(tx, organizacionId, original.id, "REPROGRAMADA", "CONFIRMADA", "CANCELADA", actorId, { nuevaReservaId: nueva.reservaId });
     await registrarEvento(tx, organizacionId, nueva.reservaId, "CREADA", null, "CONFIRMADA", actorId, { reprogramadaDesde: original.id });
     return nueva;
@@ -421,5 +425,34 @@ export async function resumenReserva(db: Database, actorId: string, organizacion
   if (!r) throw new AccesoDenegado();
   const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
   if (!ids.has(r.sedeId)) throw new AccesoDenegado();
-  return { id: r.id, sedeId: r.sedeId, estado: r.estado as Estado, clienteId: r.clienteId, cliente: r.cliente, items: r.items.map(i => ({ servicioId: i.servicioId, servicio: i.servicio.nombre, profesionalId: i.profesionalId, inicio: i.inicio })) };
+  return { id: r.id, sedeId: r.sedeId, estado: r.estado as Estado, clienteId: r.clienteId, cliente: r.cliente, clienteProvisional: r.clienteProvisional, items: r.items.map(i => ({ servicioId: i.servicioId, servicio: i.servicio.nombre, profesionalId: i.profesionalId, inicio: i.inicio })) };
+}
+
+/**
+ * Universos, etapa 2 (doc 31): le pone la ficha a un turno que no la tiene, por ejemplo el de una clienta
+ * sentada desde la espera con solo el nombre. Vale en cualquier estado menos cancelado o vencido (también
+ * después de atendido, para cobrar con ficha). Borra el nombre provisional, vincula el cliente a la sede
+ * como la toma de turnos de recepción y queda en la auditoría (el hecho, no el nombre). Si el turno ya tiene cliente, se rechaza:
+ * cambiar de cliente un turno no es esto.
+ */
+export async function asignarClienteReserva(db: Database, actorId: string, organizacionId: string, reservaId: string, clienteId: string, ahora = new Date()): Promise<void> {
+  exigirIds(reservaId, clienteId);
+  if (!clienteId) throw new DatosInvalidos("Elegí o creá el cliente");
+  const r = await db.reserva.findFirst({ where: { id: reservaId, organizacionId }, select: { sedeId: true } });
+  if (!r) throw new AccesoDenegado();
+  const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
+  if (!ids.has(r.sedeId)) throw new AccesoDenegado();
+  if (!await db.cliente.count({ where: { id: clienteId, organizacionId } })) throw new AccesoDenegado();
+  await db.$transaction(async tx => {
+    const actual = await tx.reserva.findUniqueOrThrow({ where: { id: reservaId }, select: { estado: true, expiraEn: true, clienteId: true, clienteProvisional: true } });
+    const estado = actual.estado as Estado;
+    const vencida = estado === "EXPIRADA" || (PENDIENTES.includes(estado) && actual.expiraEn !== null && actual.expiraEn <= ahora);
+    if (estado === "CANCELADA" || vencida) throw new DatosInvalidos(`No se puede asignar el cliente a un turno ${ETIQUETA[vencida ? "EXPIRADA" : estado]}`);
+    if (actual.clienteId) throw new DatosInvalidos("El turno ya tiene cliente");
+    // Condicional: si otra recepcionista le asignó un cliente o lo canceló mientras tanto, no se pisa.
+    const { count } = await tx.reserva.updateMany({ where: { id: reservaId, estado, clienteId: null }, data: { clienteId, clienteProvisional: null } });
+    if (count !== 1) throw new DatosInvalidos("El turno cambió mientras tanto; actualizá la pantalla");
+    await tx.clienteSede.upsert({ where: { clienteId_sedeId: { clienteId, sedeId: r.sedeId } }, create: { organizacionId, clienteId, sedeId: r.sedeId }, update: {} });
+    await auditar(tx, organizacionId, actorId, "reserva.cliente_asignado", "Reserva", reservaId, { clienteId, sinFicha: !!actual.clienteProvisional });
+  });
 }

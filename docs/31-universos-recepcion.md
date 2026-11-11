@@ -1,6 +1,6 @@
 # Universos de recepción · propuesta · 2026-11-11
 
-Propuesta (D21). Sale de una segunda visita del usuario al local y del prototipo navegable que revisó el 2026-11-11. Extiende el tablero de recepción (29-tablero-recepcion.md, D20). **Etapas 1, 2, 4 y 5 implementadas el 2026-11-11.** De la etapa 3 está hecha la capa de datos y falta la pantalla.
+Propuesta (D21). Sale de una segunda visita del usuario al local y del prototipo navegable que revisó el 2026-11-11. Extiende el tablero de recepción (29-tablero-recepcion.md, D20). **Las cinco etapas quedaron implementadas el 2026-11-11.** Lo que falta está en «Pendiente».
 
 ## Qué se vio en el local
 
@@ -27,7 +27,7 @@ El tablero del doc 29 resuelve bien el primero. Para el segundo, una lista de pr
 
 1. **Universos en el catálogo y en Recepción** (hecha). Cada categoría tiene su universo y el tablero se separa en dos pestañas con los datos de cada uno.
 2. **Manos y pies: sentar desde el tablero** (hecha). Elegir una clienta en espera y resaltar quién puede; sentarla con un toque, sin pasar por «Atender ahora». Alta rápida de la clienta sin turno. Libres ordenadas por quién espera hace más y ocupadas por quién termina antes. Franja con las próximas dos horas de cada profesional.
-3. **Flexibilidad con los turnos de Manos y pies** (capa de datos hecha, falta la pantalla). Cambiar de profesional un turno reservado. Turno que llega con su profesional ocupada: pasa primero a la espera. Pasar una atención en curso a otra profesional. Sentar aunque pise un turno cercano, con aviso. Sumar un servicio a una atención en curso, para que la visita sea una sola comanda.
+3. **Flexibilidad con los turnos de Manos y pies** (hecha). Cambiar de profesional un turno reservado. Turno que llega con su profesional ocupada: pasa primero a la espera. Pasar una atención en curso a otra profesional. Sentar aunque pise un turno cercano, con aviso. Sumar un servicio a una atención en curso, para que la visita sea una sola comanda.
 4. **Tratamientos: agenda del día en grilla** (hecha). Columnas por profesional o por cabina (las cabinas rotan), bloques por duración y línea de la hora actual. Mover un turno a otro horario o a otra profesional de la misma especialidad. Reservar tocando un hueco. Huecos del día para ofrecer por teléfono.
 5. **Reportes por universo** (hecha). Las secciones de 30-reportes.md, para toda la sede o para un universo.
 
@@ -148,7 +148,7 @@ Quedó como dice el diseño, con estas precisiones:
 - **«Terminó» recorta la agenda al minuto** (no al segundo). Sentar empieza en el minuto en curso, así que tocar «Terminó» y sentar a la próxima enseguida chocaba por unos segundos. `terminadoEn` guarda el instante real.
 - **Página partida por universo:** `page.tsx` carga los datos y lo compartido; cada pestaña tiene su archivo.
 
-Límite que sigue hasta la etapa 3: la pantalla calcula sola quién puede y no conoce la jornada, así que una profesional que termina su horario en media hora aparece libre y el servidor la rechaza con su mensaje.
+La pantalla de esta etapa calculaba sola quién puede y no conocía la jornada; la etapa 3 lo cambió por lo que dice el motor.
 
 ## Etapa 3: diseño · 2026-11-11
 
@@ -209,6 +209,25 @@ Migración `202611110030_flexibilidad_salon` (`Reserva.llegoEn`, `Reserva.espera
 - **`sentarTurno` no manda el email de reprogramación:** la clienta ya está en el local.
 - `atenderAhora` desde una espera también guarda `Reserva.esperaId`, y `reprogramarReserva` conserva `llegoEn` y `esperaId`.
 
+## Etapa 3: pantalla · 2026-11-11
+
+En `apps/backoffice/src/app/(panel)/recepcion/`: `salon.tsx` (un solo modo a la vez, con el aviso fijo de arriba), `salon-reglas.ts` (quién puede y por qué) y `salon-alta.tsx` («Llegó sin turno»).
+
+- **Quién puede lo dice el motor.** `disponiblesAhora` trae qué le entra ahora a cada una, qué le entra solo pisando un turno, hasta cuándo está libre y cuándo termina su horario. Los motivos se muestran en texto: «no hace X», «fuera de su horario: termina a las 18:10», «solo está libre hasta las 17:40».
+- **Sentar igual:** la profesional que pisaría un turno es elegible, con borde punteado, el aviso «Pisa su turno de las 17:30 (Vicky Tapia)» y el botón «Sentar igual».
+- **Turno en riesgo:** en «Turnos por llegar» dice «En riesgo: Bea termina ≈ 18:21». «Cambiar de profesional» está en todos los turnos de un solo servicio; las candidatas que no marcaron la entrada aparecen como botones en el aviso. Para los de varios servicios, un enlace a la agenda.
+- **Pasar** y **+ servicio** en la tarjeta de quien atiende.
+- **«Llegó»:** si la profesional está libre, empieza. Si no, la clienta queda primera en la espera, marcada «Con turno 17:30 · con Bea», y ya elegida para sentarla con su profesional o con otra.
+- **Una comanda por visita:** al completar un sentado a medias o sumar un servicio, el aviso dice que quedó en la misma comanda.
+
+## Pendiente
+
+- **Clienta con turno que llegó y se fue sin atenderse:** en la espera no tiene «Se fue»; hoy el turno se cierra como ausente desde la agenda. Falta definir cómo se registra.
+- **«Libre hace N min» después de «Pasar»:** la que pasó la atención conserva su hora anterior, porque pasar no es un «Terminó».
+- **Arrastrar en la grilla de Tratamientos:** se mueve con toques.
+- **Cabina bloqueada por mantenimiento:** no se ve en la grilla; el motor la rechaza al reservar.
+- **Profesionales compartidas y recepcionistas por universo:** siguen como preguntas abiertas.
+
 ## Etapa 4: implementación · 2026-11-11
 
 Sin migración. Motor en `packages/domain/src/disponibilidad.ts`; repositorio en `packages/database/src/agenda-dia.ts`, `disponibilidad.ts` y `reservas.ts` (`empezarSesion`, `reprogramarReserva` con `recursos`). Pantalla en `apps/backoffice/src/app/(panel)/recepcion/` (`tratamientos.tsx`, `grilla-tratamientos.tsx`, `tratamientos-modelo.ts`, `acciones-tratamientos.ts`). Pruebas en `packages/database/tests/agenda-dia.test.ts` y `packages/domain/tests/disponibilidad.test.ts`.
@@ -242,8 +261,9 @@ La pantalla Reportes se ve para toda la sede, como antes, o para un universo. La
 
 - `npm run test:database` (207 pruebas): el universo de la categoría (por defecto, edición, valor inválido, herencia al servicio) y el tablero separado (sede con un solo universo, profesional de los dos, profesional sin servicios, turnos de hoy, espera, por cobrar compartido, resumen de pestañas y atención de una profesional sin entrada marcada). El seed corre dos veces y agrega los tratamientos una sola.
 - `npm run check` y `npm run test:domain`.
-- Al cierre de las etapas 2, 3 (datos) y 4: `npm run test:database` con 254 pruebas y `npm run test:domain` con 93; tipos, lint y build sin errores.
+- Al cierre de las cinco etapas: `npm run test:database` con 255 pruebas y `npm run test:domain` con 93; tipos, lint y build sin errores.
 - Etapa 2, en un navegador real contra la demo: anotar sin ficha con dos servicios y sentar solo uno; la profesional que pisaría un turno, con su motivo; «Terminó» y la comanda «Sin ficha» en por cobrar; el cobro creando la ficha con el nombre precargado; anotar eligiendo una ficha existente y sentarla; la agenda con el nombre; Tratamientos y una sede de un solo universo, sin cambios.
+- Etapa 3, en un navegador real contra la demo, en un solo recorrido: sentar igual pisando un turno; ese turno en riesgo; cambiarlo de profesional; pasar la atención a otra («Pasar igual»); sumar un servicio con otra profesional; «Llegó» con la profesional ocupada (queda primera en la espera) y sentarla con otra; y una sola comanda por cobrar con los dos servicios. Sin errores en la consola.
 - Etapa 4, en un navegador real contra la demo: las dos vistas; reservar eligiendo cabina y buscando la ficha; mover de horario eligiendo cabina; «Empezó» antes de hora (el turno se adelantó) y «Terminó»; la comanda en por cobrar; Manos y pies sin cambios.
 - Etapa 5, en un navegador real contra la demo, con una atención cobrada de cada universo y una mixta con descuento: los totales de cada universo dan lo esperado con el descuento prorrateado, los seis CSV bajan, el de cobros con un universo y un universo desconocido responden 400, y una sede de un solo universo no muestra el selector.
 - Probado en un navegador real (Chromium) contra una base local con la demo:

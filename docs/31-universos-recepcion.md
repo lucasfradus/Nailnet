@@ -1,6 +1,6 @@
 # Universos de recepción · propuesta · 2026-11-11
 
-Propuesta (D21). Sale de una segunda visita del usuario al local y del prototipo navegable que revisó el 2026-11-11. Extiende el tablero de recepción (29-tablero-recepcion.md, D20). **Etapa 1 implementada el 2026-11-11** (ver «Etapa 1: implementación» abajo); las demás están propuestas.
+Propuesta (D21). Sale de una segunda visita del usuario al local y del prototipo navegable que revisó el 2026-11-11. Extiende el tablero de recepción (29-tablero-recepcion.md, D20). **Etapa 1 implementada el 2026-11-11** (ver «Etapa 1: implementación» abajo); la etapa 2 está diseñada (ver «Etapa 2: diseño») y las demás, propuestas.
 
 ## Qué se vio en el local
 
@@ -27,8 +27,8 @@ El tablero del doc 29 resuelve bien el primero. Para el segundo, una lista de pr
 
 1. **Universos en el catálogo y en Recepción** (hecha). Cada categoría tiene su universo y el tablero se separa en dos pestañas con los datos de cada uno.
 2. **Manos y pies: sentar desde el tablero.** Elegir una clienta en espera y resaltar quién puede; sentarla con un toque, sin pasar por «Atender ahora». Alta rápida de la clienta sin turno. Libres ordenadas por quién espera hace más y ocupadas por quién termina antes. Franja con las próximas dos horas de cada profesional.
-3. **Flexibilidad con los turnos de Manos y pies.** Cambiar de profesional un turno reservado. Turno que llega con su profesional ocupada: pasa primero a la espera. Pasar una atención en curso a otra profesional. Sentar aunque pise un turno cercano, con aviso (ver preguntas).
-4. **Tratamientos: agenda del día en grilla.** Columnas por profesional, bloques por duración y línea de la hora actual. Mover un turno a otro horario o a otra profesional de la misma especialidad. Reservar tocando un hueco. Huecos del día para ofrecer por teléfono.
+3. **Flexibilidad con los turnos de Manos y pies.** Cambiar de profesional un turno reservado. Turno que llega con su profesional ocupada: pasa primero a la espera. Pasar una atención en curso a otra profesional. Sentar aunque pise un turno cercano, con aviso. Sumar un servicio a una atención en curso, para que la visita sea una sola comanda.
+4. **Tratamientos: agenda del día en grilla.** Columnas por profesional o por cabina (las cabinas rotan), bloques por duración y línea de la hora actual. Mover un turno a otro horario o a otra profesional de la misma especialidad. Reservar tocando un hueco. Huecos del día para ofrecer por teléfono.
 5. **Reportes por universo.** Las secciones de 30-reportes.md, separadas.
 
 Cada etapa es un cambio que se puede usar solo.
@@ -78,13 +78,58 @@ Migración `202611110010_universos`. Dominio en `packages/domain/src/catalogo.ts
 - La agenda, los reportes y el portal no cambian.
 - **Clienta que llega antes de su turno:** «Llegó» vale desde una hora antes, pero «Terminó» se rechaza hasta la hora del turno («marcalo atendido desde la agenda», doc 29). En Tratamientos va a pasar seguido; se resuelve con la grilla de la etapa 4, donde el turno se puede adelantar.
 
-## Preguntas abiertas
+## Respuestas del usuario · 2026-11-11
 
-- **Pisar turnos:** hoy el motor rechaza sentar a una clienta si choca con un turno de esa profesional. ¿Se permite con aviso (y el turno afectado queda marcado para pasarlo a otra), o sigue bloqueando? Define la etapa 3.
-- **Cabinas:** ¿cada profesional de Tratamientos trabaja el día en un lugar fijo, o rotan? Si rotan, la grilla de la etapa 4 necesita también una vista por cabina.
-- **Profesionales compartidas:** ¿alguna trabaja en los dos universos?
-- **Recepción:** ¿cada recepcionista mira un universo, o todas alternan?
-- **Clienta sin ficha:** el prototipo sienta con solo el nombre. Hoy «Atender ahora» exige elegir o crear el cliente. ¿Se puede sentar con el nombre y completar la ficha al cobrar? Define la etapa 2.
+| Pregunta | Respuesta | Dónde pega |
+|---|---|---|
+| ¿Se puede sentar con solo el nombre? | Sí. La ficha se completa después. La tarjeta tiene que distinguir si la clienta ya tiene ficha o no | Etapa 2 |
+| ¿Sentar aunque pise un turno cercano? | Sí, sentar igual, con aviso | Etapa 3 |
+| ¿Las cabinas de Tratamientos son fijas por profesional? | No, van rotando | Etapa 4: la grilla necesita también la vista por cabina, y mover un turno tiene que reasignar la cabina |
+
+Siguen abiertas:
+
+- **Profesionales compartidas:** ¿alguna trabaja en los dos universos? Hoy aparecería en las dos pestañas.
+- **Recepción:** ¿cada recepcionista mira un universo, o todas alternan? Hoy cada navegador recuerda el suyo.
+- **Cobrar sin ficha:** al cobrar, la pantalla pide completar la ficha. ¿Tiene que ser obligatorio, o se puede cobrar igual si la clienta no quiere dar sus datos? La etapa 2 lo deja pasar con un aviso.
+
+## Etapa 2: diseño · 2026-11-11
+
+Sentar desde el tablero de Manos y pies, sin pasar por «Atender ahora», y con solo el nombre.
+
+**Modelo** (migración nueva)
+
+- `EsperaRecepcion.clienteId`, opcional: la clienta anotada ya tiene ficha.
+- `Reserva.clienteProvisional`, texto opcional: nombre de la clienta sentada sin ficha. Un CHECK impide tener a la vez cliente y nombre provisional, y limita el largo como el nombre de la espera.
+
+**Repositorio**
+
+- **`agregarEspera`** acepta `clienteId` (de la organización). El nombre y el teléfono se guardan igual, para mostrar.
+- **`sentarEspera`** (nuevo): sienta ahora uno o varios servicios de una clienta en espera, cada uno con su profesional.
+  - Los servicios tienen que ser de los que pidió, sin repetir. Con dos, empiezan a la vez con profesionales distintas (mismo motor que «a la vez», etapa 2 del doc 29).
+  - Con ficha, el turno queda a nombre del cliente. Sin ficha, queda con `clienteProvisional` y sin cliente.
+  - **Sin ficha no se sienta un servicio que exige consentimiento de práctica:** el mensaje pide elegir o cargar la ficha antes.
+  - Si se sentaron todos los servicios que pidió, la espera se cierra con su turno, en la misma transacción (como hoy). Si quedó alguno, la espera sigue abierta solo con los que faltan y conserva la hora de llegada.
+  - Límite conocido: lo que se sienta después es otro turno y otra comanda. La etapa 3 lo une («sumar a la atención en curso»).
+  - Mismas garantías que `atenderAhora`: permisos, locks, y si otra recepcionista ya la sentó o se fue, no se crea nada.
+- **`asignarClienteReserva`** (nuevo): le pone la ficha a un turno que no la tiene (cualquier estado menos cancelado o vencido). Borra el nombre provisional, vincula el cliente a la sede y queda en la auditoría. Si el turno ya tiene cliente, se rechaza.
+- **`atenderAhora`** y la reserva manual no cambian: siguen exigiendo cliente.
+- **`tableroSede`** suma lo que la pantalla necesita:
+  - por profesional, `libreDesde` (desde cuándo está libre: lo último entre su entrada y su último «Terminó» de hoy; nulo si está atendiendo) y `agenda` (sus ocupaciones de las próximas dos horas, para la franja: la atención en curso y los turnos reservados);
+  - en la atención en curso y en por cobrar, el nombre provisional cuando no hay cliente;
+  - en cada espera, el cliente si tiene ficha.
+- La agenda y la pantalla de cobro muestran el nombre provisional donde hoy dicen «Sin cliente».
+
+**Pantalla**
+
+- **Manos y pies** (y las sedes con un solo universo) pasa a un tablero interactivo:
+  - a la izquierda, «Llegó sin turno» (nombre, teléfono opcional, hasta 2 servicios con el buscador de «Atender ahora», profesional pedida opcional), la lista de espera y los turnos por llegar;
+  - mientras se escribe el nombre o el teléfono, busca fichas existentes para elegir una;
+  - al tocar una clienta en espera se resaltan las profesionales que pueden empezar ahora cada servicio, y un toque la sienta;
+  - las que pisarían un turno cercano se muestran con el motivo y no se pueden elegir (la etapa 3 lo habilita);
+  - libres ordenadas por quién espera hace más; ocupadas, por quién termina antes; cada tarjeta con la franja de sus próximas dos horas.
+- **Con ficha o sin ficha:** la espera, la tarjeta de la profesional y por cobrar muestran «Sin ficha» cuando la clienta no la tiene; con ficha, el nombre enlaza a ella.
+- **Cobro:** si el turno no tiene ficha, la pantalla de cobro pide primero buscarla o crearla (con el nombre y el teléfono de la espera ya cargados). Se puede cobrar sin ficha, con aviso.
+- Tratamientos no cambia.
 
 ## Verificación
 

@@ -6,7 +6,7 @@ import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, auditar, exigirIds, sedesConPermiso } from "./access.ts";
 import { configuracionEfectiva } from "./configuracion.ts";
-import { ConfiguracionIncompleta, cargarConsulta, reservaActiva, type Pedido } from "./disponibilidad.ts";
+import { ConfiguracionIncompleta, TURNO_PISABLE, cargarConsulta, reservaActiva, type OpcionesConsulta, type Pedido } from "./disponibilidad.ts";
 import { encolarEmailReserva } from "./emails.ts";
 
 type Tx = Prisma.TransactionClient;
@@ -69,7 +69,11 @@ export type TurnoTomado = { reservaId: string; estado: Estado; expiraEn: Date | 
 export type AntesDeTomar = (tx: Tx) => Promise<{ clienteId?: string } | void>;
 /** `despues` corre en la misma transacción con el turno ya escrito: si falla, el turno no se crea. */
 export type DespuesDeTomar = (tx: Tx, turno: TurnoTomado) => Promise<void>;
-export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; clienteProvisional?: string | null; notas?: string | null; sinTurnoPrevio?: boolean }, ahora = new Date(), opciones: { antes?: AntesDeTomar; despues?: DespuesDeTomar; evento?: Record<string, string> } = {}): Promise<TurnoTomado> {
+/**
+ * `consulta`: opciones del motor (doc 31, etapa 3a: `pisar` para «sentar igual»). Con `pisar`, el evento de
+ * creación guarda en `pisadas` los turnos sin empezar que el nuevo pisa. Solo la pasa `sentarEspera`.
+ */
+export async function tomarTurno(db: Database, actorId: string | null, organizacionId: string, pedido: Pedido & { inicio: Date; clienteId?: string | null; clienteProvisional?: string | null; notas?: string | null; sinTurnoPrevio?: boolean }, ahora = new Date(), opciones: { antes?: AntesDeTomar; despues?: DespuesDeTomar; evento?: Record<string, Prisma.InputJsonValue>; consulta?: OpcionesConsulta } = {}): Promise<TurnoTomado> {
   if (actorId) {
     exigirIds(pedido.sedeId);
     const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
@@ -85,7 +89,7 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
   const notas = pedido.notas?.trim().slice(0, 1000) || null;
 
   // Primera pasada sin locks: solo para saber qué filas bloquear.
-  const previa = await cargarConsulta(db, organizacionId, pedido, ahora);
+  const previa = await cargarConsulta(db, organizacionId, pedido, ahora, undefined, opciones.consulta);
   const profesionales = ordenar(previa.consulta.items.flatMap(i => i.candidatos));
   const recursos = ordenar(previa.consulta.recursos.map(r => r.id));
 
@@ -97,9 +101,10 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
     await expirarVencidas(tx, organizacionId, profesionales, ahora);
 
     // Revalidación bajo lock con exactamente las mismas reglas que la consulta pública.
-    const { consulta, efectivos } = await cargarConsulta(tx, organizacionId, pedido, ahora, { profesionales: new Set(profesionales), recursos: new Set(recursos) });
+    const { consulta, efectivos } = await cargarConsulta(tx, organizacionId, pedido, ahora, { profesionales: new Set(profesionales), recursos: new Set(recursos) }, opciones.consulta);
     const turno = asignarEn(consulta, pedido.inicio.getTime());
     if (!turno) throw new TurnoNoDisponible();
+    const pisadas = opciones.consulta?.pisar ? await reservasPisadas(tx, turno.items, ahora) : [];
 
     const senaTotal = turno.items.reduce((t, i) => t + (aCentavos(efectivos.get(i.servicioId)!.sena ?? "0") ?? 0n), 0n);
     // Un cliente atendido en el momento (sin turno previo) no deja seña: ya está en la sede.
@@ -110,10 +115,27 @@ export async function tomarTurno(db: Database, actorId: string | null, organizac
     const sinTurnoPrevio = !!pedido.sinTurnoPrevio;
     // Sin turno previo la clienta ya está en el local: la atención empieza con el turno (doc 29).
     const r = await escribirTurno(tx, organizacionId, { sedeId: pedido.sedeId, clienteId, clienteProvisional: clienteId ? null : provisional, canal: pedido.canal, estado, expiraEn, notas, creadoPor: actorId, sinTurnoPrevio, iniciadaEn: sinTurnoPrevio ? pedido.inicio : null }, turno, efectivos);
-    await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena, ...(sinTurnoPrevio ? { sinTurnoPrevio } : {}), ...opciones.evento });
+    await registrarEvento(tx, organizacionId, r.reservaId, "CREADA", null, estado, actorId, { canal: pedido.canal, exigeSena, ...(sinTurnoPrevio ? { sinTurnoPrevio } : {}), ...opciones.evento, ...(pisadas.length ? { pisadas } : {}) });
     await opciones.despues?.(tx, r);
     return r;
   }, { maxWait: 10_000, timeout: 20_000 }));
+}
+
+/**
+ * «Sentar igual» (doc 31, etapa 3a): los turnos vigentes sin empezar que una ocupación nueva pisa, de las
+ * mismas profesionales. Corre bajo los locks de esas profesionales, después de asignar. Quedan en el evento
+ * para que recepción sepa a quién avisar o reubicar.
+ */
+async function reservasPisadas(tx: Tx, items: { profesionalId: string; ocupaDesde: number | Date; ocupaHasta: number | Date }[], ahora: Date, excepto?: string) {
+  const ids = new Set<string>();
+  for (const it of items) {
+    const pisados = await tx.reservaItem.findMany({
+      where: { profesionalId: it.profesionalId, ocupaDesde: { lt: new Date(it.ocupaHasta) }, ocupaHasta: { gt: new Date(it.ocupaDesde) }, reserva: { AND: [reservaActiva(ahora), TURNO_PISABLE, ...(excepto ? [{ id: { not: excepto } }] : [])] } },
+      select: { reservaId: true },
+    });
+    for (const p of pisados) ids.add(p.reservaId);
+  }
+  return [...ids].sort();
 }
 
 /** La profesional elegida no está libre ahora: otro turno, un bloqueo o fuera de su horario. */
@@ -440,6 +462,78 @@ export async function terminarAtencion(db: Database, actorId: string, organizaci
     await tx.reserva.update({ where: { id: reservaId }, data: { iniciadaEn: r.iniciadaEn ?? r.items[0]!.inicio, terminadaEn: ahora } });
     await transicion(tx, organizacionId, reservaId, "CONFIRMADA", "ATENDIDA", "ATENDIDA", actorId, detalle);
   });
+}
+
+const nombreDe = (p: { nombre: string; apellido: string | null }) => [p.nombre, p.apellido].filter(Boolean).join(" ");
+/** Servicio de una atención en curso: empezó y su profesional no marcó «Terminó» (doc 29), aunque se haya pasado del estimado. */
+const EN_CURSO: Prisma.ReservaItemWhereInput = { terminadoEn: null, reserva: { estado: "CONFIRMADA", iniciadaEn: { not: null } } };
+
+/**
+ * Doc 31, etapa 3a: «Pasar» una atención en curso a otra profesional (la primera se tiene que ir, se
+ * descompuso, o recepción reacomoda el salón). Los servicios sin «Terminó» que `deProfesionalId` tiene en ese
+ * turno pasan a `aProfesionalId`, que tiene que:
+ * - hacer esos servicios en la sede (habilitación y habilidades, el mismo criterio que el motor);
+ * - no estar atendiendo a nadie (una atención pasada del estimado también cuenta, doc 29);
+ * - estar libre desde ahora hasta el fin estimado de lo que recibe: jornada, ausencias y otros turnos. Con
+ *   `pisar`, sus turnos reservados que todavía no empezaron no cuentan (como «sentar igual»); quedan en la
+ *   auditoría como pisados.
+ *
+ * Bajo los locks de las dos profesionales (doc 16, en orden de ID), con actualización condicional de cada
+ * servicio y auditoría. Los recursos no cambian: la clienta sigue en el mismo sillón. El servicio conserva su
+ * horario: lo ya hecho por la primera queda dentro del servicio de la segunda (la comanda la corrige al cobrar).
+ */
+export async function pasarAtencion(db: Database, actorId: string, organizacionId: string, datos: { reservaId: string; deProfesionalId: string; aProfesionalId: string; pisar?: boolean }, ahora = new Date()): Promise<void> {
+  exigirIds(datos.reservaId, datos.deProfesionalId, datos.aProfesionalId);
+  if (!datos.aProfesionalId) throw new DatosInvalidos("Elegí a quién pasar la atención");
+  if (datos.deProfesionalId === datos.aProfesionalId) throw new DatosInvalidos("Elegí otra profesional");
+  const previa = await db.reserva.findFirst({ where: { id: datos.reservaId, organizacionId }, select: { sedeId: true, sede: { select: { timezone: true } } } });
+  if (!previa) throw new AccesoDenegado();
+  const { ids } = await sedesConPermiso(db, actorId, organizacionId, "reserva:gestionar");
+  if (!ids.has(previa.sedeId)) throw new AccesoDenegado();
+  const tz = previa.sede.timezone;
+  const hora = (d: Date) => aHora(aLocal(d, tz).minutos);
+
+  await conReintento(() => db.$transaction(async tx => {
+    await bloquearAgenda(tx, ordenar([datos.deProfesionalId, datos.aProfesionalId]), []);
+    // Releído bajo lock: otra recepcionista pudo pasarla, o marcar «Terminó», mientras tanto.
+    const r = await tx.reserva.findUniqueOrThrow({ where: { id: datos.reservaId }, select: { estado: true, iniciadaEn: true, items: { where: { profesionalId: datos.deProfesionalId, terminadoEn: null }, orderBy: { posicion: "asc" } } } });
+    if (r.estado !== "CONFIRMADA" || !r.iniciadaEn) throw new DatosInvalidos("La atención no está en curso");
+    if (!r.items.length) throw new DatosInvalidos("Esa profesional no tiene servicios en curso en este turno");
+    const nueva = await tx.profesional.findFirst({ where: { id: datos.aProfesionalId, organizacionId }, select: { nombre: true, apellido: true } });
+    if (!nueva) throw new AccesoDenegado();
+    const nombre = nombreDe(nueva);
+
+    // Habilitación, habilidades y jornada: el mismo cargador que el motor, limitado a la profesional bloqueada
+    // (de a cuatro servicios, el límite de un pedido).
+    const servicioIds = [...new Set(r.items.map(i => i.servicioId))];
+    let jornada: { desde: number; hasta: number }[] = [];
+    for (let n = 0; n < servicioIds.length; n += 4) {
+      const pedido: Pedido = { sedeId: previa.sedeId, fecha: aLocal(ahora, tz).fecha, canal: "RECEPCION", items: servicioIds.slice(n, n + 4).map(servicioId => ({ servicioId, profesionalId: datos.aProfesionalId })) };
+      const { consulta } = await cargarConsulta(tx, organizacionId, pedido, ahora, { profesionales: new Set([datos.aProfesionalId]), recursos: new Set() });
+      if (consulta.items.some(i => !i.candidatos.length)) throw new DatosInvalidos(`${nombre} no hace ese servicio`);
+      jornada = consulta.profesionales.get(datos.aProfesionalId)?.jornada ?? [];
+    }
+
+    if (await tx.reservaItem.count({ where: { ...EN_CURSO, profesionalId: datos.aProfesionalId } }))
+      throw new DatosInvalidos(`${nombre} está atendiendo a otra clienta`);
+    // Desde ahora hasta el fin estimado de lo que recibe; si ya se pasó del estimado, al menos este minuto.
+    const desde = ahora, hasta = new Date(Math.max(ahora.getTime() + 60_000, ...r.items.map(i => i.ocupaHasta.getTime())));
+    if (!jornada.some(j => j.desde <= desde.getTime() && hasta.getTime() <= j.hasta)) throw new DatosInvalidos(`${nombre} no está en su horario hasta que termine esta atención`);
+    const ausencia = await tx.bloqueoAgenda.findFirst({ where: { profesionalId: datos.aProfesionalId, inicio: { lt: hasta }, fin: { gt: desde } }, orderBy: { inicio: "asc" }, select: { fin: true } });
+    if (ausencia) throw new DatosInvalidos(`${nombre} tiene una ausencia hasta las ${hora(ausencia.fin)}`);
+    const cruza: Prisma.ReservaItemWhereInput = { profesionalId: datos.aProfesionalId, reservaId: { not: datos.reservaId }, ocupaDesde: { lt: hasta }, ocupaHasta: { gt: desde } };
+    const turno = await tx.reservaItem.findFirst({ where: { ...cruza, reserva: { AND: [reservaActiva(ahora), ...(datos.pisar ? [{ NOT: TURNO_PISABLE }] : [])] } }, orderBy: { ocupaDesde: "asc" }, select: { inicio: true } });
+    if (turno) throw new DatosInvalidos(`${nombre} tiene un turno a las ${hora(turno.inicio)}`);
+    const pisadas = datos.pisar ? await reservasPisadas(tx, [{ profesionalId: datos.aProfesionalId, ocupaDesde: desde, ocupaHasta: hasta }], ahora, datos.reservaId) : [];
+
+    for (const it of r.items) {
+      const { count } = await tx.reservaItem.updateMany({ where: { id: it.id, profesionalId: datos.deProfesionalId, terminadoEn: null }, data: { profesionalId: datos.aProfesionalId } });
+      if (count !== 1) throw new DatosInvalidos("El turno cambió mientras tanto; actualizá la pantalla");
+    }
+    await auditar(tx, organizacionId, actorId, "reserva.atencion_pasada", "Reserva", datos.reservaId, {
+      deProfesionalId: datos.deProfesionalId, aProfesionalId: datos.aProfesionalId, servicioIds: r.items.map(i => i.servicioId), ...(pisadas.length ? { pisadas } : {}),
+    });
+  }, { maxWait: 10_000, timeout: 20_000 }));
 }
 
 export async function marcarAusente(db: Database, actorId: string, organizacionId: string, reservaId: string, ahora = new Date()) {

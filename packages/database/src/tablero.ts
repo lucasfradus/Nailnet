@@ -101,8 +101,13 @@ const YA_NO_ESPERA = "Esa clienta ya no está en la lista de espera (la atendió
  * bloquea después de las profesionales y se relee, así que si otra recepcionista ya la sentó (o sentó una
  * parte) o se fue, no se crea nada. El evento de creación del turno guarda `esperaId`: un sentado parcial no
  * cierra la espera, y el cobro igual encuentra de dónde vino para precargar la ficha.
+ *
+ * Etapa 3a (doc 31): con `pisar`, «sentar igual» aunque pise un turno cercano de esas profesionales. El
+ * sistema avisa, no traba: sus turnos reservados que todavía no empezaron no cuentan como ocupación, y el
+ * evento de creación guarda en `pisadas` cuáles pisó. Siguen contando las atenciones en curso, las ausencias,
+ * la jornada y los recursos (ver `OpcionesConsulta`).
  */
-export async function sentarEspera(db: Database, actorId: string, organizacionId: string, datos: { esperaId: string; items: { servicioId: string; profesionalId: string }[] }, ahora = new Date()): Promise<TurnoTomado> {
+export async function sentarEspera(db: Database, actorId: string, organizacionId: string, datos: { esperaId: string; items: { servicioId: string; profesionalId: string }[]; pisar?: boolean }, ahora = new Date()): Promise<TurnoTomado> {
   if (!datos.items.length) throw new DatosInvalidos("Elegí al menos un servicio");
   if (datos.items.some(i => !i.servicioId || !i.profesionalId)) throw new DatosInvalidos("Elegí la profesional de cada servicio");
   exigirIds(datos.esperaId, ...datos.items.flatMap(i => [i.servicioId, i.profesionalId]));
@@ -137,7 +142,7 @@ export async function sentarEspera(db: Database, actorId: string, organizacionId
     return await tomarTurno(db, actorId, organizacionId, {
       sedeId: e.sedeId, fecha: aLocal(inicio, e.sede.timezone).fecha, canal: "RECEPCION", clienteId: e.clienteId, clienteProvisional: e.clienteId ? null : e.nombre,
       items: datos.items.map((i, n) => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, conAnterior: n > 0 })), inicio, sinTurnoPrevio: true,
-    }, inicio, { antes, despues, evento: { esperaId: datos.esperaId } });
+    }, inicio, { antes, despues, evento: { esperaId: datos.esperaId }, ...(datos.pisar ? { consulta: { pisar: datos.items.map(i => i.profesionalId) } } : {}) });
   } catch (err) {
     if (err instanceof TurnoNoDisponible) throw new DatosInvalidos(PROFESIONAL_OCUPADA);
     if (err instanceof ConfiguracionIncompleta) throw new DatosInvalidos(`Falta definir en la sede: ${err.faltantes.join(", ")}`);
@@ -251,11 +256,11 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   // Se traen los turnos hasta el fin del día: Tratamientos los muestra todos; el resto, solo los cercanos.
   const porLlegar = await db.reserva.findMany({
     where: { organizacionId, sedeId, estado: "CONFIRMADA", iniciadaEn: null, items: { some: { posicion: 0, inicio: { lt: finDia > cerca ? finDia : cerca, gte: new Date(ahora.getTime() - POR_LLEGAR_MS) } } } },
-    select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, profesionalId: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
   });
   const porCobrar = await db.reserva.findMany({
     where: { organizacionId, sedeId, estado: "ATENDIDA", ventas: { none: { estado: { not: "ANULADA" } } }, items: { some: { posicion: 0, inicio: { gte: new Date(ahora.getTime() - POR_COBRAR_DIAS * 86_400_000) } } } },
-    select: { id: true, terminadaEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    select: { id: true, terminadaEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, profesionalId: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
     take: 100,
   });
   // Etapa 3: la lista de espera de hoy, por orden de llegada. Una espera olvidada de otro día no se muestra.
@@ -269,7 +274,22 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
     servicios: r.items.map(i => `${i.servicio.nombre} · ${nombre(i.profesional)}`),
     universos: UNIVERSOS.filter(x => r.items.some(i => i.servicio.categoria.universo === x)),
   });
-  const llegan = porLlegar.map(resumen).sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+  // Etapa 3a (doc 31): turno en riesgo. Una profesional del turno atiende a otra clienta y su fin estimado
+  // pasa la hora de su servicio en este turno, o ya se pasó del estimado (`demorada`, sin hora para dar).
+  const finAtencion = new Map<string, Date>();
+  for (const i of enCurso) {
+    const previo = finAtencion.get(i.profesionalId);
+    if (!previo || previo < i.fin) finAtencion.set(i.profesionalId, i.fin);
+  }
+  const riesgos = (r: (typeof porLlegar)[number]) => [...new Set(r.items.map(i => i.profesionalId))].flatMap(profesionalId => {
+    const fin = finAtencion.get(profesionalId);
+    const it = r.items.find(i => i.profesionalId === profesionalId)!;
+    if (!fin) return [];
+    const demorada = fin <= ahora;
+    if (!demorada && fin <= it.inicio) return [];
+    return [{ profesionalId, profesional: nombre(it.profesional), demorada, libreEstimado: demorada ? null : fin }];
+  });
+  const llegan = porLlegar.map(r => ({ ...resumen(r), riesgos: riesgos(r) })).sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
 
   // Una profesional está en un universo si hace algún servicio suyo. Sin servicios habilitados aparece en
   // los dos, para que recepción igual pueda marcarle la entrada y la salida.

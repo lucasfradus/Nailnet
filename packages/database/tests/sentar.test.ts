@@ -234,6 +234,26 @@ test("sentar desde la espera (doc 31, etapa 2)", async (t) => {
       await assert.rejects(tomarTurno(db, null, O, { sedeId: centro, fecha: FECHA, canal: "ONLINE", clienteProvisional: "Yael", items: [{ servicioId: manos }], inicio: en("18:00") }, en("08:00")), AccesoDenegado);
     });
 
+    await t.test("se puede sentar a la próxima en el mismo minuto del «Terminó»", async () => {
+      const dora = (await crearProfesional(db, M, O, centro, { nombre: "Dora" })).id;
+      await guardarHabilidades(db, M, O, dora, { skillIds: [], servicioIds: [manos] });
+      await guardarHorarioProfesional(db, M, O, dora, centro, semanaDesdeTextos({ 2: "08:00-22:00" }));
+      await registrarEntrada(db, R, O, { sedeId: centro, profesionalId: dora }, en("19:55"));
+      const segundos = (hhmm: string, s: number) => new Date(en(hhmm).getTime() + s * 1000);
+      const una = await agregarEspera(db, R, O, { sedeId: centro, nombre: "Una", servicioIds: [manos] }, en("19:58"));
+      const otra = await agregarEspera(db, R, O, { sedeId: centro, nombre: "Otra", servicioIds: [manos] }, en("19:59"));
+      const primero = await sentarEspera(db, R, O, { esperaId: una.id, items: [{ servicioId: manos, profesionalId: dora }] }, segundos("20:00", 20));
+      // Recepción toca «Terminó» a las 20:30:40 y sienta a la siguiente quince segundos después.
+      await terminarAtencion(db, R, O, primero.reservaId, segundos("20:30", 40), { profesionalId: dora });
+      const item = await db.reservaItem.findFirstOrThrow({ where: { reservaId: primero.reservaId } });
+      assert.deepEqual([iso(item.fin), iso(item.ocupaHasta), iso(item.terminadoEn)], [en("20:30").toISOString(), en("20:30").toISOString(), segundos("20:30", 40).toISOString()], "la agenda se recorta al minuto; la hora real queda aparte");
+      const segundo = await sentarEspera(db, R, O, { esperaId: otra.id, items: [{ servicioId: manos, profesionalId: dora }] }, segundos("20:30", 55));
+      assert.equal(iso(segundo.items[0]!.inicio), en("20:30").toISOString());
+      await terminarAtencion(db, R, O, segundo.reservaId, segundos("20:30", 58), { profesionalId: dora });
+      const corto = await db.reservaItem.findFirstOrThrow({ where: { reservaId: segundo.reservaId } });
+      assert.deepEqual([iso(corto.inicio), iso(corto.ocupaHasta)], [en("20:30").toISOString(), en("20:31").toISOString()], "empezó y terminó en el mismo minuto: ocupa ese minuto");
+    });
+
     await t.test("CHECK: nunca cliente y nombre provisional a la vez; largo entre 1 y 80", async () => {
       await assert.rejects(db.reserva.update({ where: { id: mora }, data: { clienteProvisional: "Mora" } }), /Reserva_cliente_provisional/);
       await assert.rejects(db.reserva.update({ where: { id: xime }, data: { clienteProvisional: "   " } }), /Reserva_cliente_provisional/);

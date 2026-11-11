@@ -639,14 +639,20 @@ export async function terminarAtencion(db: Database, actorId: string, organizaci
     if (!propios.length) throw new DatosInvalidos("Esa profesional no tiene servicios pendientes en este turno");
     await exigirConsentimientos(tx, organizacionId, r);
     const quitados: { servicioId: string; profesionalId: string; inicio: string }[] = [];
+    // La agenda va al minuto: el recorte libera desde el comienzo de este minuto, porque sentar a la próxima
+    // clienta (y «Atender ahora») empieza en el minuto en curso. Recortando al segundo, tocar «Terminó» y
+    // sentar a otra enseguida chocaba por unos segundos. `terminadoEn` guarda el instante real.
+    const minuto = new Date(Math.floor(ahora.getTime() / 60_000) * 60_000);
     for (const it of propios) {
       if (it.inicio >= ahora) {
         await tx.reservaItemRecurso.deleteMany({ where: { itemId: it.id } });
         await tx.reservaItem.delete({ where: { id: it.id } });
         quitados.push({ servicioId: it.servicioId, profesionalId: it.profesionalId, inicio: it.inicio.toISOString() });
-      } else if (it.ocupaHasta > ahora) {
-        await tx.reservaItem.update({ where: { id: it.id }, data: { fin: it.fin < ahora ? it.fin : ahora, ocupaHasta: ahora, terminadoEn: ahora } });
-        await tx.reservaItemRecurso.updateMany({ where: { itemId: it.id, ocupaHasta: { gt: ahora } }, data: { ocupaHasta: ahora } });
+      } else if (it.ocupaHasta > minuto) {
+        // Nunca antes de que empezó: lo que empezó y terminó en el mismo minuto ocupa ese minuto.
+        const corte = minuto > it.inicio ? minuto : new Date(it.inicio.getTime() + 60_000);
+        await tx.reservaItem.update({ where: { id: it.id }, data: { fin: it.fin < corte ? it.fin : corte, ocupaHasta: corte, terminadoEn: ahora } });
+        await tx.reservaItemRecurso.updateMany({ where: { itemId: it.id, ocupaHasta: { gt: corte } }, data: { ocupaHasta: corte } });
       } else await tx.reservaItem.update({ where: { id: it.id }, data: { terminadoEn: ahora } });
     }
     const detalle = { terminada: ahora.toISOString(), ...(opciones.profesionalId ? { profesionalId: opciones.profesionalId } : {}), ...(quitados.length ? { quitados } : {}) };

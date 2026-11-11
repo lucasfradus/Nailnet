@@ -1,30 +1,31 @@
 import Link from "next/link";
+import { AccesoDenegado } from "@nailnet/domain";
+import { aLocal, aUtc, validarFecha } from "@nailnet/domain/agenda";
+import { DatosInvalidos } from "@nailnet/database/access";
+import { agendaDia, destinosDeTurno } from "@nailnet/database/agenda-dia";
+import { resumenReserva } from "@nailnet/database/reservas";
 import { Formulario } from "@/components/formulario";
-import { UNIVERSO_SLUG } from "@/lib/etiquetas";
-import { accionLlegada, accionSalida, accionSeFue, accionTermino } from "./acciones";
-import { NoLlegaron, NombreClienta, PorCobrar, repartir, type Tablero } from "./comun";
+import { db } from "@/lib/db";
+import { requerirOrganizacion } from "@/lib/contexto";
+import { accionSalida, accionSeFue } from "./acciones";
+import { NoLlegaron, PorCobrar, repartir, type Tablero } from "./comun";
+import { GrillaTratamientos } from "./grilla-tratamientos";
+import type { DatosGrilla, Moviendo } from "./tratamientos-modelo";
 
-/** «Llegó» vale desde una hora antes del turno (lo valida `marcarLlegada`): antes no se ofrece. */
-const ANTICIPO_LLEGADA_MS = 3_600_000;
+type Parametros = Record<string, string | string[] | undefined>;
+const uno = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
+const nombreDe = (c: { nombre: string; apellido: string | null } | null) => c ? [c.nombre, c.apellido].filter(Boolean).join(" ") : "Sin ficha";
 
 /**
- * Pestaña Tratamientos del tablero de recepción (doc 31, etapa 1). Trabaja con turno previo, así que pone
- * primero los turnos de hoy y no anota en espera. Aislada a propósito: la etapa 4 la reemplaza por la
- * grilla del día.
+ * Pestaña Tratamientos del tablero de recepción (doc 31). Trabaja con turno previo: lo principal es la
+ * grilla del día (etapa 4). Debajo, lo que comparte con Manos y pies: por cobrar (la caja es una sola) y la
+ * entrada y salida de las profesionales. No anota en espera; si ya hay una clienta anotada para un
+ * tratamiento, la lista se muestra igual para que no se pierda.
  */
-export function TableroTratamientos({ tablero, ahora, sedeId, servicioId, verVentas }: { tablero: Tablero; ahora: Date; sedeId: string; servicioId?: string; verVentas: boolean }) {
+export function TableroTratamientos({ tablero, ahora, sedeId, q, verVentas }: { tablero: Tablero; ahora: Date; sedeId: string; q: Parametros; verVentas: boolean }) {
   const tz = tablero.timezone;
   const hora = (d: Date) => d.toLocaleTimeString("es-AR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
-  const universo = tablero.universo;
-  const base = universo ? `/recepcion?u=${UNIVERSO_SLUG[universo]}` : "/recepcion";
-  const servicio = tablero.servicios.find(s => s.id === servicioId) ?? null;
   const { presentes, ausentes, enOtraSede, libres, atendiendo } = repartir(tablero);
-  // Con un servicio elegido: solo las que lo hacen, y si llega a terminarlo antes de su próximo turno.
-  const aptas = (ps: typeof presentes) => servicio ? ps.filter(p => p.servicioIds.includes(servicio.id)) : ps;
-  const entra = (p: (typeof presentes)[number]) => !servicio || !p.proximo || ahora.getTime() + servicio.duracionMinutos * 60_000 <= p.proximo.ocupaDesde.getTime();
-  const ordenLibres = aptas(libres).sort((a, b) => Number(entra(b)) - Number(entra(a)));
-  const ordenAtendiendo = aptas(atendiendo).sort((a, b) => a.atencion!.finEstimado.getTime() - b.atencion!.finEstimado.getTime());
-  const despachar = (profesionalId: string) => `/agenda/ahora?${new URLSearchParams({ volver: "recepcion", profesional: profesionalId, ...(servicio ? { servicio: servicio.id } : {}) })}`;
 
   const seccionEspera = tablero.esperas.length > 0 && <>
     <h2 className="subtitulo">En espera</h2>
@@ -47,68 +48,97 @@ export function TableroTratamientos({ tablero, ahora, sedeId, servicioId, verVen
     })}</div>
   </>;
 
-  const seccionLibres = <>
-    <form className="en-linea">
-      {universo && <input type="hidden" name="u" value={UNIVERSO_SLUG[universo]} />}
-      <select name="servicio" defaultValue={servicio?.id ?? ""} aria-label="Servicio que pide la clienta">
-        <option value="">Todos los servicios</option>
-        {tablero.servicios.map(s => <option key={s.id} value={s.id}>{s.nombre} · {s.duracionMinutos} min</option>)}
-      </select>
-      <button className="secundario">Ver quién puede</button>
-      {servicio && <Link href={base}>Quitar filtro</Link>}
-    </form>
-
-    <h2 className="subtitulo">Libres{servicio ? ` para ${servicio.nombre}` : ""}</h2>
-    {!ordenLibres.length && <p className="intro">{presentes.length ? "No hay nadie libre para esto ahora." : "Todavía no marcaste la entrada de ninguna profesional (abajo, en «No llegaron»)."}</p>}
-    <div className="tablero">{ordenLibres.map(p => <article key={p.id} className={entra(p) ? "puesto libre" : "puesto justo"}>
-      <div className="fila-cabecera"><h2>{p.nombre}</h2><span className="tag estado-confirmada">Libre</span></div>
-      <p>{p.proximo ? `Libre hasta las ${hora(p.proximo.ocupaDesde)}: turno de ${p.proximo.servicio}${p.proximo.otraSede ? " en otra sede" : ""}` : "Sin turnos reservados"}</p>
-      {!entra(p) && <p className="ayuda">No llega a terminar {servicio!.nombre} antes de su turno.</p>}
-      <div className="acciones">
-        <Link className="boton" href={despachar(p.id)}>Atender</Link>
-        <Formulario accion={accionSalida} boton="Salida" className="en-linea" secundario confirmar={`¿Marcar la salida de ${p.nombre}?`}><input type="hidden" name="presenciaId" value={p.presencia!.id} /></Formulario>
-      </div>
-    </article>)}</div>
-  </>;
-
-  const seccionAtendiendo = <>
-    <h2 className="subtitulo">En sesión</h2>
-    {!ordenAtendiendo.length && <p className="intro">No hay sesiones en curso{servicio ? " entre las que hacen este servicio" : ""}.</p>}
-    <div className="tablero">{ordenAtendiendo.map(p => {
-      const a = p.atencion!;
-      const demorada = ahora > a.finEstimado;
-      return <article key={p.id} className={demorada ? "puesto demorada" : "puesto ocupada"}>
-        <div className="fila-cabecera"><h2>{p.nombre}</h2><span className={`tag ${demorada ? "estado-pendiente" : "estado-pendiente_pago"}`}>{demorada ? "Demorada" : "En sesión"}</span></div>
-        <p><NombreClienta cliente={a.cliente} provisional={a.clienteProvisional} /> · {a.servicios.join(", ")}</p>
-        <p className="ayuda">Desde las {hora(a.desde)} · estimado hasta las {hora(a.finEstimado)}{a.enOtraSede ? " · en otra sede" : ""}</p>
-        {!a.enOtraSede && <Formulario accion={accionTermino} boton="Terminó" className="en-linea"><input type="hidden" name="reservaId" value={a.reservaId} /><input type="hidden" name="profesionalId" value={p.id} /></Formulario>}
-      </article>;
-    })}</div>
-  </>;
-
-  const seccionPorLlegar = <>
-    <h2 className="subtitulo">Turnos de hoy</h2>
-    {!tablero.porLlegar.length ? <p className="intro">No quedan turnos por llegar hoy.</p> : <div className="tabla">{tablero.porLlegar.map(r => {
-      const tarde = Math.floor((ahora.getTime() - r.inicio.getTime()) / 60_000);
-      return <article key={r.reservaId} className="fila">
-        <div className="fila-cabecera"><h2>{hora(r.inicio)} · <NombreClienta cliente={r.cliente} provisional={r.clienteProvisional} enlace={false} />{tarde > 0 && <> <span className="tag estado-pendiente">{tarde} min tarde</span></>}</h2>
-          {r.inicio.getTime() - ahora.getTime() <= ANTICIPO_LLEGADA_MS && <Formulario accion={accionLlegada} boton="Llegó" className="en-linea" secundario><input type="hidden" name="reservaId" value={r.reservaId} /></Formulario>}</div>
-        <p>{r.servicios.join(" · ")}</p>
-      </article>;
-    })}</div>}
-  </>;
-
   return <>
     <div className="contadores">
       <p><strong>{atendiendo.length}</strong>en sesión</p>
       <p><strong>{tablero.porLlegar.length}</strong>turnos por llegar hoy</p>
-      <p><strong>{libres.length}</strong>libres</p>
       <p><strong>{tablero.porCobrar.length}</strong>por cobrar</p>
       {tablero.esperas.length > 0 && <p><strong>{tablero.esperas.length}</strong>en espera</p>}
     </div>
-    {seccionPorLlegar}{seccionAtendiendo}{seccionLibres}
+    <GrillaDelDia q={q} />
     <PorCobrar tablero={tablero} hora={hora} verVentas={verVentas} />
     {seccionEspera}
+    <EnElLocal profesionales={presentes} timezone={tz} />
     <NoLlegaron ausentes={ausentes} enOtraSede={enOtraSede} sedeId={sedeId} />
+  </>;
+}
+
+/**
+ * La grilla del día de la sede (doc 31, etapa 4), por profesional o por
+ * cabina. La fecha (`fecha`), la vista (`vista=cabina`) y el turno que se está moviendo (`mover`) van en la
+ * URL, así sobreviven a la actualización automática y «mover» sigue al cambiar de día. Lo demás (el turno
+ * elegido, «Nuevo turno», lo que se está escribiendo) vive en la pantalla.
+ */
+async function GrillaDelDia({ q }: { q: Parametros }) {
+  const { sesion, organizacion, sede, puede } = await requerirOrganizacion();
+  if (!sede) return null;
+  const actor = sesion.usuario.id, tz = sede.timezone, ahora = new Date();
+  const hoy = aLocal(ahora, tz).fecha;
+  const fecha = validarFecha(uno(q.fecha)) ? uno(q.fecha) : hoy;
+  const vista = uno(q.vista) === "cabina" ? "cabina" : "profesional";
+  const mover = uno(q.mover);
+
+  const dia = await agendaDia(db(), actor, organizacion.id, { sedeId: sede.id, fecha, universo: "TRATAMIENTOS" }, ahora)
+    .catch(e => { if (e instanceof AccesoDenegado) return null; throw e; });
+  if (!dia) return <p className="alerta error">No tenés permiso para ver la agenda de esta sede.</p>;
+  const cero = aUtc(fecha, 0, tz).getTime();
+  const min = (d: Date) => Math.round((d.getTime() - cero) / 60_000);
+  const intervalos = (xs: { desde: Date; hasta: Date }[]) => xs.map(x => ({ desde: min(x.desde), hasta: min(x.hasta) }));
+  const apertura = intervalos(dia.apertura);
+
+  let moviendo: Moviendo | null = null;
+  if (mover) {
+    const r = await resumenReserva(db(), actor, organizacion.id, mover).catch(e => { if (e instanceof AccesoDenegado || e instanceof DatosInvalidos) return null; throw e; });
+    if (r) {
+      const inicio = r.items[0]?.inicio;
+      const dondeEstaba = inicio ? `${aLocal(inicio, tz).fecha === hoy ? "hoy" : `el ${inicio.toLocaleDateString("es-AR", { timeZone: tz, weekday: "long", day: "numeric", month: "long" })}`} a las ${inicio.toLocaleTimeString("es-AR", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}` : "";
+      moviendo = { reservaId: r.id, cliente: r.cliente ? nombreDe(r.cliente) : r.clienteProvisional ?? "Sin ficha", servicios: r.items.map(i => i.servicio).join(" + "), desde: dondeEstaba, destinos: null, error: null };
+      try {
+        const d = await destinosDeTurno(db(), actor, organizacion.id, mover, fecha, ahora);
+        moviendo.destinos = d.destinos.map(x => ({ profesionalIds: x.profesionalIds, inicios: x.inicios.map(i => ({ inicio: min(i.inicio), fin: min(i.fin), items: i.items })) }));
+      } catch (e) {
+        if (!(e instanceof DatosInvalidos || e instanceof AccesoDenegado)) throw e;
+        moviendo.error = e instanceof DatosInvalidos ? e.message : "No tenés permiso para mover este turno";
+      }
+    }
+  }
+
+  const parametros: Record<string, string> = { u: "tratamientos", ...(fecha !== hoy ? { fecha } : {}), ...(vista === "cabina" ? { vista } : {}), ...(moviendo ? { mover } : {}) };
+  const datos: DatosGrilla = {
+    fecha, hoy, esHoy: dia.esHoy, ahora: dia.esHoy ? min(ahora) : null, paso: dia.pasoMinutos ?? 30, apertura,
+    profesionales: dia.profesionales.map(p => ({
+      id: p.id, nombre: p.nombre, servicioIds: p.servicioIds,
+      // Puede atender dentro de su jornada y de la apertura de la sede.
+      disponible: intervalos(p.jornada).flatMap(j => apertura.map(a => ({ desde: Math.max(j.desde, a.desde), hasta: Math.min(j.hasta, a.hasta) }))).filter(x => x.desde < x.hasta),
+      ausencias: p.ausencias.map(a => ({ desde: min(a.desde), hasta: min(a.hasta), motivo: a.motivo })),
+    })),
+    servicios: dia.servicios.map(s => ({ id: s.id, nombre: s.nombre, duracion: s.duracionMinutos, recursos: s.recursos })),
+    recursos: dia.recursos,
+    turnos: dia.turnos.map(t => ({
+      reservaId: t.reservaId, itemId: t.itemId, posicion: t.posicion, itemsDeLaReserva: t.itemsDeLaReserva, profesionalId: t.profesionalId, recursoIds: t.recursoIds,
+      servicioId: t.servicioId, servicio: t.servicio, inicio: min(t.inicio), fin: min(t.fin), ocupaDesde: min(t.ocupaDesde), ocupaHasta: min(t.ocupaHasta),
+      cliente: t.cliente ? { id: t.cliente.id, nombre: nombreDe(t.cliente), telefono: t.cliente.telefono } : null,
+      notas: t.notas, online: t.canal === "ONLINE", estado: t.estado, expira: t.expiraEn ? min(t.expiraEn) : null, terminado: !!t.terminadoEn,
+    })),
+    moviendo, vista, parametros,
+    puede: { cobrar: puede.verVentas, verClientes: puede.verClientes, crearClientes: puede.editarClientes },
+  };
+  // Otra fecha es otra pantalla: lo elegido en una no sigue en la otra (salvo «mover», que va en la URL).
+  return <GrillaTratamientos key={fecha} datos={datos} />;
+}
+
+type Presente = { id: string; nombre: string; presencia: { id: string; otraSede: string | null } | null; atencion: { finEstimado: Date; enOtraSede: boolean } | null };
+
+/** Entrada y salida en Tratamientos: quién está en el local, con su «Salida» (la entrada sigue en «No llegaron»). */
+function EnElLocal({ profesionales, timezone }: { profesionales: Presente[]; timezone: string }) {
+  const hora = (d: Date) => d.toLocaleTimeString("es-AR", { timeZone: timezone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  const aca = profesionales.filter(p => (p.presencia && !p.presencia.otraSede) || (p.atencion && !p.atencion.enOtraSede));
+  return <>
+    <h2 className="subtitulo">En el local</h2>
+    {!aca.length ? <p className="intro">Todavía no marcaste la entrada de ninguna profesional (abajo, en «No llegaron»).</p> : <div className="tabla">{aca.map(p =>
+      <article key={p.id} className="fila"><div className="fila-cabecera">
+        <h2>{p.nombre} <span className={`tag ${p.atencion ? "estado-pendiente_pago" : "estado-confirmada"}`}>{p.atencion ? `En sesión hasta ${hora(p.atencion.finEstimado)}` : "Libre"}</span></h2>
+        {p.presencia && !p.atencion && <Formulario accion={accionSalida} boton="Salida" className="en-linea" secundario confirmar={`¿Marcar la salida de ${p.nombre}?`}><input type="hidden" name="presenciaId" value={p.presencia.id} /></Formulario>}
+      </div></article>)}</div>}
   </>;
 }

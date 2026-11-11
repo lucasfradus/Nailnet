@@ -16,7 +16,8 @@ import { TableroSalon } from "./salon";
 import { TableroTratamientos } from "./tratamientos";
 
 export const metadata: Metadata = { title: "Recepción · Sicurella" };
-type Params = { servicio?: string; ok?: string; u?: string };
+// Tratamientos suma los suyos: `fecha`, `vista` y `mover` (los lee la grilla del día).
+type Params = { servicio?: string; ok?: string; u?: string; fecha?: string; vista?: string; mover?: string };
 const universoDe = (slug: string | undefined) => UNIVERSOS.find(x => UNIVERSO_SLUG[x] === slug);
 
 /**
@@ -26,8 +27,8 @@ const universoDe = (slug: string | undefined) => UNIVERSOS.find(x => UNIVERSO_SL
  * venta queda por cobrar. Se actualiza solo, porque lo usan varias recepcionistas a la vez.
  *
  * Universos (doc 31): si la sede ofrece servicios de los dos, el tablero se separa en dos pestañas.
- * Manos y pies es el salón de siempre. Tratamientos trabaja con turno previo, así que pone primero los
- * turnos de hoy y no anota en espera. Lo que falta cobrar se ve en las dos: la caja es una sola.
+ * Manos y pies es el salón, para sentar con un toque. Tratamientos trabaja con turno previo y muestra la
+ * grilla del día. Lo que falta cobrar se ve en las dos: la caja es una sola.
  */
 export default async function Recepcion({ searchParams }: { searchParams: Promise<Params> }) {
   const q = await searchParams;
@@ -69,7 +70,7 @@ export default async function Recepcion({ searchParams }: { searchParams: Promis
     {q.ok === "ahora" && <p className="alerta ok">Clienta en atención. Cuando la profesional termine, tocá «Terminó» en su tarjeta.</p>}
 
     {tratamientos
-      ? <TableroTratamientos tablero={tablero} ahora={ahora} sedeId={sede.id} servicioId={q.servicio} verVentas={puede.verVentas} />
+      ? <TableroTratamientos tablero={tablero} ahora={ahora} sedeId={sede.id} q={q} verVentas={puede.verVentas} />
       : <TableroSalon tablero={tablero} ahora={ahora.getTime()} sedeId={sede.id} categorias={categorias}
         porCobrar={<PorCobrar tablero={tablero} hora={hora} verVentas={puede.verVentas} />}
         noLlegaron={<NoLlegaron ausentes={ausentes} enOtraSede={enOtraSede} sedeId={sede.id} />} />}

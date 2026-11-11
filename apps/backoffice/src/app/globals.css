@@ -317,3 +317,85 @@ a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-
 .agenda-franja .turno{background:var(--color-background);border:2px solid var(--color-primary)}
 @container (max-width:669px){.salon-entrada{max-width:none}}
 .ficha-turno{margin-top:16px}.ficha-turno .tabla .fila-cabecera>div{min-width:0}
+/* Grilla del día de Tratamientos (doc 31, etapa 4): columnas por profesional o por cabina, bloques con la
+   altura de su duración y el estado en color y en texto; a la derecha, el panel del turno y los huecos.
+   En tablet la grilla se desplaza en horizontal y el panel aparece abajo, sobre la grilla. */
+.trat{display:grid;gap:12px;margin-top:20px}
+.trat-barra{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px}
+.trat-fechas{margin:0}.trat-fechas a[aria-current]{background:var(--teal-50);border-color:var(--color-primary);color:var(--color-primary)}.trat-fechas input{flex:0 0 auto;height:30px}
+.trat-dia{font-size:15px;font-weight:600}.trat-dia::first-letter{text-transform:uppercase}
+.trat-vistas{display:inline-flex;gap:2px;margin-left:auto;padding:3px;background:var(--gris-100);border:1px solid var(--color-border);border-radius:var(--radius)}
+.trat-vistas a{padding:5px 12px;border-radius:var(--radius-md);color:var(--color-secondary-foreground);text-decoration:none;font-size:13px;font-weight:500}
+.trat-vistas a:hover{background:var(--gris-200)}.trat-vistas a[aria-current]{background:var(--color-background);color:var(--color-primary);box-shadow:var(--shadow-card)}
+.trat-fechas a:focus-visible,.trat-vistas a:focus-visible{outline:2px solid var(--color-ring);outline-offset:2px}
+.trat-moviendo{position:sticky;top:calc(var(--alto-barra) + 8px);z-index:6;display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:12px 16px;border-radius:var(--radius);background:var(--teal-800);color:var(--color-primary-foreground);box-shadow:0 10px 30px -10px rgb(16 24 40 / .3)}
+.trat-moviendo>div{display:grid;gap:2px;flex:1 1 320px;min-width:0}.trat-moviendo strong{font-size:14px}.trat-moviendo span{font-size:13px}
+.trat-mensaje{display:flex;align-items:center;justify-content:space-between;gap:12px}.trat-mensaje button{padding:2px 10px}
+.trat-cuerpo{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:16px;align-items:start}
+.trat-grilla{overflow-x:auto;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.trat-grilla:focus-visible{outline:2px solid var(--color-ring);outline-offset:2px}
+.trat-lienzo{display:grid}
+.trat-fila-cabecera,.trat-fila-cuerpo{display:flex}
+.trat-fila-cabecera{border-bottom:1px solid var(--color-border)}
+.trat-fila-cuerpo{position:relative;margin:10px 0 14px}
+.trat-eje{position:sticky;left:0;z-index:4;flex:0 0 56px;background:var(--color-background)}
+.trat-fila-cuerpo .trat-eje span{position:absolute;right:8px;transform:translateY(-50%);font-size:11px;color:var(--color-muted-foreground);font-variant-numeric:tabular-nums}
+.trat-titulo,.trat-columna{flex:1 1 150px;min-width:150px;border-left:1px solid var(--color-border)}
+.trat-titulo{display:grid;align-content:start;gap:1px;padding:8px 10px;min-width:0}.trat-titulo strong{font-size:14px;font-weight:600}.trat-titulo small{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trat-columna{position:relative;background-image:linear-gradient(to bottom,var(--color-border) 1px,transparent 1px)}
+.apagada{opacity:.45}
+.trat-fuera{position:absolute;left:0;right:0;background:repeating-linear-gradient(135deg,var(--gris-100) 0 6px,var(--gris-50) 6px 12px);pointer-events:none}
+.trat-ausencia{position:absolute;left:0;right:0;z-index:1;background:repeating-linear-gradient(135deg,var(--fondo-error) 0 6px,var(--color-background) 6px 12px);border-top:1px solid #FECDCA;border-bottom:1px solid #FECDCA;pointer-events:none;overflow:hidden}
+.trat-ausencia span{display:block;padding:2px 8px;font-size:11px;font-weight:600;color:var(--texto-error)}
+.trat-inicio{position:absolute;left:3px;right:3px;z-index:1;padding:0 8px;border:1.5px dashed var(--teal-400);border-radius:var(--radius-md);background:var(--teal-50);color:var(--teal-800);font-size:12px;font-weight:600;line-height:1.2;text-align:left;box-shadow:none;opacity:0}
+.trat-inicio:hover,.trat-inicio:focus-visible,.trat-inicio.activo{opacity:1;background:var(--teal-50);border-color:var(--teal-400)}
+.trat-inicio.destino{opacity:1;z-index:3}.trat-inicio.destino:hover{background:var(--teal-100)}
+.trat-inicio.activo{border-style:solid;border-color:var(--color-primary);background:var(--teal-100)}
+.trat-bloque{position:absolute;z-index:2;display:flex;flex-direction:column;align-items:stretch;gap:0;padding:3px 8px;overflow:hidden;border:1px solid var(--teal-300);border-radius:var(--radius-md);background:var(--color-background);color:var(--color-foreground);text-align:left;white-space:nowrap;font-weight:400;box-shadow:var(--shadow-card)}
+.trat-bloque:hover{background:var(--gris-50);border-color:var(--color-primary)}
+.trat-bloque>span{overflow:hidden;text-overflow:ellipsis}
+.trat-bloque-estado{font-size:11px;font-weight:600;line-height:14px;color:var(--color-muted-foreground)}
+.trat-bloque-cliente{font-size:13px;font-weight:600;line-height:16px}
+.trat-bloque-detalle{font-size:12px;line-height:15px;color:var(--color-muted-foreground)}
+.trat-bloque[aria-pressed=true]{box-shadow:0 0 0 3px var(--color-primary);z-index:3}
+.trat-bloque.moviendose{z-index:4;opacity:.55;border-style:dashed;pointer-events:none}
+.e-pendiente{border:1.5px dashed var(--color-warning)}.e-pendiente .trat-bloque-estado{color:var(--color-warning)}
+.e-sesion{background:var(--teal-100);border-color:var(--teal-400)}.e-sesion:hover{background:var(--teal-100)}.e-sesion .trat-bloque-estado{color:var(--teal-800)}
+.e-cobrar{background:var(--color-warning-soft);border-color:#E3C98F}.e-cobrar:hover{background:var(--color-warning-soft)}.e-cobrar .trat-bloque-estado{color:var(--color-warning)}
+.e-cobrado{background:var(--gris-100);border-color:var(--color-border);color:var(--color-muted-foreground)}
+.e-ausente{background:var(--gris-100);border:1px dashed var(--color-input);color:var(--color-muted-foreground)}.e-ausente .trat-bloque-cliente{text-decoration:line-through}
+.e-tarde{border:2px solid var(--texto-error)}.e-tarde .trat-bloque-estado{color:var(--texto-error)}
+.tag.trat-tag{border-style:solid}.tag.e-confirmada{background:var(--teal-50);border-color:var(--teal-200);color:var(--teal-800)}.tag.e-tarde{background:var(--texto-error);border-color:var(--texto-error);color:#fff}
+.trat-ahora{position:absolute;left:8px;right:0;z-index:5;border-top:2px solid var(--texto-error);pointer-events:none}
+.trat-ahora span{position:sticky;left:4px;display:inline-block;transform:translateY(-55%);padding:0 6px;border-radius:9999px;background:var(--texto-error);color:#fff;font-size:11px;font-weight:600;line-height:16px}
+.trat-lateral{display:grid;gap:16px;position:sticky;top:calc(var(--alto-barra) + 16px)}
+.trat-panel{display:grid;gap:12px;padding:16px;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.trat-panel.abierto{border:1.5px solid var(--color-primary)}
+.trat-panel section{display:grid;gap:12px}
+.trat-ayuda{margin:0;color:var(--color-muted-foreground);font-size:13px}
+.trat-panel-cabecera{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}.trat-panel-cabecera h2{font-size:16px;outline:none}.trat-panel-cabecera h2 a{color:inherit}.trat-panel-cabecera .ayuda{margin-top:4px}
+.trat-cerrar{padding:0 10px;font-size:18px;line-height:28px}
+.trat-items{list-style:none;margin:0;padding:0;display:grid;gap:6px}.trat-items li{display:grid;font-size:13px}.trat-items span{color:var(--color-muted-foreground)}
+.trat-nota{margin:0;padding:8px 10px;border-radius:var(--radius-md);background:var(--gris-50);border:1px solid var(--gris-200);font-size:13px}
+.trat-panel .acciones{margin-top:0}
+button.peligro{color:var(--texto-error)}
+.trat-cancelar{display:grid;gap:8px}.trat-cancelar label,.trat-campo{display:grid;gap:6px;font-size:13px;font-weight:500;color:var(--color-secondary-foreground)}.trat-cancelar .en-linea{margin:0}
+.trat-opciones{display:flex;flex-wrap:wrap;gap:6px;padding:0;border:0}.trat-opciones legend{padding:0 0 6px;font-size:13px;font-weight:500}
+.trat-chip{padding:5px 12px;border:1px solid var(--color-input);border-radius:9999px;background:var(--color-background);color:var(--color-secondary-foreground);font-weight:500;white-space:normal;text-align:left}
+.trat-chip:hover{background:var(--teal-50);border-color:var(--teal-300);color:var(--color-foreground)}
+.trat-chip[aria-pressed=true]{background:var(--color-primary);border-color:var(--color-primary);color:var(--color-primary-foreground)}
+.trat-chip:disabled{cursor:not-allowed;opacity:.5;background:var(--gris-50)}
+.trat-dato{margin:0;font-size:13px}
+.trat-etiqueta{margin:0 0 6px;font-size:13px;font-weight:500;color:var(--color-secondary-foreground)}
+.trat-clienta{display:grid;gap:8px}.trat-clienta .candidatos{margin:0;max-width:none}.trat-clienta .candidatos li{padding:0}
+.trat-candidata{display:grid;width:100%;padding:8px 12px;border:0;border-radius:0;background:none;color:var(--color-foreground);text-align:left;font-weight:400;box-shadow:none}.trat-candidata:hover{background:var(--teal-50);color:var(--color-foreground)}
+.trat-clienta>button{justify-self:start}
+.trat-ficha{display:grid;gap:8px;padding:12px;border:1px dashed var(--color-input);border-radius:var(--radius-md)}.trat-ficha .en-linea{margin:0}
+.trat-huecos{display:grid;gap:8px}.trat-huecos h2{font-size:15px}
+.trat-huecos ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px}
+.trat-huecos li button{display:grid;width:100%;text-align:left;white-space:normal}.trat-huecos li button small{font-size:12px}
+@media(max-width:1100px){
+  .trat-cuerpo{grid-template-columns:1fr}
+  .trat-lateral{position:static}
+  .trat-panel.abierto{position:fixed;left:12px;right:12px;bottom:12px;z-index:30;max-height:62vh;overflow-y:auto;box-shadow:0 -10px 40px -10px rgb(16 24 40 / .35)}
+}

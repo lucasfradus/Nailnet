@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import type { Database } from "../src/client.ts";
-import { crearCategoria, crearSkill, guardarImagenServicio, guardarServicio, guardarServicioSede } from "../src/catalogo.ts";
+import { crearCategoria, crearSkill, guardarImagenServicio, guardarServicio, guardarServicioSede, guardarTipoRecurso } from "../src/catalogo.ts";
 import { publicarConsentimiento } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
-import { crearProfesional, guardarFotoProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
+import { crearProfesional, crearRecurso, guardarFotoProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
 
 /**
  * Catálogo sintético para recorrer el portal en local: servicios con precio y seña en Centro y Norte,
@@ -52,14 +52,20 @@ export async function crearCatalogoDemo(db: Database, organizacionId: string) {
 /**
  * Universo Tratamientos (doc 31) para la demo: una categoría de masajes y otra de cejas en Centro, con dos
  * profesionales que solo hacen eso. Así Recepción muestra las dos pestañas. También se agrega a una demo
- * creada antes de los universos; si ya tiene alguna categoría de Tratamientos, no toca nada.
+ * creada antes de los universos; si ya tiene alguna categoría de Tratamientos, no vuelve a crearlas.
+ * Las cabinas (etapa 4) se agregan aparte, también a una demo que ya tenía los tratamientos.
  */
 export async function agregarTratamientosDemo(db: Database, organizacionId: string) {
   const O = organizacionId;
-  if (await db.categoriaServicio.count({ where: { organizacionId: O, universo: "TRATAMIENTOS" } })) return false;
-  const M = (await db.usuario.findUniqueOrThrow({ where: { email: `master-${O}@example.invalid` } })).id;
   const centro = (await db.sede.findFirst({ where: { organizacionId: O, nombre: "Centro" }, select: { id: true } }))?.id;
   if (!centro) return false;
+  const M = (await db.usuario.findUniqueOrThrow({ where: { email: `master-${O}@example.invalid` } })).id;
+  const nuevos = !await db.categoriaServicio.count({ where: { organizacionId: O, universo: "TRATAMIENTOS" } }) && await crearTratamientosDemo(db, M, O, centro);
+  const cabinas = await agregarCabinasDemo(db, M, O, centro);
+  return nuevos || cabinas;
+}
+
+async function crearTratamientosDemo(db: Database, M: string, O: string, centro: string) {
   const masajes = (await crearCategoria(db, M, O, "Masajes", 3, "TRATAMIENTOS"))!.id;
   const cejas = (await crearCategoria(db, M, O, "Cejas y pestañas", 4, "TRATAMIENTOS"))!.id;
   const base = { bufferAntesMinutos: 0, bufferDespuesMinutos: 0, activo: true, consentimientos: [], recursos: [], skillIds: [], sena: { tipo: "PORCENTAJE" as const, valor: "30" } };
@@ -77,6 +83,20 @@ export async function agregarTratamientosDemo(db: Database, organizacionId: stri
   await guardarHabilidades(db, M, O, paula, { skillIds: [], servicioIds: [descontracturante, piedras] });
   await guardarHabilidades(db, M, O, agos, { skillIds: [], servicioIds: [laminado] });
   for (const p of [paula, agos]) await guardarHorarioProfesional(db, M, O, p, centro, semanaDesdeTextos(semana));
+  return true;
+}
+
+/**
+ * Cabinas de Tratamientos en Centro (doc 31, etapa 4): dos de masajes y un box de cejas, requeridos por sus
+ * servicios, para elegir la cabina al reservar y ver la grilla por cabina. Si ya existen, no toca nada.
+ */
+async function agregarCabinasDemo(db: Database, M: string, O: string, centro: string) {
+  if (await db.tipoRecurso.count({ where: { organizacionId: O, nombre: { in: ["Cabina de masajes", "Box de cejas"] } } })) return false;
+  const servicios = async (nombres: string[]) => (await db.servicio.findMany({ where: { organizacionId: O, nombre: { in: nombres } }, select: { id: true } })).map(s => ({ servicioId: s.id, cantidad: 1 }));
+  const masajes = (await guardarTipoRecurso(db, M, O, { nombre: "Cabina de masajes", servicios: await servicios(["Masaje descontracturante", "Masaje con piedras calientes"]) }))!.id;
+  const cejas = (await guardarTipoRecurso(db, M, O, { nombre: "Box de cejas", servicios: await servicios(["Laminado de cejas"]) }))!.id;
+  for (const nombre of ["Cabina 1", "Cabina 2"]) await crearRecurso(db, M, O, centro, { tipoRecursoId: masajes, nombre });
+  await crearRecurso(db, M, O, centro, { tipoRecursoId: cejas, nombre: "Box" });
   return true;
 }
 

@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { AccesoDenegado } from "@nailnet/domain";
 import { DatosInvalidos } from "@nailnet/database/access";
+import { crearCliente } from "@nailnet/database/clientes";
+import { asignarClienteReserva } from "@nailnet/database/reservas";
 import { anularVenta, registrarCobro, registrarVenta } from "@nailnet/database/ventas";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
@@ -82,4 +84,23 @@ export async function accionAnularVenta(_: Estado, form: FormData): Promise<Esta
   const r = await ejecutar((actor, org) => anularVenta(db(), actor, org, texto(form, "ventaId"), { motivo: texto(form, "motivo"), reponerStock: form.get("reponerStock") === "on" }));
   if ("error" in r) return r;
   return { ok: `Venta anulada${r.ok.cobrosRevertidos ? ` (${r.ok.cobrosRevertidos} cobro${r.ok.cobrosRevertidos === 1 ? "" : "s"} revertido${r.ok.cobrosRevertidos === 1 ? "" : "s"})` : ""}` };
+}
+
+// Doc 31, etapa 2: el turno de una clienta sentada con solo el nombre se cobra pidiendo primero su ficha.
+// Se elige una existente o se crea con los datos mínimos; en los dos casos, el turno queda a su nombre.
+async function ficha(fn: (actorId: string, organizacionId: string) => Promise<void>, exito: string): Promise<Estado> {
+  const r = await ejecutar(fn);
+  if ("error" in r) return { error: r.error };
+  revalidatePath("/recepcion");
+  return { ok: exito };
+}
+export async function accionAsignarFicha(_: Estado, form: FormData): Promise<Estado> {
+  return ficha((actor, org) => asignarClienteReserva(db(), actor, org, texto(form, "reservaId"), texto(form, "clienteId")), "Ficha asignada al turno");
+}
+export async function accionCrearFichaTurno(_: Estado, form: FormData): Promise<Estado> {
+  return ficha(async (actor, org) => {
+    const { id } = await crearCliente(db(), actor, org, texto(form, "sedeId"), { nombre: texto(form, "nombre"), apellido: texto(form, "apellido"), telefono: texto(form, "telefono"), email: texto(form, "email") });
+    // Si la asignación falla (por ejemplo, otra recepcionista ya le puso una ficha), la ficha nueva queda creada igual.
+    await asignarClienteReserva(db(), actor, org, texto(form, "reservaId"), id);
+  }, "Ficha creada y asignada al turno");
 }

@@ -4,21 +4,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AccesoDenegado } from "@nailnet/domain";
 import { UNIVERSOS } from "@nailnet/domain/catalogo";
+import { catalogoSede } from "@nailnet/database/catalogo";
 import { tableroSede } from "@nailnet/database/tablero";
-import { Formulario } from "@/components/formulario";
 import { RecordarUniverso } from "@/components/recordar-universo";
 import { Refresco } from "@/components/refresco";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { COOKIE_UNIVERSO, UNIVERSO, UNIVERSO_SLUG } from "@/lib/etiquetas";
-import { accionAgregarEspera, accionEntrada, accionLlegada, accionSalida, accionSeFue, accionTermino } from "./acciones";
+import { NoLlegaron, PorCobrar, repartir } from "./comun";
+import { TableroSalon } from "./salon";
+import { TableroTratamientos } from "./tratamientos";
 
 export const metadata: Metadata = { title: "Recepción · Sicurella" };
 type Params = { servicio?: string; ok?: string; u?: string };
-const nombreCliente = (c: { nombre: string; apellido: string | null } | null) => c ? [c.nombre, c.apellido].filter(Boolean).join(" ") : "Sin cliente";
 const universoDe = (slug: string | undefined) => UNIVERSOS.find(x => UNIVERSO_SLUG[x] === slug);
-/** «Llegó» vale desde una hora antes del turno (lo valida `marcarLlegada`): antes no se ofrece. */
-const ANTICIPO_LLEGADA_MS = 3_600_000;
 
 /**
  * Tablero de recepción (doc 29): quién está en el local y quién está libre para qué. Recepción marca la
@@ -45,122 +44,12 @@ export default async function Recepcion({ searchParams }: { searchParams: Promis
   // null: la sede tiene un solo universo y el tablero no se separa.
   const universo = tablero.universo;
   const tratamientos = universo === "TRATAMIENTOS";
-  const base = universo ? `/recepcion?u=${UNIVERSO_SLUG[universo]}` : "/recepcion";
 
-  const servicio = tablero.servicios.find(s => s.id === q.servicio) ?? null;
-  // Quien está atendiendo acá está en el local, aunque recepción no le haya marcado la entrada (una
-  // clienta con turno marcada «Llegó», o un «Atender ahora» desde la agenda): si no, la atención no se
-  // vería en el tablero y no habría dónde tocar «Terminó».
-  const atiendeAca = (p: (typeof tablero.profesionales)[number]) => !!p.atencion && !p.atencion.enOtraSede;
-  const presentes = tablero.profesionales.filter(p => (p.presencia && !p.presencia.otraSede) || atiendeAca(p));
-  const ausentes = tablero.profesionales.filter(p => !p.presencia && !atiendeAca(p));
-  const enOtraSede = tablero.profesionales.filter(p => p.presencia?.otraSede && !atiendeAca(p));
-  const libres = presentes.filter(p => !p.atencion);
-  const atendiendo = presentes.filter(p => p.atencion);
-  // Con un servicio elegido: solo las que lo hacen, y si llega a terminarlo antes de su próximo turno.
-  const aptas = (ps: typeof presentes) => servicio ? ps.filter(p => p.servicioIds.includes(servicio.id)) : ps;
-  const entra = (p: (typeof presentes)[number]) => !servicio || !p.proximo || ahora.getTime() + servicio.duracionMinutos * 60_000 <= p.proximo.ocupaDesde.getTime();
-  const ordenLibres = aptas(libres).sort((a, b) => Number(entra(b)) - Number(entra(a)));
-  const ordenAtendiendo = aptas(atendiendo).sort((a, b) => a.atencion!.finEstimado.getTime() - b.atencion!.finEstimado.getTime());
-  const despachar = (profesionalId: string) => `/agenda/ahora?${new URLSearchParams({ volver: "recepcion", profesional: profesionalId, ...(servicio ? { servicio: servicio.id } : {}) })}`;
-
-  const seccionEspera = (!tratamientos || tablero.esperas.length > 0) && <>
-    <h2 className="subtitulo">En espera</h2>
-    {tablero.esperas.length > 0 && <div className="tabla">{tablero.esperas.map(e => {
-      // Quiénes podrían atenderla ahora: libres en el local que hacen el primer servicio que pidió.
-      const pueden = libres.filter(p => p.servicioIds.includes(e.servicioIds[0]!));
-      const pedida = e.profesionalId ? tablero.profesionales.find(p => p.id === e.profesionalId) : null;
-      const sugerida = pedida && pueden.some(p => p.id === pedida.id) ? pedida : pueden[0];
-      const minutos = Math.max(0, Math.round((ahora.getTime() - e.llegada.getTime()) / 60_000));
-      const atender = `/agenda/ahora?${new URLSearchParams({ volver: "recepcion", espera: e.id, servicio: e.servicioIds[0]!, buscar: e.telefono ?? e.nombre, nombre: e.nombre, ...(sugerida ? { profesional: sugerida.id } : {}) })}`;
-      return <article key={e.id} className="fila">
-        <div className="fila-cabecera"><h2>{e.nombre}{e.telefono ? ` · ${e.telefono}` : ""}</h2><span className="ayuda">llegó {hora(e.llegada)} · espera hace {minutos} min</span></div>
-        <p>{e.servicioIds.map(id => tablero.servicios.find(s => s.id === id)?.nombre ?? "Servicio").join(" + ")}{pedida ? ` · pidió a ${pedida.nombre}` : ""}{e.notas ? ` · ${e.notas}` : ""}</p>
-        <p className="ayuda">{pueden.length ? `Pueden ahora: ${pueden.map(p => p.nombre).join(", ")}` : "Nadie libre para esto todavía"}</p>
-        <div className="acciones">
-          <Link className={pueden.length ? "boton" : "boton secundario"} href={atender}>Atender</Link>
-          <Formulario accion={accionSeFue} boton="Se fue" className="en-linea" secundario confirmar={`¿${e.nombre} se fue sin atenderse?`}><input type="hidden" name="esperaId" value={e.id} /></Formulario>
-        </div>
-      </article>;
-    })}</div>}
-    {!tratamientos && <details className="desplegable">
-      <summary>+ Anotar en espera</summary>
-      <Formulario accion={accionAgregarEspera} boton="Anotar">
-        <input type="hidden" name="sedeId" value={sede.id} />
-        <div className="grilla">
-          <label>Nombre<input name="nombre" required maxLength={80} autoComplete="off" /></label>
-          <label>Teléfono (opcional)<input name="telefono" inputMode="tel" maxLength={40} autoComplete="off" /></label>
-        </div>
-        <div className="grilla">
-          <select name="s_0" required defaultValue={servicio?.id ?? ""} aria-label="Servicio"><option value="">Servicio</option>{tablero.servicios.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
-          <select name="s_1" defaultValue="" aria-label="Otro servicio"><option value="">+ Otro servicio (opcional)</option>{tablero.servicios.map(s => <option key={s.id} value={s.id}>{s.nombre}</option>)}</select>
-          <select name="profesionalId" defaultValue="" aria-label="Profesional que pidió"><option value="">Cualquier profesional</option>{tablero.profesionales.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}</select>
-        </div>
-        <label>Nota (opcional)<input name="notas" maxLength={300} /></label>
-      </Formulario>
-    </details>}
-  </>;
-
-  const seccionLibres = <>
-    <form className="en-linea">
-      {universo && <input type="hidden" name="u" value={UNIVERSO_SLUG[universo]} />}
-      <select name="servicio" defaultValue={servicio?.id ?? ""} aria-label="Servicio que pide la clienta">
-        <option value="">Todos los servicios</option>
-        {tablero.servicios.map(s => <option key={s.id} value={s.id}>{s.nombre} · {s.duracionMinutos} min</option>)}
-      </select>
-      <button className="secundario">Ver quién puede</button>
-      {servicio && <Link href={base}>Quitar filtro</Link>}
-    </form>
-
-    <h2 className="subtitulo">Libres{servicio ? ` para ${servicio.nombre}` : ""}</h2>
-    {!ordenLibres.length && <p className="intro">{presentes.length ? "No hay nadie libre para esto ahora." : "Todavía no marcaste la entrada de ninguna profesional (abajo, en «No llegaron»)."}</p>}
-    <div className="tablero">{ordenLibres.map(p => <article key={p.id} className={entra(p) ? "puesto libre" : "puesto justo"}>
-      <div className="fila-cabecera"><h2>{p.nombre}</h2><span className="tag estado-confirmada">Libre</span></div>
-      <p>{p.proximo ? `Libre hasta las ${hora(p.proximo.ocupaDesde)}: turno de ${p.proximo.servicio}${p.proximo.otraSede ? " en otra sede" : ""}` : "Sin turnos reservados"}</p>
-      {!entra(p) && <p className="ayuda">No llega a terminar {servicio!.nombre} antes de su turno.</p>}
-      <div className="acciones">
-        <Link className="boton" href={despachar(p.id)}>Atender</Link>
-        <Formulario accion={accionSalida} boton="Salida" className="en-linea" secundario confirmar={`¿Marcar la salida de ${p.nombre}?`}><input type="hidden" name="presenciaId" value={p.presencia!.id} /></Formulario>
-      </div>
-    </article>)}</div>
-  </>;
-
-  const seccionAtendiendo = <>
-    <h2 className="subtitulo">{tratamientos ? "En sesión" : "Atendiendo"}</h2>
-    {!ordenAtendiendo.length && <p className="intro">{tratamientos ? "No hay sesiones en curso" : "Nadie está atendiendo"}{servicio ? " entre las que hacen este servicio" : ""}.</p>}
-    <div className="tablero">{ordenAtendiendo.map(p => {
-      const a = p.atencion!;
-      const demorada = ahora > a.finEstimado;
-      return <article key={p.id} className={demorada ? "puesto demorada" : "puesto ocupada"}>
-        <div className="fila-cabecera"><h2>{p.nombre}</h2><span className={`tag ${demorada ? "estado-pendiente" : "estado-pendiente_pago"}`}>{demorada ? "Demorada" : tratamientos ? "En sesión" : "Atendiendo"}</span></div>
-        <p>{a.cliente ? <Link href={`/clientes/${a.cliente.id}`}>{nombreCliente(a.cliente)}</Link> : "Sin cliente"} · {a.servicios.join(", ")}</p>
-        <p className="ayuda">Desde las {hora(a.desde)} · estimado hasta las {hora(a.finEstimado)}{a.enOtraSede ? " · en otra sede" : ""}</p>
-        {!a.enOtraSede && <Formulario accion={accionTermino} boton="Terminó" className="en-linea"><input type="hidden" name="reservaId" value={a.reservaId} /><input type="hidden" name="profesionalId" value={p.id} /></Formulario>}
-      </article>;
-    })}</div>
-  </>;
-
-  const seccionPorCobrar = <>
-    <h2 className="subtitulo">Por cobrar</h2>
-    {universo && tablero.porCobrar.length > 0 && <p className="ayuda">La caja es una sola: acá están las comandas de los dos universos.</p>}
-    {!tablero.porCobrar.length ? <p className="intro">No hay comandas pendientes.</p> : <div className="tabla">{tablero.porCobrar.map(r => <article key={r.reservaId} className="fila">
-      <div className="fila-cabecera"><h2>{nombreCliente(r.cliente)}</h2><span className="ayuda">terminó {hora(r.terminadaEn)}</span></div>
-      <p>{r.servicios.join(" · ")}</p>
-      {puede.verVentas && <div className="acciones"><Link className="boton" href={`/ventas/nueva?reserva=${r.reservaId}`}>Cobrar</Link></div>}
-    </article>)}</div>}
-  </>;
-
-  const seccionPorLlegar = <>
-    <h2 className="subtitulo">{tratamientos ? "Turnos de hoy" : "Turnos por llegar"}</h2>
-    {!tablero.porLlegar.length ? <p className="intro">{tratamientos ? "No quedan turnos por llegar hoy." : "No hay turnos reservados en las próximas dos horas."}</p> : <div className="tabla">{tablero.porLlegar.map(r => {
-      const tarde = Math.floor((ahora.getTime() - r.inicio.getTime()) / 60_000);
-      return <article key={r.reservaId} className="fila">
-        <div className="fila-cabecera"><h2>{hora(r.inicio)} · {nombreCliente(r.cliente)}{tarde > 0 && <> <span className="tag estado-pendiente">{tarde} min tarde</span></>}</h2>
-          {r.inicio.getTime() - ahora.getTime() <= ANTICIPO_LLEGADA_MS && <Formulario accion={accionLlegada} boton="Llegó" className="en-linea" secundario><input type="hidden" name="reservaId" value={r.reservaId} /></Formulario>}</div>
-        <p>{r.servicios.join(" · ")}</p>
-      </article>;
-    })}</div>}
-  </>;
+  const { ausentes, enOtraSede } = repartir(tablero);
+  // Manos y pies usa el buscador de servicios de «Atender ahora», que agrupa por categoría.
+  const categorias = tratamientos ? {} : await catalogoSede(db(), sesion.usuario.id, organizacion.id, sede.id)
+    .then(c => Object.fromEntries(c.servicios.map(s => [s.id, s.categoria])))
+    .catch(e => { if (e instanceof AccesoDenegado) return {}; throw e; });
 
   return <section className="panel">
     <Refresco segundos={20} />
@@ -179,31 +68,10 @@ export default async function Recepcion({ searchParams }: { searchParams: Promis
     {universo && <RecordarUniverso valor={UNIVERSO_SLUG[universo]} />}
     {q.ok === "ahora" && <p className="alerta ok">Clienta en atención. Cuando la profesional termine, tocá «Terminó» en su tarjeta.</p>}
 
-    {tratamientos ? <div className="contadores">
-      <p><strong>{atendiendo.length}</strong>en sesión</p>
-      <p><strong>{tablero.porLlegar.length}</strong>turnos por llegar hoy</p>
-      <p><strong>{libres.length}</strong>libres</p>
-      <p><strong>{tablero.porCobrar.length}</strong>por cobrar</p>
-      {tablero.esperas.length > 0 && <p><strong>{tablero.esperas.length}</strong>en espera</p>}
-    </div> : <div className="contadores">
-      <p><strong>{libres.length}</strong>libres</p>
-      <p><strong>{atendiendo.length}</strong>atendiendo</p>
-      <p><strong>{tablero.porCobrar.length}</strong>por cobrar</p>
-      <p><strong>{tablero.porLlegar.length}</strong>turnos por llegar</p>
-      <p><strong>{tablero.esperas.length}</strong>en espera</p>
-    </div>}
-
     {tratamientos
-      ? <>{seccionPorLlegar}{seccionAtendiendo}{seccionLibres}{seccionPorCobrar}{seccionEspera}</>
-      : <>{seccionEspera}{seccionLibres}{seccionAtendiendo}{seccionPorCobrar}{seccionPorLlegar}</>}
-
-    <h2 className="subtitulo">No llegaron</h2>
-    {!ausentes.length && !enOtraSede.length ? <p className="intro">Están todas.</p> : <div className="tabla">
-      {ausentes.map(p => <article key={p.id} className="fila"><div className="fila-cabecera"><h2>{p.nombre}</h2>
-        <Formulario accion={accionEntrada} boton="Entrada" className="en-linea" secundario>
-          <input type="hidden" name="sedeId" value={sede.id} /><input type="hidden" name="profesionalId" value={p.id} />
-        </Formulario></div></article>)}
-      {enOtraSede.map(p => <article key={p.id} className="fila inactiva"><div className="fila-cabecera"><h2>{p.nombre}</h2><span className="ayuda">en {p.presencia!.otraSede}</span></div></article>)}
-    </div>}
+      ? <TableroTratamientos tablero={tablero} ahora={ahora} sedeId={sede.id} servicioId={q.servicio} verVentas={puede.verVentas} />
+      : <TableroSalon tablero={tablero} ahora={ahora.getTime()} sedeId={sede.id} categorias={categorias}
+        porCobrar={<PorCobrar tablero={tablero} hora={hora} verVentas={puede.verVentas} />}
+        noLlegaron={<NoLlegaron ausentes={ausentes} enOtraSede={enOtraSede} sedeId={sede.id} />} />}
   </section>;
 }

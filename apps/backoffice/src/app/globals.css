@@ -260,3 +260,60 @@ a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-
 .buscador-opcion[aria-selected=true]{background:var(--teal-50);color:var(--color-primary)}
 .buscador-opcion small{flex:none;font-size:12px;color:var(--color-muted-foreground)}
 .buscador-vacio{padding:10px 8px;font-size:13px;color:var(--color-muted-foreground)}
+/* Tablero del salón (doc 31, etapa 2): quién entra a la izquierda, el salón a la derecha. */
+.salon{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;margin-top:16px;container-type:inline-size}
+.salon-entrada{display:grid;gap:20px;flex:1 1 250px;max-width:340px;min-width:0}.salon-entrada section{display:grid;gap:8px}
+.salon-local{flex:999 1 400px;min-width:0}.salon-local>.contadores{margin-top:0}
+.salon-titulo{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0;font-size:15px;font-weight:600}
+.salon-titulo span{font-size:13px;font-weight:500;color:var(--color-muted-foreground)}
+.salon-titulo small{display:inline;font-size:13px;font-weight:400}
+.salon-local section{display:grid;gap:10px;margin-top:24px}
+.salon-vacio{margin:0;padding:10px 12px;border:1px dashed var(--color-input);border-radius:var(--radius);font-size:13px;color:var(--color-muted-foreground)}
+.salon-hora{font-variant-numeric:tabular-nums}
+.salon-alta{display:grid;gap:10px;padding:14px;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.salon-alta label{display:grid;gap:4px;font-size:13px;font-weight:500;color:var(--color-secondary-foreground)}
+.salon-alta>button{justify-self:stretch;padding:8px 12px}
+.salon-ficha{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px;background:var(--color-success-soft);border:1px solid #BFE3CF;border-radius:var(--radius-md);font-size:13px;color:var(--color-success)}
+.salon-sugeridas ul{list-style:none;margin:4px 0 0;padding:0;display:grid;gap:4px}
+.salon-sugeridas button{display:flex;width:100%;justify-content:space-between;gap:8px;text-align:left;white-space:normal}
+.salon-sugeridas small{font-size:12px}
+.espera{display:grid;gap:6px;padding:10px 12px;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);box-shadow:var(--shadow-card);cursor:grab}
+.espera.elegida{border-color:var(--color-primary);box-shadow:0 0 0 2px var(--color-primary)}
+.espera-cabecera{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:2px 8px}
+.espera-cabecera h3{margin:0;font-size:14px;font-weight:600;color:var(--color-foreground)}.espera-cabecera h3 a{color:inherit}
+.espera-cabecera .ayuda{font-size:12px}
+.espera-elegir{display:grid;gap:2px;width:100%;padding:8px 10px;text-align:left;white-space:normal;background:var(--gris-50);border:1px solid var(--gris-200);color:var(--color-foreground);font-weight:400}
+.espera-elegir:hover{background:var(--teal-50);border-color:var(--teal-200)}
+.espera-elegir[aria-pressed=true]{background:var(--teal-50);border-color:var(--color-primary)}
+.espera-elegir .ayuda{font-size:12px}
+.espera-pide{font-weight:500}
+.espera-nota{font-size:12px;font-weight:600;color:var(--color-primary)}
+.espera>.en-linea{margin:0}
+.tag.sin-ficha{background:var(--fondo-aviso);border-color:#FEDF89;color:var(--texto-aviso);font-size:11px;padding:0 6px;vertical-align:1px}
+.salon-sentando{position:sticky;top:calc(var(--alto-barra) + 8px);z-index:4;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:10px 16px;margin-bottom:12px;padding:12px 16px;background:var(--teal-50);border:1px solid var(--color-primary);border-radius:var(--radius);box-shadow:0 10px 24px -12px rgb(16 24 40 / .25)}
+.salon-sentando-texto{display:grid;gap:4px;flex:1 1 300px;min-width:0}
+.salon-sentando-texto strong{font-size:15px;font-weight:600}.salon-sentando-texto>span{font-size:13px;color:var(--color-secondary-foreground)}
+.salon-sentando .en-linea{margin:4px 0 0}
+.salon-sentando button[aria-pressed=true]{border-color:var(--color-primary);color:var(--color-primary);box-shadow:0 0 0 1px var(--color-primary)}
+.salon-local>.alerta{margin-bottom:12px}
+.leyenda-franja{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0;font-size:12px;color:var(--color-muted-foreground)}
+.muestra{display:inline-block;width:18px;height:8px;border-radius:999px}
+.muestra.atencion{background:var(--teal-400,#33B4C7)}.muestra.turno{background:var(--color-background);border:2px solid var(--color-primary)}
+.puesto .fila-cabecera button{padding:4px 12px}
+.puesto-estado{font-weight:600;color:var(--color-success)!important}
+.puesto-clienta{color:var(--color-foreground)!important;font-weight:500}.puesto-clienta a{color:inherit}
+.puesto-demora{color:var(--texto-aviso)!important;font-size:13px}
+.puesto-nota{font-size:12px;font-weight:600;color:var(--color-primary)!important}
+.puesto-motivo{font-size:12px;font-weight:500}
+.puesto-opcion{display:grid;gap:4px;margin-top:10px}.puesto-opcion button{justify-self:stretch}
+.puesto-opcion button[aria-pressed=true]{background:var(--color-background);color:var(--color-primary)}
+.puesto.puede{border-color:var(--color-primary);box-shadow:0 0 0 2px var(--color-primary)}
+.puesto.elegida{border-color:var(--color-primary);background:var(--teal-50);box-shadow:0 0 0 2px var(--color-primary)}
+.puesto.pisa{border-style:dashed;border-left-style:solid;border-color:var(--color-warning);opacity:.75}.puesto.pisa .puesto-motivo{color:var(--texto-aviso)}
+.puesto.apagada{opacity:.45}
+.agenda-franja{position:relative;height:8px;margin-top:10px;border-radius:999px;background:var(--gris-200);overflow:hidden}
+.agenda-franja span{position:absolute;top:0;bottom:0;border-radius:999px}
+.agenda-franja .atencion{background:var(--teal-400,#33B4C7)}.agenda-franja .atencion.demorada{background:var(--color-warning)}
+.agenda-franja .turno{background:var(--color-background);border:2px solid var(--color-primary)}
+@container (max-width:669px){.salon-entrada{max-width:none}}
+.ficha-turno{margin-top:16px}.ficha-turno .tabla .fila-cabecera>div{min-width:0}

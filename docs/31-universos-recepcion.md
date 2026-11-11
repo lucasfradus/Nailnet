@@ -133,6 +133,26 @@ Sentar desde el tablero de Manos y pies, sin pasar por «Atender ahora», y con 
 - **Cobro:** si el turno no tiene ficha, la pantalla de cobro pide primero buscarla o crearla (con el nombre y el teléfono de la espera ya cargados). Se puede cobrar sin ficha, con aviso.
 - Tratamientos no cambia.
 
+## Etapa 3: diseño · 2026-11-11
+
+Flexibilidad en Manos y pies: que el sistema avise pero no trabe, y que la visita de una clienta sea una sola comanda. Va en dos entregas.
+
+**3a · Sentar igual, cambiar de profesional y pasar una atención**
+
+- **Sentar igual.** `sentarEspera` acepta `pisar`. Con eso, los turnos reservados que todavía no empezaron de esa profesional no cuentan como ocupación. Siguen contando una atención en curso, sus ausencias, su jornada y los recursos (un sillón ocupado no se pisa). El turno creado guarda en su evento qué turnos pisó.
+- **Turno en riesgo.** `tableroSede` marca cada turno por llegar cuya profesional no va a estar libre a esa hora (atiende y su fin estimado pasa el inicio, o viene demorada), con el motivo.
+- **Cambiar de profesional un turno por llegar.** Es `reprogramarReserva` a la misma hora con otra profesional. Las candidatas salen de `destinosDeTurno` (etapa 4): las que tienen ese mismo inicio libre.
+- **Pasar una atención en curso** (`pasarAtencion`, nuevo): el servicio que está haciendo una profesional pasa a otra que lo hace y está libre ahora (o con `pisar`). Bajo los locks de las dos, y queda en la auditoría.
+- **Pantalla:** las profesionales que pisarían un turno pasan a ser elegibles, con borde punteado y el aviso de qué turno pisan; el turno en riesgo se ve en «Turnos por llegar» con «Cambiar de profesional»; la tarjeta de quien atiende suma «Pasar».
+
+**3b · Llegó con su profesional ocupada y una sola comanda por visita**
+
+- **«Llegó» en Manos y pies.** Si su profesional está libre, la atención empieza (con `empezarSesion`, que además adelanta el turno si llegó antes). Si está ocupada, la clienta queda esperando: `Reserva.llegoEn` (columna nueva) y aparece primera en la lista de espera, con su turno y su profesional.
+- **Sentar a la que llegó con turno** (`sentarTurno`, nuevo): con su profesional cuando se libera, o con otra. Mueve el turno a este minuto con las profesionales elegidas y empieza la atención, en una transacción.
+- **Una comanda por visita.** `Reserva.esperaId` (columna nueva) enlaza el turno con la espera de la que salió; reemplaza el dato que hoy va en el evento de creación. Si la clienta ya tiene una atención en curso de esa espera, `sentarEspera` **suma** los servicios que faltaban a ese turno en vez de crear otro.
+- **Sumar un servicio** (`sumarServicio`, nuevo): agrega a una atención en curso un servicio que empieza ahora con otra profesional. Lo usa `sentarEspera` y un «+ servicio» en la tarjeta.
+- Tratamientos no usa nada de esto: ahí solo se marca el comienzo (etapa 4).
+
 ## Etapa 4: diseño · 2026-11-11
 
 La pestaña Tratamientos pasa de listas a una grilla del día. Se apoya en lo que ya existe para operar el turno (doc 17): `tomarTurno`, `reprogramarReserva`, «Llegó», «Terminó», cancelar y ausente.

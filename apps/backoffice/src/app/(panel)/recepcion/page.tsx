@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { AccesoDenegado } from "@nailnet/domain";
 import { UNIVERSOS } from "@nailnet/domain/catalogo";
 import { catalogoSede } from "@nailnet/database/catalogo";
+import { disponiblesAhora } from "@nailnet/database/disponibilidad";
 import { tableroSede } from "@nailnet/database/tablero";
 import { RecordarUniverso } from "@/components/recordar-universo";
 import { Refresco } from "@/components/refresco";
@@ -51,6 +52,10 @@ export default async function Recepcion({ searchParams }: { searchParams: Promis
   const categorias = tratamientos ? {} : await catalogoSede(db(), sesion.usuario.id, organizacion.id, sede.id)
     .then(c => Object.fromEntries(c.servicios.map(s => [s.id, s.categoria])))
     .catch(e => { if (e instanceof AccesoDenegado) return {}; throw e; });
+  // Quién puede empezar qué ahora, según el motor (jornada, ausencias, turnos): el salón decide con esto.
+  const disponibles = tratamientos ? [] : await disponiblesAhora(db(), sesion.usuario.id, organizacion.id, sede.id, ahora)
+    .then(d => d.profesionales)
+    .catch(e => { if (e instanceof AccesoDenegado) return []; throw e; });
 
   return <section className="panel">
     <Refresco segundos={20} />
@@ -71,7 +76,7 @@ export default async function Recepcion({ searchParams }: { searchParams: Promis
 
     {tratamientos
       ? <TableroTratamientos tablero={tablero} ahora={ahora} sedeId={sede.id} q={q} verVentas={puede.verVentas} />
-      : <TableroSalon tablero={tablero} ahora={ahora.getTime()} sedeId={sede.id} categorias={categorias}
+      : <TableroSalon tablero={tablero} disponibles={disponibles} ahora={ahora.getTime()} sedeId={sede.id} categorias={categorias}
         porCobrar={<PorCobrar tablero={tablero} hora={hora} verVentas={puede.verVentas} />}
         noLlegaron={<NoLlegaron ausentes={ausentes} enOtraSede={enOtraSede} sedeId={sede.id} />} />}
   </section>;

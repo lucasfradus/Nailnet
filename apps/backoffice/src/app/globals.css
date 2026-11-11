@@ -315,6 +315,22 @@ a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-
 .agenda-franja span{position:absolute;top:0;bottom:0;border-radius:999px}
 .agenda-franja .atencion{background:var(--teal-400,#33B4C7)}.agenda-franja .atencion.demorada{background:var(--color-warning)}
 .agenda-franja .turno{background:var(--color-background);border:2px solid var(--color-primary)}
+/* Etapa 3 (doc 31): sentar igual, turno en riesgo, pasar y sumar. Lo punteado también va escrito. */
+.puesto.pisa{opacity:1;background:var(--color-background)}
+.puesto-aviso{margin:0;font-size:12px;font-weight:600;color:var(--texto-aviso)!important}
+.puesto-opcion button{white-space:normal;max-width:100%}
+.puesto.pisa .puesto-opcion button{border-color:var(--color-warning);color:var(--texto-aviso)}
+.puesto.origen{border-color:var(--color-primary);border-style:dashed;background:var(--teal-50)}
+.puesto-acciones{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.puesto-acciones .en-linea{margin:0}.puesto-acciones button{padding:4px 12px}
+.puesto button:focus-visible,.espera button:focus-visible,.turno-llega button:focus-visible,.turno-llega a:focus-visible,.salon-sentando button:focus-visible{outline:2px solid var(--color-ring);outline-offset:2px}
+.espera.con-turno{border-left:4px solid var(--color-primary)}
+.turno-llega .acciones{margin-top:6px}.turno-llega .fila-cabecera button{padding:4px 12px}
+.turno-llega.en-riesgo{border-color:#E3C98F;background:var(--color-warning-soft)}
+.turno-llega.elegida{border-color:var(--color-primary);box-shadow:0 0 0 2px var(--color-primary)}
+.turno-llega button[aria-pressed=true]{border-color:var(--color-primary);color:var(--color-primary);box-shadow:0 0 0 1px var(--color-primary)}
+.turno-riesgo{margin:4px 0 0;font-size:13px;color:var(--texto-aviso)!important}.turno-riesgo strong{font-weight:600}
+.salon-sumar{max-width:420px;margin-top:4px}
+.salon-sentando-texto .en-linea .ayuda{flex-basis:100%}
 @container (max-width:669px){.salon-entrada{max-width:none}}
 .ficha-turno{margin-top:16px}.ficha-turno .tabla .fila-cabecera>div{min-width:0}
 /* Grilla del día de Tratamientos (doc 31, etapa 4): columnas por profesional o por cabina, bloques con la

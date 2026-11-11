@@ -1,6 +1,6 @@
 # Universos de recepción · propuesta · 2026-11-11
 
-Propuesta (D21). Sale de una segunda visita del usuario al local y del prototipo navegable que revisó el 2026-11-11. Extiende el tablero de recepción (29-tablero-recepcion.md, D20). **Etapas 1 y 5 implementadas el 2026-11-11.** De las etapas 2 y 4 está hecha la capa de datos y falta la pantalla. La etapa 3 está propuesta.
+Propuesta (D21). Sale de una segunda visita del usuario al local y del prototipo navegable que revisó el 2026-11-11. Extiende el tablero de recepción (29-tablero-recepcion.md, D20). **Etapas 1, 2, 4 y 5 implementadas el 2026-11-11.** De la etapa 3 está hecha la capa de datos y falta la pantalla.
 
 ## Qué se vio en el local
 
@@ -26,9 +26,9 @@ El tablero del doc 29 resuelve bien el primero. Para el segundo, una lista de pr
 ## Etapas
 
 1. **Universos en el catálogo y en Recepción** (hecha). Cada categoría tiene su universo y el tablero se separa en dos pestañas con los datos de cada uno.
-2. **Manos y pies: sentar desde el tablero.** Elegir una clienta en espera y resaltar quién puede; sentarla con un toque, sin pasar por «Atender ahora». Alta rápida de la clienta sin turno. Libres ordenadas por quién espera hace más y ocupadas por quién termina antes. Franja con las próximas dos horas de cada profesional.
-3. **Flexibilidad con los turnos de Manos y pies.** Cambiar de profesional un turno reservado. Turno que llega con su profesional ocupada: pasa primero a la espera. Pasar una atención en curso a otra profesional. Sentar aunque pise un turno cercano, con aviso. Sumar un servicio a una atención en curso, para que la visita sea una sola comanda.
-4. **Tratamientos: agenda del día en grilla.** Columnas por profesional o por cabina (las cabinas rotan), bloques por duración y línea de la hora actual. Mover un turno a otro horario o a otra profesional de la misma especialidad. Reservar tocando un hueco. Huecos del día para ofrecer por teléfono.
+2. **Manos y pies: sentar desde el tablero** (hecha). Elegir una clienta en espera y resaltar quién puede; sentarla con un toque, sin pasar por «Atender ahora». Alta rápida de la clienta sin turno. Libres ordenadas por quién espera hace más y ocupadas por quién termina antes. Franja con las próximas dos horas de cada profesional.
+3. **Flexibilidad con los turnos de Manos y pies** (capa de datos hecha, falta la pantalla). Cambiar de profesional un turno reservado. Turno que llega con su profesional ocupada: pasa primero a la espera. Pasar una atención en curso a otra profesional. Sentar aunque pise un turno cercano, con aviso. Sumar un servicio a una atención en curso, para que la visita sea una sola comanda.
+4. **Tratamientos: agenda del día en grilla** (hecha). Columnas por profesional o por cabina (las cabinas rotan), bloques por duración y línea de la hora actual. Mover un turno a otro horario o a otra profesional de la misma especialidad. Reservar tocando un hueco. Huecos del día para ofrecer por teléfono.
 5. **Reportes por universo** (hecha). Las secciones de 30-reportes.md, para toda la sede o para un universo.
 
 Cada etapa es un cambio que se puede usar solo.
@@ -92,7 +92,8 @@ Siguen abiertas:
 
 - **Profesionales compartidas:** ¿alguna trabaja en los dos universos? Hoy aparecería en las dos pestañas.
 - **Recepción:** ¿cada recepcionista mira un universo, o todas alternan? Hoy cada navegador recuerda el suyo.
-- **Cobrar sin ficha:** al cobrar, la pantalla pide completar la ficha. ¿Tiene que ser obligatorio, o se puede cobrar igual si la clienta no quiere dar sus datos? La etapa 2 lo deja pasar con un aviso.
+- **Cobrar sin ficha:** al cobrar, la pantalla pide completar la ficha y deja cobrar igual con un aviso. Falta confirmar si tiene que ser obligatoria.
+- **Consentimientos:** sin ficha no se sienta un servicio que exige consentimiento firmado. Falta confirmar que así está bien.
 
 ## Etapa 2: diseño · 2026-11-11
 
@@ -132,6 +133,22 @@ Sentar desde el tablero de Manos y pies, sin pasar por «Atender ahora», y con 
 - **Con ficha o sin ficha:** la espera, la tarjeta de la profesional y por cobrar muestran «Sin ficha» cuando la clienta no la tiene; con ficha, el nombre enlaza a ella.
 - **Cobro:** si el turno no tiene ficha, la pantalla de cobro pide primero buscarla o crearla (con el nombre y el teléfono de la espera ya cargados). Se puede cobrar sin ficha, con aviso.
 - Tratamientos no cambia.
+
+## Etapa 2: implementación · 2026-11-11
+
+Migración `202611110020_sentar_sin_ficha`. Repositorio en `packages/database/src/tablero.ts` (`sentarEspera`, `agregarEspera`) y `reservas.ts` (`asignarClienteReserva`). Pantalla en `apps/backoffice/src/app/(panel)/recepcion/` (`salon.tsx`, `comun.tsx`) y en `ventas/nueva`. Pruebas en `packages/database/tests/sentar.test.ts`.
+
+Quedó como dice el diseño, con estas precisiones:
+
+- **Dos servicios:** se elige una profesional por servicio y se sienta al completar. Con una sola elegida aparece «Sentar solo X», y la clienta sigue seleccionada para el que falta.
+- **«Anotar» no sienta sola**, aunque haya una profesional pedida: la clienta queda en espera y seleccionada, y la pedida se marca «Es la que pidió».
+- **Mientras hay una clienta seleccionada** se ocultan «Atender», «Salida» y «Terminó». Escape o «Cancelar» sale.
+- **El filtro «Ver quién puede» salió del salón:** lo reemplaza el resaltado al elegir una clienta.
+- **Cobro:** crear la ficha y asignarla son dos pasos; si la asignación falla, la ficha queda creada y se muestra el mensaje.
+- **«Terminó» recorta la agenda al minuto** (no al segundo). Sentar empieza en el minuto en curso, así que tocar «Terminó» y sentar a la próxima enseguida chocaba por unos segundos. `terminadoEn` guarda el instante real.
+- **Página partida por universo:** `page.tsx` carga los datos y lo compartido; cada pestaña tiene su archivo.
+
+Límite que sigue hasta la etapa 3: la pantalla calcula sola quién puede y no conoce la jornada, así que una profesional que termina su horario en media hora aparece libre y el servidor la rechaza con su mensaje.
 
 ## Etapa 3: diseño · 2026-11-11
 
@@ -181,6 +198,37 @@ La pestaña Tratamientos pasa de listas a una grilla del día. Se apoya en lo qu
 - Huecos del día de una hora o más, para ofrecer por teléfono.
 - Debajo siguen «Por cobrar» y la entrada y salida de las profesionales.
 
+## Etapa 3: capa de datos · 2026-11-11
+
+Migración `202611110030_flexibilidad_salon` (`Reserva.llegoEn`, `Reserva.esperaId` y el evento `SERVICIO_SUMADO`). Pruebas en `packages/database/tests/flexibilidad.test.ts`. Quedó como dice el diseño, con estas precisiones:
+
+- **Qué se puede pisar:** los turnos vigentes sin empezar de esa profesional, también los pendientes de seña.
+- **Con `pisar`, una atención pasada de su estimado bloquea.** Sin `pisar` el motor sigue sin verla, como hasta ahora.
+- **Riesgo:** se compara contra el inicio del servicio de esa profesional dentro del turno. Demorada no trae hora estimada.
+- **`pasarAtencion` no mueve horarios:** el servicio conserva el suyo y queda a nombre de la segunda profesional.
+- **`sentarTurno` no manda el email de reprogramación:** la clienta ya está en el local.
+- `atenderAhora` desde una espera también guarda `Reserva.esperaId`, y `reprogramarReserva` conserva `llegoEn` y `esperaId`.
+
+## Etapa 4: implementación · 2026-11-11
+
+Sin migración. Motor en `packages/domain/src/disponibilidad.ts`; repositorio en `packages/database/src/agenda-dia.ts`, `disponibilidad.ts` y `reservas.ts` (`empezarSesion`, `reprogramarReserva` con `recursos`). Pantalla en `apps/backoffice/src/app/(panel)/recepcion/` (`tratamientos.tsx`, `grilla-tratamientos.tsx`, `tratamientos-modelo.ts`, `acciones-tratamientos.ts`). Pruebas en `packages/database/tests/agenda-dia.test.ts` y `packages/domain/tests/disponibilidad.test.ts`.
+
+Quedó como dice el diseño, con estas precisiones:
+
+- **Cada grilla muestra solo los servicios de su universo.** De una visita mixta, Tratamientos muestra el masaje y Manos y pies, las manos.
+- **URL:** `fecha` (solo si no es hoy), `vista=cabina` y `mover`. El turno elegido, «Nuevo turno» y lo que se escribe son estado de la pantalla y sobreviven a la actualización automática.
+- **Mover a otro día** se hace cambiando la fecha con el turno en movimiento. «Cambiar cabina» abre el mismo horario para elegir otra.
+- **Qué acción aparece cuándo:** «Empezó» y «Terminó», solo hoy; «Ausente», desde la hora del turno; «Mover», en turnos confirmados sin empezar; con seña pendiente, solo «Cancelar».
+- **`reprogramarReserva` rechaza un turno con la sesión empezada:** antes la reserva nueva perdía el comienzo.
+- **«Empezó» antes de hora** adelanta la ocupación a ese minuto, sin el tiempo de preparación previo, y no revisa la jornada.
+- **Demo:** el seed agrega dos cabinas de masajes y un box de cejas en Centro.
+
+Límites conocidos:
+
+- No se arrastra: se mueve con toques.
+- Una cabina bloqueada por mantenimiento no viene en `agendaDia`: se ofrece y el motor la rechaza con su mensaje.
+- Un tratamiento que usa dos unidades del mismo tipo se reserva desde la agenda.
+
 ## Etapa 5: reportes por universo · 2026-11-11
 
 La pantalla Reportes se ve para toda la sede, como antes, o para un universo. Las definiciones están en 30-reportes.md, sección «Por universo».
@@ -194,6 +242,9 @@ La pantalla Reportes se ve para toda la sede, como antes, o para un universo. La
 
 - `npm run test:database` (207 pruebas): el universo de la categoría (por defecto, edición, valor inválido, herencia al servicio) y el tablero separado (sede con un solo universo, profesional de los dos, profesional sin servicios, turnos de hoy, espera, por cobrar compartido, resumen de pestañas y atención de una profesional sin entrada marcada). El seed corre dos veces y agrega los tratamientos una sola.
 - `npm run check` y `npm run test:domain`.
+- Al cierre de las etapas 2, 3 (datos) y 4: `npm run test:database` con 254 pruebas y `npm run test:domain` con 93; tipos, lint y build sin errores.
+- Etapa 2, en un navegador real contra la demo: anotar sin ficha con dos servicios y sentar solo uno; la profesional que pisaría un turno, con su motivo; «Terminó» y la comanda «Sin ficha» en por cobrar; el cobro creando la ficha con el nombre precargado; anotar eligiendo una ficha existente y sentarla; la agenda con el nombre; Tratamientos y una sede de un solo universo, sin cambios.
+- Etapa 4, en un navegador real contra la demo: las dos vistas; reservar eligiendo cabina y buscando la ficha; mover de horario eligiendo cabina; «Empezó» antes de hora (el turno se adelantó) y «Terminó»; la comanda en por cobrar; Manos y pies sin cambios.
 - Etapa 5, en un navegador real contra la demo, con una atención cobrada de cada universo y una mixta con descuento: los totales de cada universo dan lo esperado con el descuento prorrateado, los seis CSV bajan, el de cobros con un universo y un universo desconocido responden 400, y una sede de un solo universo no muestra el selector.
 - Probado en un navegador real (Chromium) contra una base local con la demo:
   - las dos pestañas con su resumen, y cada una con sus profesionales, servicios, espera y turnos;

@@ -71,7 +71,7 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
       {semana && <h2 className="subtitulo">{dia(new Date(`${d}T12:00:00Z`))}</h2>}
       <div className="tabla">{items.map(i => <article key={i.itemId} className={["CANCELADA", "EXPIRADA"].includes(i.estado) ? "fila inactiva" : "fila"}>
         <div className="fila-cabecera"><h2>{hora(i.inicio)} – {hora(i.fin)} · {i.servicio}</h2><span className={`tag estado-${i.estado.toLowerCase()}`}>{ESTADOS[i.estado]}</span></div>
-        <p>{i.cliente ? <Link href={`/clientes/${i.cliente.id}`}>{i.cliente.nombre} {i.cliente.apellido}</Link> : "Sin cliente"}{i.cliente?.telefono ? ` · ${i.cliente.telefono}` : ""}
+        <p>{i.cliente ? <Link href={`/clientes/${i.cliente.id}`}>{i.cliente.nombre} {i.cliente.apellido}</Link> : <>{i.clienteProvisional ?? "Clienta"} <span className="tag sin-ficha">sin ficha</span></>}{i.cliente?.telefono ? ` · ${i.cliente.telefono}` : ""}
           {" · "}{i.profesional.nombre} {i.profesional.apellido}{i.recursos.length ? ` · ${i.recursos.join(", ")}` : ""}{i.canal === "ONLINE" ? " · online" : ""}{i.sinTurnoPrevio ? " · sin turno previo" : ""}
           {i.estado === "PENDIENTE_PAGO" && i.expiraEn ? ` · vence ${hora(i.expiraEn)}` : ""}</p>
         {i.notas && i.posicion === 0 && <p className="ayuda">{i.notas}</p>}

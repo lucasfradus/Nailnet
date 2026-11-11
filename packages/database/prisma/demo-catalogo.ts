@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import type { Database } from "../src/client.ts";
-import { crearCategoria, crearSkill, guardarImagenServicio, guardarServicio, guardarServicioSede } from "../src/catalogo.ts";
+import { crearCategoria, crearSkill, guardarImagenServicio, guardarServicio, guardarServicioSede, guardarTipoRecurso } from "../src/catalogo.ts";
 import { publicarConsentimiento } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
-import { crearProfesional, guardarFotoProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
+import { crearProfesional, crearRecurso, guardarFotoProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "../src/profesionales.ts";
 
 /**
  * Catálogo sintético para recorrer el portal en local: servicios con precio y seña en Centro y Norte,
@@ -49,11 +49,65 @@ export async function crearCatalogoDemo(db: Database, organizacionId: string) {
   await guardarHorarioProfesional(db, M, O, carla, norte, semanaDesdeTextos({ 1: "09:00-18:00", 2: "09:00-18:00", 3: "09:00-18:00", 4: "09:00-13:00", 5: "09:00-13:00" }));
 }
 
+/**
+ * Universo Tratamientos (doc 31) para la demo: una categoría de masajes y otra de cejas en Centro, con dos
+ * profesionales que solo hacen eso. Así Recepción muestra las dos pestañas. También se agrega a una demo
+ * creada antes de los universos; si ya tiene alguna categoría de Tratamientos, no vuelve a crearlas.
+ * Las cabinas (etapa 4) se agregan aparte, también a una demo que ya tenía los tratamientos.
+ */
+export async function agregarTratamientosDemo(db: Database, organizacionId: string) {
+  const O = organizacionId;
+  const centro = (await db.sede.findFirst({ where: { organizacionId: O, nombre: "Centro" }, select: { id: true } }))?.id;
+  if (!centro) return false;
+  const M = (await db.usuario.findUniqueOrThrow({ where: { email: `master-${O}@example.invalid` } })).id;
+  const nuevos = !await db.categoriaServicio.count({ where: { organizacionId: O, universo: "TRATAMIENTOS" } }) && await crearTratamientosDemo(db, M, O, centro);
+  const cabinas = await agregarCabinasDemo(db, M, O, centro);
+  return nuevos || cabinas;
+}
+
+async function crearTratamientosDemo(db: Database, M: string, O: string, centro: string) {
+  const masajes = (await crearCategoria(db, M, O, "Masajes", 3, "TRATAMIENTOS"))!.id;
+  const cejas = (await crearCategoria(db, M, O, "Cejas y pestañas", 4, "TRATAMIENTOS"))!.id;
+  const base = { bufferAntesMinutos: 0, bufferDespuesMinutos: 0, activo: true, consentimientos: [], recursos: [], skillIds: [], sena: { tipo: "PORCENTAJE" as const, valor: "30" } };
+  const servicio = async (categoriaId: string, nombre: string, duracionMinutos: number, precio: string) => {
+    const id = (await guardarServicio(db, M, O, { ...base, categoriaId, nombre, descripcion: DESCRIPCIONES[nombre], duracionMinutos }))!.id;
+    await guardarServicioSede(db, M, O, centro, id, { habilitado: true, precio, duracionMinutos: null, sena: null, reservableOnline: true });
+    return id;
+  };
+  const descontracturante = await servicio(masajes, "Masaje descontracturante", 60, "32000");
+  const piedras = await servicio(masajes, "Masaje con piedras calientes", 90, "45000");
+  const laminado = await servicio(cejas, "Laminado de cejas", 60, "22000");
+  const semana = { 1: "10:00-19:00", 2: "10:00-19:00", 3: "10:00-19:00", 4: "10:00-19:00", 5: "10:00-19:00" };
+  const paula = (await crearProfesional(db, M, O, centro, { nombre: "Paula", apellido: "Sosa" })).id;
+  const agos = (await crearProfesional(db, M, O, centro, { nombre: "Agos", apellido: "Lima" })).id;
+  await guardarHabilidades(db, M, O, paula, { skillIds: [], servicioIds: [descontracturante, piedras] });
+  await guardarHabilidades(db, M, O, agos, { skillIds: [], servicioIds: [laminado] });
+  for (const p of [paula, agos]) await guardarHorarioProfesional(db, M, O, p, centro, semanaDesdeTextos(semana));
+  return true;
+}
+
+/**
+ * Cabinas de Tratamientos en Centro (doc 31, etapa 4): dos de masajes y un box de cejas, requeridos por sus
+ * servicios, para elegir la cabina al reservar y ver la grilla por cabina. Si ya existen, no toca nada.
+ */
+async function agregarCabinasDemo(db: Database, M: string, O: string, centro: string) {
+  if (await db.tipoRecurso.count({ where: { organizacionId: O, nombre: { in: ["Cabina de masajes", "Box de cejas"] } } })) return false;
+  const servicios = async (nombres: string[]) => (await db.servicio.findMany({ where: { organizacionId: O, nombre: { in: nombres } }, select: { id: true } })).map(s => ({ servicioId: s.id, cantidad: 1 }));
+  const masajes = (await guardarTipoRecurso(db, M, O, { nombre: "Cabina de masajes", servicios: await servicios(["Masaje descontracturante", "Masaje con piedras calientes"]) }))!.id;
+  const cejas = (await guardarTipoRecurso(db, M, O, { nombre: "Box de cejas", servicios: await servicios(["Laminado de cejas"]) }))!.id;
+  for (const nombre of ["Cabina 1", "Cabina 2"]) await crearRecurso(db, M, O, centro, { tipoRecursoId: masajes, nombre });
+  await crearRecurso(db, M, O, centro, { tipoRecursoId: cejas, nombre: "Box" });
+  return true;
+}
+
 const DESCRIPCIONES: Record<string, string> = {
   "Esmaltado semipermanente": "Color con brillo que dura hasta tres semanas. Incluye limado y cuidado de cutículas.",
   "Kapping gel": "Capa de gel sobre la uña natural para darle fuerza y que crezca sin quebrarse.",
   "Retiro de semipermanente": "Retiro cuidadoso del esmaltado sin dañar la uña natural.",
   "Belleza de pies": "Pedicuría estética con exfoliación, hidratación y esmaltado tradicional.",
+  "Masaje descontracturante": "Masaje profundo de espalda, cuello y hombros para aflojar tensiones.",
+  "Masaje con piedras calientes": "Masaje de cuerpo completo con piedras volcánicas tibias.",
+  "Laminado de cejas": "Alisa y fija el pelo de la ceja para darle forma y volumen.",
 };
 const IMAGENES_SERVICIOS: Record<string, string> = { "Esmaltado semipermanente": "semipermanente.jpg", "Kapping gel": "kapping.jpg", "Retiro de semipermanente": "retiro.jpg", "Belleza de pies": "pies.jpg" };
 const FOTOS_PROFESIONALES: Record<string, string> = { Ana: "ana.jpg", Bea: "bea.jpg", Carla: "carla.jpg" };

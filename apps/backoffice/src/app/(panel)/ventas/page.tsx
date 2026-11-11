@@ -51,7 +51,7 @@ export default async function Ventas({ searchParams }: { searchParams: Promise<{
       {lista.ventas.map(v => <Link key={v.id} href={`/ventas/${v.id}`} className={v.estado === "ANULADA" ? "fila fila-enlace inactiva" : "fila fila-enlace"}>
         <div className="fila-enlace-texto">
           <h2>{v.items.map(i => i.descripcion).join(" + ")}</h2>
-          <p>{instante(v.creadaEn, sede.timezone)} · {v.cliente ? `${v.cliente.nombre} ${v.cliente.apellido ?? ""}` : "Sin cliente"} · {pesos(v.total)}
+          <p>{instante(v.creadaEn, sede.timezone)} · {v.cliente ? `${v.cliente.nombre} ${v.cliente.apellido ?? ""}` : v.clienteProvisional ? <>{v.clienteProvisional} <span className="tag sin-ficha">sin ficha</span></> : "Sin cliente"} · {pesos(v.total)}
             {v.anticipo !== "0.00" ? ` (seña ${pesos(v.anticipo)})` : ""}{v.estado === "PENDIENTE" ? ` · falta ${pesos(v.saldo)}` : ""}</p>
         </div>
         <span className={`tag estado-${v.estado.toLowerCase()}`}>{ESTADOS_VENTA[v.estado]}</span>

@@ -65,6 +65,35 @@ test("recursos: unidades distintas libres todo el intervalo", () => {
   assert.deepEqual(inicios({ ...c, items: [item({ requisitos: [{ tipoRecursoId: "laser", cantidad: 1 }] })] }), [], "sin unidades del tipo");
 });
 
+test("recursos: unidad pedida por recepción (doc 31, etapa 4)", () => {
+  const recursos = [
+    { id: "cab1", tipoRecursoId: "cabina", ocupado: [iv("09:00", "10:00")] }, { id: "cab2", tipoRecursoId: "cabina", ocupado: [iv("11:00", "12:00")] },
+    { id: "cam1", tipoRecursoId: "camilla", ocupado: [] }, { id: "cam2", tipoRecursoId: "camilla", ocupado: [] },
+  ];
+  const cabina = { requisitos: [{ tipoRecursoId: "cabina", cantidad: 1 }] };
+  const c = consulta({ items: [item(cabina)], recursos });
+  // Sin pedir nada, todo sigue como antes: cualquiera libre, en orden de ID.
+  assert.deepEqual(buscarTurnos(c).map(t => [hora(t.inicio), t.items[0]!.recursoIds]), [["09:00", ["cab2"]], ["10:00", ["cab1"]], ["11:00", ["cab1"]], ["12:00", ["cab1"]]]);
+  assert.deepEqual(buscarTurnos({ ...c, items: [item({ ...cabina, recursoIds: [] })] }), buscarTurnos(c), "una lista vacía es no pedir");
+  // Pedida y libre: usa esa aunque haya otra con menor ID.
+  assert.deepEqual(asignarEn({ ...c, items: [item({ ...cabina, recursoIds: ["cab2"] })] }, h("10:00"))!.items[0]!.recursoIds, ["cab2"]);
+  // Pedida y ocupada: no hay turno, aunque otra unidad del tipo esté libre.
+  assert.equal(asignarEn({ ...c, items: [item({ ...cabina, recursoIds: ["cab2"] })] }, h("11:00")), null);
+  assert.deepEqual(inicios({ ...c, items: [item({ ...cabina, recursoIds: ["cab1"] })] }), ["10:00", "11:00", "12:00"]);
+  // De otro tipo, o que no existe entre los recursos: no hay turno.
+  assert.deepEqual(inicios({ ...c, items: [item({ ...cabina, recursoIds: ["cam1"] })] }), []);
+  assert.deepEqual(inicios({ ...c, items: [item({ ...cabina, recursoIds: ["otra"] })] }), []);
+  // Más unidades del tipo que la cantidad del requisito.
+  assert.deepEqual(inicios({ ...c, items: [item({ ...cabina, recursoIds: ["cab1", "cab2"] })] }), []);
+  // Lo que el requisito pide de más se completa con cualquiera libre; cada tipo por separado.
+  const dos = { requisitos: [{ tipoRecursoId: "camilla", cantidad: 2 }, { tipoRecursoId: "cabina", cantidad: 1 }] };
+  assert.deepEqual(asignarEn({ ...c, items: [item({ ...dos, recursoIds: ["cam2", "cab2"] })] }, h("10:00"))!.items[0]!.recursoIds, ["cam2", "cam1", "cab2"]);
+  // Dos ítems a la vez no comparten la unidad pedida.
+  const profesionales = new Map([["ana", pro()], ["bea", pro()]]);
+  const juntos = [item({ ...cabina, recursoIds: ["cab1"] }), item({ ...cabina, candidatos: ["bea"], conAnterior: true, recursoIds: ["cab1"] })];
+  assert.equal(asignarEn({ ...c, profesionales, items: juntos }, h("10:00")), null);
+});
+
 test("varios servicios encadenados con profesionales distintos (D15) y vuelta atrás", () => {
   const profesionales = new Map([
     ["ana", pro({ cargaMinutos: 0 })],

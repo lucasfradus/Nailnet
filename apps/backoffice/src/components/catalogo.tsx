@@ -1,9 +1,10 @@
 import Link from "next/link";
-import type { Sena } from "@nailnet/domain/catalogo";
+import { UNIVERSOS, type Sena } from "@nailnet/domain/catalogo";
 import type { catalogoSede, listarCatalogo } from "@nailnet/database/catalogo";
 import { Formulario } from "./formulario";
 import { CamposSena } from "./campos-sena";
 import { Pestanas } from "./pestanas";
+import { UNIVERSO } from "@/lib/etiquetas";
 import { accionGuardarCategoria, accionGuardarServicio, accionGuardarSkill, accionGuardarTipoRecurso, accionServicioSede } from "@/app/(panel)/acciones";
 
 export const pesos = (v: string | null) => v === null ? "—" : `$ ${Number(v).toLocaleString("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -93,8 +94,12 @@ export function FormCategoria({ categoria }: { categoria?: Categoria }) {
     <div className="grilla">
       <label>Nombre<input name="nombre" required maxLength={60} defaultValue={categoria?.nombre} placeholder="Manos, Pestañas, Faciales…" /></label>
       <label>Orden<input name="orden" type="number" min={-9999} max={9999} step={1} defaultValue={categoria?.orden ?? 0} /></label>
+      <label>Universo<select name="universo" defaultValue={categoria?.universo ?? "MANOS_PIES"}>
+        {UNIVERSOS.map(u => <option key={u} value={u}>{UNIVERSO[u]}</option>)}
+      </select></label>
     </div>
     <p className="ayuda">Las categorías agrupan los servicios en el backoffice y en la reserva online; se listan de menor a mayor orden.</p>
+    <p className="ayuda">El universo define en qué tablero de Recepción aparecen sus servicios y las profesionales que los hacen: Manos y pies es el salón, con y sin turno; Tratamientos trabaja con turno previo.</p>
   </Formulario>;
 }
 

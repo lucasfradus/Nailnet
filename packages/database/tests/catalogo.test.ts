@@ -83,6 +83,17 @@ test("catálogo global y condiciones por sede", async (t) => {
       await assert.rejects(guardarCategoria(db, b.master.id, b.org.id, { nombre: "X" }, nails.id), AccesoDenegado, "categoría ajena");
       await assert.rejects(guardarCategoria(db, a.master.id, a.org.id, { nombre: "Y", orden: 10_000 }), DatosInvalidos);
 
+      // Universo (doc 31): nace en Manos y pies, se cambia al editar y, si no se indica, conserva el suyo.
+      const universo = async () => (await db.categoriaServicio.findUniqueOrThrow({ where: { id: nails.id } })).universo;
+      assert.equal(await universo(), "MANOS_PIES");
+      await guardarCategoria(db, a.master.id, a.org.id, { nombre: "Manos", orden: 2, universo: "TRATAMIENTOS" }, nails.id);
+      await guardarCategoria(db, a.master.id, a.org.id, { nombre: "Manos", orden: 2 }, nails.id);
+      assert.equal(await universo(), "TRATAMIENTOS", "sin indicarlo, conserva el suyo");
+      assert.equal((await catalogoSede(db, a.recepcion.id, a.org.id, a.centro.id)).servicios[0]!.universo, "TRATAMIENTOS", "el servicio hereda el de su categoría");
+      await assert.rejects(guardarCategoria(db, a.master.id, a.org.id, { nombre: "Manos", universo: "OTRO" as never }, nails.id), DatosInvalidos);
+      await guardarCategoria(db, a.master.id, a.org.id, { nombre: "Manos", orden: 2, universo: "MANOS_PIES" }, nails.id);
+      assert.equal(await universo(), "MANOS_PIES");
+
       const lifting = (await guardarSkill(db, a.master.id, a.org.id, { nombre: "Lifting", servicioIds: [servicioId] }))!;
       await guardarTipoRecurso(db, a.master.id, a.org.id, { nombre: "Cabina doble", servicios: [{ servicioId, cantidad: 2 }] }, cabina.id);
       let cat = await listarCatalogo(db, a.master.id, a.org.id);

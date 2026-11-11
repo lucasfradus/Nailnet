@@ -27,7 +27,7 @@ export default async function Venta({ params }: { params: Promise<{ ventaId: str
   return <section className="panel">
     <p className="eyebrow"><Link href={`/ventas?fecha=${v.fecha}`}>VENTAS</Link> · {sede?.nombre.toUpperCase() ?? ""}</p>
     <div className="fila-cabecera"><h1>Venta del {fechaCorta(v.fecha)}</h1><span className={`tag estado-${v.estado.toLowerCase()}`}>{ESTADOS_VENTA[v.estado]}</span></div>
-    <p className="intro">{v.cliente ? <Link href={`/clientes/${v.cliente.id}`}>{v.cliente.nombre} {v.cliente.apellido}</Link> : "Sin cliente"} · registrada por {v.registradoPor} el {instante(v.creadaEn, tz)}</p>
+    <p className="intro">{v.cliente ? <Link href={`/clientes/${v.cliente.id}`}>{v.cliente.nombre} {v.cliente.apellido}</Link> : v.clienteProvisional ? <>{v.clienteProvisional} <span className="tag sin-ficha">sin ficha</span></> : "Sin cliente"} · registrada por {v.registradoPor} el {instante(v.creadaEn, tz)}</p>
 
     <div className="tabla">
       {v.items.map((i, n) => <article key={n} className="fila fila-cabecera">

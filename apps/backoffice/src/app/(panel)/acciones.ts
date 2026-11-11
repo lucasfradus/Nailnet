@@ -11,7 +11,7 @@ import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
 import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
 import { actualizarCliente, actualizarObservaciones, crearCliente, publicarConsentimiento, registrarConsentimiento, vincularCliente } from "@nailnet/database/clientes";
-import type { Sena, TipoSena } from "@nailnet/domain/catalogo";
+import type { Sena, TipoSena, Universo } from "@nailnet/domain/catalogo";
 import { guardarCategoria, guardarSkill, guardarTipoRecurso, guardarImagenServicio, guardarServicio, guardarServicioSede } from "@nailnet/database/catalogo";
 import { aMinutos, aUtc, validarFecha } from "@nailnet/domain/agenda";
 import { actualizarProfesional, guardarFotoProfesional, cambiarEstadoRecurso, crearBloqueo, crearExcepcion, crearProfesional, crearRecurso, eliminarBloqueo, eliminarExcepcion, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos, vincularSede } from "@nailnet/database/profesionales";
@@ -200,7 +200,7 @@ function senaForm(f: FormData, prefijo = ""): Sena {
 }
 export async function accionGuardarCategoria(_: Estado, form: FormData) {
   const id = texto(form, "categoriaId") || undefined;
-  const r = await ejecutar("/catalogo", async (actor, org) => { await guardarCategoria(db(), actor, org, { nombre: texto(form, "nombre"), orden: entero(form, "orden") || 0 }, id); }, id ? "Categoría actualizada" : "Categoría creada");
+  const r = await ejecutar("/catalogo", async (actor, org) => { await guardarCategoria(db(), actor, org, { nombre: texto(form, "nombre"), orden: entero(form, "orden") || 0, universo: (texto(form, "universo") || undefined) as Universo | undefined }, id); }, id ? "Categoría actualizada" : "Categoría creada");
   if (r?.ok && !id) redirect("/catalogo/categorias");
   return r;
 }

@@ -1,6 +1,11 @@
 import type { Celda } from "@nailnet/domain/reportes";
 import type { ReporteSede } from "@nailnet/database/reportes";
+import { UNIVERSOS, type Universo } from "@nailnet/domain/catalogo";
+import { UNIVERSO_SLUG } from "@/lib/etiquetas";
 import { MEDIOS_COBRO_ETIQUETA } from "../ventas/comun";
+
+/** Universo del parámetro `universo` (pantalla y CSV), con el mismo slug que Recepción. */
+export const universoDeSlug = (slug: string | null | undefined): Universo | undefined => UNIVERSOS.find(x => UNIVERSO_SLUG[x] === slug);
 
 // Una sola definición por tabla: la pantalla y el CSV muestran exactamente lo mismo.
 // Celdas: bigint = pesos en centavos; number = cantidad, horas o porcentaje; null = sin dato.
@@ -22,7 +27,8 @@ export const TABLAS = {
   cobros: (r: ReporteSede): Tabla => ({
     titulo: "Cobros por medio",
     encabezados: ["Medio", "Cobrado", "Revertido", "Neto"],
-    filas: r.cobros.porMedio.map(c => [MEDIOS_COBRO_ETIQUETA[c.medio], c.cobrado, c.revertido, c.neto]),
+    // Con un universo elegido no hay cobros: son de la venta completa y no se pueden partir.
+    filas: (r.cobros?.porMedio ?? []).map(c => [MEDIOS_COBRO_ETIQUETA[c.medio], c.cobrado, c.revertido, c.neto]),
   }),
   turnos: (r: ReporteSede): Tabla => ({
     titulo: "Turnos por estado",

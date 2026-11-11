@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { createDatabase } from "../src/client.ts";
-import { cargarImagenesDemo, crearCatalogoDemo } from "./demo-catalogo.ts";
+import { agregarTratamientosDemo, cargarImagenesDemo, crearCatalogoDemo } from "./demo-catalogo.ts";
 import { crearFixture } from "./fixture.ts";
 // Datos sintéticos: nunca en producción. Staging corre con NODE_ENV=production (builds reales), así
 // que debe declararse con NAILNET_AMBIENTE=staging además de ALLOW_DEMO_SEED=true.
@@ -23,6 +23,11 @@ try {
     await crearCatalogoDemo(db, id);
     console.info("Catálogo demo creado: servicios, profesionales, horarios y términos para el portal.");
   }
+  // Universos de recepción (doc 31): la demo ofrece también tratamientos, para ver las dos pestañas.
+  // Una demo ya modificada a mano (sede renombrada, categoría con el mismo nombre) no frena el despliegue.
+  try {
+    if (await agregarTratamientosDemo(db, id)) console.info("Tratamientos demo creados: masajes y cejas en Centro.");
+  } catch (e) { console.warn(`No se agregaron los tratamientos demo: ${e instanceof Error ? e.message : e}`); }
   const imagenes = await cargarImagenesDemo(db, id);
   if (imagenes) console.info(`Imágenes demo cargadas: ${imagenes}.`);
 } finally { await db.$disconnect(); }

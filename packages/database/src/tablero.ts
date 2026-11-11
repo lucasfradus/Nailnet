@@ -1,5 +1,6 @@
 import { AccesoDenegado } from "@nailnet/domain";
 import { aLocal, aUtc } from "@nailnet/domain/agenda";
+import { UNIVERSOS, type Universo } from "@nailnet/domain/catalogo";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds, sedesConPermiso } from "./access.ts";
@@ -86,8 +87,13 @@ type ClienteBreve = { id: string; nombre: string; apellido: string | null } | nu
  * atención en curso y próximo turno reservado (en cualquier sede, porque la ocupa igual). Además, los
  * turnos de la sede por llegar (dos horas antes y después, sin marcar la llegada) y las atenciones
  * terminadas sin venta (últimos siete días), que son las comandas por cobrar.
+ *
+ * Universos (doc 31, D21): con `opciones.universo`, y si la sede ofrece servicios de los dos, devuelve solo
+ * ese universo: sus servicios, las profesionales que hacen alguno, su lista de espera y sus turnos por
+ * llegar. Las comandas por cobrar no se separan, porque la caja es una sola. `universos` trae el resumen
+ * de cada uno para las pestañas. Sin la opción, o con un solo universo en la sede, devuelve todo junto.
  */
-export async function tableroSede(db: Database, actorId: string, organizacionId: string, sedeId: string, ahora = new Date()) {
+export async function tableroSede(db: Database, actorId: string, organizacionId: string, sedeId: string, ahora = new Date(), opciones: { universo?: Universo | null } = {}) {
   await exigirSede(db, actorId, organizacionId, sedeId);
   const sede = await db.sede.findUniqueOrThrow({ where: { id: sedeId }, select: { timezone: true } });
   const tz = sede.timezone;
@@ -101,9 +107,13 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   const ids = profesionales.map(p => p.id);
   const servicios = await db.servicioSede.findMany({
     where: { organizacionId, sedeId, habilitado: true, servicio: { activo: true } },
-    select: { duracionMinutos: true, servicio: { select: { id: true, nombre: true, duracionMinutos: true, skills: { select: { skillId: true } } } } },
+    select: { duracionMinutos: true, servicio: { select: { id: true, nombre: true, duracionMinutos: true, skills: { select: { skillId: true } }, categoria: { select: { universo: true } } } } },
     orderBy: { servicio: { nombre: "asc" } },
   });
+  const universoDe = new Map(servicios.map(s => [s.servicio.id, s.servicio.categoria.universo]));
+  // Con un solo universo en la sede no hay nada que separar.
+  const activos = UNIVERSOS.filter(x => servicios.some(s => s.servicio.categoria.universo === x));
+  const universo = opciones.universo && activos.length > 1 ? opciones.universo : null;
   // Mismo criterio que el motor: habilitada para el servicio y con todas sus habilidades.
   const puede = (p: (typeof profesionales)[number], s: (typeof servicios)[number]) =>
     p.servicios.some(x => x.servicioId === s.servicio.id) && s.servicio.skills.every(k => p.skills.some(x => x.skillId === k.skillId));
@@ -129,9 +139,10 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
     const reservaId = propios[0]?.reserva.id;
     const atencion = propios.filter(i => i.reserva.id === reservaId);
     const proximo = reservados.find(i => i.profesionalId === p.id);
+    const servicioIds = servicios.filter(s => puede(p, s)).map(s => s.servicio.id);
     return {
       id: p.id, nombre: [p.nombre, p.apellido].filter(Boolean).join(" "),
-      servicioIds: servicios.filter(s => puede(p, s)).map(s => s.servicio.id),
+      servicioIds, universos: UNIVERSOS.filter(x => servicioIds.some(id => universoDe.get(id) === x)),
       presencia: presencia ? { id: presencia.id, entrada: presencia.entrada, otraSede: presencia.sedeId === sedeId ? null : presencia.sede.nombre } : null,
       atencion: reservaId ? {
         reservaId, enOtraSede: atencion[0]!.reserva.sedeId !== sedeId, cliente: atencion[0]!.reserva.cliente as ClienteBreve,
@@ -142,13 +153,15 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
     };
   });
 
+  // Se traen los turnos hasta el fin del día: Tratamientos los muestra todos; el resto, solo los cercanos.
+  const cerca = new Date(ahora.getTime() + POR_LLEGAR_MS);
   const porLlegar = await db.reserva.findMany({
-    where: { organizacionId, sedeId, estado: "CONFIRMADA", iniciadaEn: null, items: { some: { posicion: 0, inicio: { lt: new Date(ahora.getTime() + POR_LLEGAR_MS), gte: new Date(ahora.getTime() - POR_LLEGAR_MS) } } } },
-    select: { id: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    where: { organizacionId, sedeId, estado: "CONFIRMADA", iniciadaEn: null, items: { some: { posicion: 0, inicio: { lt: finDia > cerca ? finDia : cerca, gte: new Date(ahora.getTime() - POR_LLEGAR_MS) } } } },
+    select: { id: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
   });
   const porCobrar = await db.reserva.findMany({
     where: { organizacionId, sedeId, estado: "ATENDIDA", ventas: { none: { estado: { not: "ANULADA" } } }, items: { some: { posicion: 0, inicio: { gte: new Date(ahora.getTime() - POR_COBRAR_DIAS * 86_400_000) } } } },
-    select: { id: true, terminadaEn: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    select: { id: true, terminadaEn: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
     take: 100,
   });
   // Etapa 3: la lista de espera de hoy, por orden de llegada. Una espera olvidada de otro día no se muestra.
@@ -160,14 +173,30 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   const resumen = (r: (typeof porLlegar)[number]) => ({
     reservaId: r.id, cliente: r.cliente as ClienteBreve, inicio: r.items[0]!.inicio,
     servicios: r.items.map(i => `${i.servicio.nombre} · ${nombre(i.profesional)}`),
+    universos: UNIVERSOS.filter(x => r.items.some(i => i.servicio.categoria.universo === x)),
   });
+  const llegan = porLlegar.map(resumen).sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+
+  // Una profesional está en un universo si hace algún servicio suyo. Sin servicios habilitados aparece en
+  // los dos, para que recepción igual pueda marcarle la entrada y la salida.
+  const proEn = (f: { universos: Universo[] }, x: Universo) => !f.universos.length || f.universos.includes(x);
+  // La espera es del universo de lo primero que pidió; si ese servicio ya no se ofrece, se ve en los dos.
+  const esperaEn = (e: { servicioIds: string[] }, x: Universo) => (universoDe.get(e.servicioIds[0]!) ?? x) === x;
+  // Tratamientos trabaja con turno previo: muestra todos los turnos que quedan hoy, no solo los cercanos.
+  const llegaEn = (r: { inicio: Date; universos: Universo[] }, x: Universo) => r.universos.includes(x) && (x === "TRATAMIENTOS" || r.inicio < cerca);
 
   return {
     timezone: tz,
-    servicios: servicios.map(s => ({ id: s.servicio.id, nombre: s.servicio.nombre, duracionMinutos: s.duracionMinutos ?? s.servicio.duracionMinutos })),
-    profesionales: filas,
-    porLlegar: porLlegar.map(resumen).sort((a, b) => a.inicio.getTime() - b.inicio.getTime()),
-    esperas,
+    universo,
+    universos: activos.length > 1 ? UNIVERSOS.map(x => {
+      // En el local: con la entrada marcada acá, o atendiendo acá aunque no se la hayan marcado.
+      const enLocal = filas.filter(f => proEn(f, x) && ((f.presencia && !f.presencia.otraSede) || (f.atencion && !f.atencion.enOtraSede)));
+      return { universo: x, libres: enLocal.filter(f => !f.atencion).length, atendiendo: enLocal.filter(f => f.atencion).length, esperas: esperas.filter(e => esperaEn(e, x)).length, porLlegar: llegan.filter(r => llegaEn(r, x)).length };
+    }) : [],
+    servicios: servicios.filter(s => !universo || s.servicio.categoria.universo === universo).map(s => ({ id: s.servicio.id, nombre: s.servicio.nombre, duracionMinutos: s.duracionMinutos ?? s.servicio.duracionMinutos })),
+    profesionales: universo ? filas.filter(f => proEn(f, universo)).map(f => ({ ...f, servicioIds: f.servicioIds.filter(id => universoDe.get(id) === universo) })) : filas,
+    porLlegar: llegan.filter(r => universo ? llegaEn(r, universo) : r.inicio < cerca),
+    esperas: universo ? esperas.filter(e => esperaEn(e, universo)) : esperas,
     porCobrar: porCobrar.map(r => ({ ...resumen(r), terminadaEn: r.terminadaEn ?? r.items.at(-1)!.fin }))
       .sort((a, b) => a.terminadaEn.getTime() - b.terminadaEn.getTime()),
   };

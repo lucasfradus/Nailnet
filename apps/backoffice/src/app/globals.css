@@ -242,6 +242,14 @@ a.fila-enlace:focus-visible{outline:2px solid var(--color-ring);outline-offset:-
 .puesto.justo{border-left-color:var(--gris-200)}
 .puesto.ocupada{border-left-color:var(--color-warning)}
 .puesto.demorada{border-left-color:var(--texto-error)}
+/* Universos de recepción (doc 31): dos pestañas grandes, cada una con su resumen en vivo. */
+.universos{display:inline-flex;flex-wrap:wrap;gap:4px;padding:4px;background:var(--gris-100);border:1px solid var(--color-border);border-radius:var(--radius)}
+.universos a{display:grid;gap:1px;min-width:160px;padding:6px 16px;border-radius:var(--radius-md);color:var(--color-secondary-foreground);text-decoration:none}
+.universos a strong{font-size:14px;font-weight:600}
+.universos a span{font-size:12px;color:var(--color-muted-foreground)}
+.universos a:hover{background:var(--gris-200)}
+.universos a[aria-current=page]{background:var(--color-primary);color:var(--color-primary-foreground)}
+.universos a[aria-current=page] span{color:inherit}
 /* Buscador de servicios (Atender ahora): combo con lista filtrable */
 .buscador{position:relative}.buscador>input:not([type=hidden]){width:100%;padding-right:30px}
 .buscador-limpiar{position:absolute;top:50%;right:4px;transform:translateY(-50%);height:26px;padding:0 8px;border:0;background:none;box-shadow:none;color:var(--color-muted-foreground);font-size:18px;line-height:1}

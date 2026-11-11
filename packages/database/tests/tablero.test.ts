@@ -209,6 +209,62 @@ test("tablero de recepción (doc 29)", async (t) => {
       const nueva = await reprogramarReserva(db, R, O, turno.reservaId, { fecha: FECHA, inicio: en("20:30") }, en("08:00"));
       assert.deepEqual(nueva.items.map(i => i.inicio.toISOString()), [en("20:30").toISOString(), en("20:30").toISOString()]);
     });
+
+    await t.test("universos (doc 31): el tablero se separa cuando la sede ofrece servicios de los dos", async () => {
+      // Con un solo universo en la sede no hay nada que separar, aunque se pida uno.
+      const solo = await tableroSede(db, R, O, centro, en("12:00"), { universo: "TRATAMIENTOS" });
+      assert.deepEqual([solo.universo, solo.universos], [null, []]);
+
+      const masajes = (await crearCategoria(db, M, O, "Masajes", 5, "TRATAMIENTOS"))!;
+      const masaje = (await guardarServicio(db, M, O, { ...base, categoriaId: masajes.id, nombre: "Masaje", duracionMinutos: 60, recursos: [] }))!.id;
+      await guardarServicioSede(db, M, O, centro, masaje, { habilitado: true, precio: "30000", duracionMinutos: null, sena: null, reservableOnline: true });
+      const eva = (await crearProfesional(db, M, O, centro, { nombre: "Eva" })).id; // solo masajes
+      const fina = (await crearProfesional(db, M, O, centro, { nombre: "Fina" })).id; // todavía sin servicios
+      await guardarHabilidades(db, M, O, eva, { skillIds: [], servicioIds: [masaje] });
+      await guardarHabilidades(db, M, O, bea, { skillIds: [], servicioIds: [manos, pies, masaje] }); // Bea hace de los dos
+      await guardarHorarioProfesional(db, M, O, eva, centro, semanaDesdeTextos({ 2: "08:00-22:00" }));
+      await registrarEntrada(db, R, O, { sedeId: centro, profesionalId: eva }, en("12:00"));
+      const turno = await tomarTurno(db, R, O, { sedeId: centro, fecha: FECHA, canal: "RECEPCION", clienteId: lucia, items: [{ servicioId: masaje, profesionalId: eva }], inicio: en("21:00") }, en("08:00"));
+      const nora = await agregarEspera(db, R, O, { sedeId: centro, nombre: "Nora", servicioIds: [manos] }, en("12:00"));
+
+      // Sin pedir un universo (la agenda, los reportes) sigue viniendo todo junto.
+      const todo = await tableroSede(db, R, O, centro, en("12:00"));
+      assert.equal(todo.universo, null);
+      assert.ok([ana, bea, caro, eva, fina].every(id => todo.profesionales.some(p => p.id === id)));
+      assert.ok(!todo.porLlegar.some(r => r.reservaId === turno.reservaId), "a nueve horas: fuera de la ventana de dos horas");
+
+      const mp = await tableroSede(db, R, O, centro, en("12:00"), { universo: "MANOS_PIES" });
+      const tr = await tableroSede(db, R, O, centro, en("12:00"), { universo: "TRATAMIENTOS" });
+      assert.deepEqual([mp.universo, tr.universo], ["MANOS_PIES", "TRATAMIENTOS"]);
+      assert.deepEqual([mp.servicios.map(s => s.nombre), tr.servicios.map(s => s.nombre)], [["Manos", "Pies"], ["Masaje"]]);
+      // Cada profesional va al universo de lo que hace; la que todavía no tiene servicios aparece en los dos.
+      const esta = (x: typeof mp, id: string) => x.profesionales.some(p => p.id === id);
+      assert.deepEqual([ana, bea, caro, eva, fina].map(id => [esta(mp, id), esta(tr, id)]), [[true, false], [true, true], [true, false], [false, true], [true, true]]);
+      assert.deepEqual([mp, tr].map(x => x.profesionales.find(p => p.id === bea)!.servicioIds), [[manos, pies], [masaje]], "solo los servicios de ese universo");
+      // Tratamientos trabaja con turno previo: ve todos los turnos que quedan hoy. Manos y pies, solo los suyos.
+      assert.deepEqual(tr.porLlegar.map(r => r.reservaId), [turno.reservaId]);
+      assert.ok(!mp.porLlegar.some(r => r.reservaId === turno.reservaId));
+      // La espera es del universo de lo primero que pidió.
+      assert.deepEqual([mp.esperas.map(e => e.nombre), tr.esperas], [["Nora"], []]);
+      // La caja es una sola: lo que falta cobrar se ve igual en los dos.
+      assert.ok(mp.porCobrar.length > 0);
+      assert.deepEqual(mp.porCobrar.map(r => r.reservaId), tr.porCobrar.map(r => r.reservaId));
+      // El resumen de las pestañas es el mismo desde cualquiera de las dos.
+      assert.deepEqual(mp.universos, tr.universos);
+      const [resumenMp, resumenTr] = tr.universos;
+      assert.deepEqual([resumenMp!.universo, resumenMp!.esperas, resumenTr!.universo, resumenTr!.esperas, resumenTr!.porLlegar], ["MANOS_PIES", 1, "TRATAMIENTOS", 0, 1]);
+      assert.ok(resumenTr!.libres >= 1, "Eva está en el local y libre");
+      await esperaSeFue(db, R, O, nora.id, en("12:01"));
+
+      // Llega la clienta con turno y a su profesional no le marcaron la entrada: igual cuenta como atendiendo.
+      await registrarSalida(db, R, O, (await fila(eva, en("20:30"))).presencia!.id, en("20:30"));
+      await marcarLlegada(db, R, O, turno.reservaId, en("20:45"));
+      const llego = await tableroSede(db, R, O, centro, en("20:50"), { universo: "TRATAMIENTOS" });
+      const evaAhora = llego.profesionales.find(p => p.id === eva)!;
+      assert.deepEqual([evaAhora.presencia, evaAhora.atencion?.reservaId, llego.porLlegar.length], [null, turno.reservaId, 0]);
+      assert.equal(llego.universos.find(x => x.universo === "TRATAMIENTOS")!.atendiendo, resumenTr!.atendiendo + 1);
+      await terminarAtencion(db, R, O, turno.reservaId, en("21:40"));
+    });
   } finally {
     await db.$disconnect();
     await db2.$disconnect();

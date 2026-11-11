@@ -68,6 +68,12 @@ enum TipoSena {
   PORCENTAJE
 }
 
+// Universo de la operación (doc 31, D21). Es de la categoría: sus servicios lo heredan.
+enum Universo {
+  MANOS_PIES
+  TRATAMIENTOS
+}
+
 enum CanalReserva {
   ONLINE
   RECEPCION
@@ -460,6 +466,8 @@ model CategoriaServicio {
   organizacionId String       @db.Uuid
   nombre         String
   orden          Int          @default(0)
+  // Doc 31 (D21): a qué universo de recepción pertenecen sus servicios.
+  universo       Universo     @default(MANOS_PIES)
   activo         Boolean      @default(true)
   organizacion   Organizacion @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
   servicios      Servicio[]

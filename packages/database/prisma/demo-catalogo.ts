@@ -49,11 +49,45 @@ export async function crearCatalogoDemo(db: Database, organizacionId: string) {
   await guardarHorarioProfesional(db, M, O, carla, norte, semanaDesdeTextos({ 1: "09:00-18:00", 2: "09:00-18:00", 3: "09:00-18:00", 4: "09:00-13:00", 5: "09:00-13:00" }));
 }
 
+/**
+ * Universo Tratamientos (doc 31) para la demo: una categoría de masajes y otra de cejas en Centro, con dos
+ * profesionales que solo hacen eso. Así Recepción muestra las dos pestañas. También se agrega a una demo
+ * creada antes de los universos; si ya tiene alguna categoría de Tratamientos, no toca nada.
+ */
+export async function agregarTratamientosDemo(db: Database, organizacionId: string) {
+  const O = organizacionId;
+  if (await db.categoriaServicio.count({ where: { organizacionId: O, universo: "TRATAMIENTOS" } })) return false;
+  const M = (await db.usuario.findUniqueOrThrow({ where: { email: `master-${O}@example.invalid` } })).id;
+  const centro = (await db.sede.findFirst({ where: { organizacionId: O, nombre: "Centro" }, select: { id: true } }))?.id;
+  if (!centro) return false;
+  const masajes = (await crearCategoria(db, M, O, "Masajes", 3, "TRATAMIENTOS"))!.id;
+  const cejas = (await crearCategoria(db, M, O, "Cejas y pestañas", 4, "TRATAMIENTOS"))!.id;
+  const base = { bufferAntesMinutos: 0, bufferDespuesMinutos: 0, activo: true, consentimientos: [], recursos: [], skillIds: [], sena: { tipo: "PORCENTAJE" as const, valor: "30" } };
+  const servicio = async (categoriaId: string, nombre: string, duracionMinutos: number, precio: string) => {
+    const id = (await guardarServicio(db, M, O, { ...base, categoriaId, nombre, descripcion: DESCRIPCIONES[nombre], duracionMinutos }))!.id;
+    await guardarServicioSede(db, M, O, centro, id, { habilitado: true, precio, duracionMinutos: null, sena: null, reservableOnline: true });
+    return id;
+  };
+  const descontracturante = await servicio(masajes, "Masaje descontracturante", 60, "32000");
+  const piedras = await servicio(masajes, "Masaje con piedras calientes", 90, "45000");
+  const laminado = await servicio(cejas, "Laminado de cejas", 60, "22000");
+  const semana = { 1: "10:00-19:00", 2: "10:00-19:00", 3: "10:00-19:00", 4: "10:00-19:00", 5: "10:00-19:00" };
+  const paula = (await crearProfesional(db, M, O, centro, { nombre: "Paula", apellido: "Sosa" })).id;
+  const agos = (await crearProfesional(db, M, O, centro, { nombre: "Agos", apellido: "Lima" })).id;
+  await guardarHabilidades(db, M, O, paula, { skillIds: [], servicioIds: [descontracturante, piedras] });
+  await guardarHabilidades(db, M, O, agos, { skillIds: [], servicioIds: [laminado] });
+  for (const p of [paula, agos]) await guardarHorarioProfesional(db, M, O, p, centro, semanaDesdeTextos(semana));
+  return true;
+}
+
 const DESCRIPCIONES: Record<string, string> = {
   "Esmaltado semipermanente": "Color con brillo que dura hasta tres semanas. Incluye limado y cuidado de cutículas.",
   "Kapping gel": "Capa de gel sobre la uña natural para darle fuerza y que crezca sin quebrarse.",
   "Retiro de semipermanente": "Retiro cuidadoso del esmaltado sin dañar la uña natural.",
   "Belleza de pies": "Pedicuría estética con exfoliación, hidratación y esmaltado tradicional.",
+  "Masaje descontracturante": "Masaje profundo de espalda, cuello y hombros para aflojar tensiones.",
+  "Masaje con piedras calientes": "Masaje de cuerpo completo con piedras volcánicas tibias.",
+  "Laminado de cejas": "Alisa y fija el pelo de la ceja para darle forma y volumen.",
 };
 const IMAGENES_SERVICIOS: Record<string, string> = { "Esmaltado semipermanente": "semipermanente.jpg", "Kapping gel": "kapping.jpg", "Retiro de semipermanente": "retiro.jpg", "Belleza de pies": "pies.jpg" };
 const FOTOS_PROFESIONALES: Record<string, string> = { Ana: "ana.jpg", Bea: "bea.jpg", Carla: "carla.jpg" };

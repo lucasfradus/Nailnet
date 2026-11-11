@@ -13,6 +13,15 @@ export function importe(centavos: bigint): string {
   return `${signo}${abs / 100n}.${(abs % 100n).toString().padStart(2, "0")}`;
 }
 
+/**
+ * Universos de la operación (doc 31, D21): dos negocios que corren a la vez en la sede. Manos y pies es
+ * el salón (con y sin turno, mucho volumen); Tratamientos trabaja con turno previo. El universo es de la
+ * categoría y sus servicios lo heredan.
+ */
+export const UNIVERSOS = ["MANOS_PIES", "TRATAMIENTOS"] as const;
+export type Universo = (typeof UNIVERSOS)[number];
+export const esUniverso = (v: unknown): v is Universo => typeof v === "string" && (UNIVERSOS as readonly string[]).includes(v);
+
 export type TipoSena = "NINGUNA" | "FIJA" | "PORCENTAJE";
 export type Sena = { tipo: TipoSena; valor: string | null } | null;
 

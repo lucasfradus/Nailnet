@@ -1,5 +1,5 @@
 import { AccesoDenegado, cubreSede, tienePermiso, type Permiso } from "@nailnet/domain";
-import { aCentavos, importe, servicioEfectivo, validarBuffer, validarDuracion, validarSena, type Sena, type TipoSena } from "@nailnet/domain/catalogo";
+import { aCentavos, esUniverso, importe, servicioEfectivo, validarBuffer, validarDuracion, validarSena, type Sena, type TipoSena, type Universo } from "@nailnet/domain/catalogo";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, bloquearOrganizacion, exigirIds, mapaSedes } from "./access.ts";
@@ -58,10 +58,15 @@ export async function listarCatalogo(db: Database, actorId: string, organizacion
   };
 }
 
-/** Alta (sin id) o edición. El orden define cómo se listan las categorías (menor primero). */
-export async function guardarCategoria(db: Database, actorId: string, organizacionId: string, datos: { nombre: string; orden?: number }, categoriaId?: string) {
+/**
+ * Alta (sin id) o edición. El orden define cómo se listan las categorías (menor primero). El universo
+ * (doc 31) dice en qué tablero de recepción aparecen sus servicios: sin indicarlo, una categoría nueva
+ * nace en Manos y pies y una existente conserva el suyo.
+ */
+export async function guardarCategoria(db: Database, actorId: string, organizacionId: string, datos: { nombre: string; orden?: number; universo?: Universo | null }, categoriaId?: string) {
   exigirIds(categoriaId);
-  const data = { nombre: nombreValido(datos.nombre, 60), orden: Math.trunc(datos.orden ?? 0) || 0 };
+  if (datos.universo != null && !esUniverso(datos.universo)) throw new DatosInvalidos("Elegí el universo de la categoría: Manos y pies o Tratamientos");
+  const data = { nombre: nombreValido(datos.nombre, 60), orden: Math.trunc(datos.orden ?? 0) || 0, ...(datos.universo ? { universo: datos.universo } : {}) };
   if (Math.abs(data.orden) > 9999) throw new DatosInvalidos("El orden va de -9999 a 9999");
   try {
     return await db.$transaction(async tx => {
@@ -75,7 +80,7 @@ export async function guardarCategoria(db: Database, actorId: string, organizaci
     });
   } catch (e) { unico(e, "Ya existe una categoría con ese nombre"); }
 }
-export const crearCategoria = (db: Database, actorId: string, organizacionId: string, nombre: string, orden = 0) => guardarCategoria(db, actorId, organizacionId, { nombre, orden });
+export const crearCategoria = (db: Database, actorId: string, organizacionId: string, nombre: string, orden = 0, universo?: Universo) => guardarCategoria(db, actorId, organizacionId, { nombre, orden, universo });
 
 /** Alta o edición. servicioIds reemplaza el conjunto de servicios que exigen esta habilidad. */
 export async function guardarSkill(db: Database, actorId: string, organizacionId: string, datos: { nombre: string; servicioIds?: string[] }, skillId?: string) {
@@ -202,7 +207,7 @@ export async function catalogoSede(db: Database, actorId: string, organizacionId
   const franquiciadoDe = await mapaSedes(db, organizacionId);
   const servicios = await db.servicio.findMany({
     where: { organizacionId },
-    include: { categoria: { select: { nombre: true, orden: true } }, sedes: { where: { sedeId } } },
+    include: { categoria: { select: { nombre: true, orden: true, universo: true } }, sedes: { where: { sedeId } } },
     orderBy: [{ categoria: { orden: "asc" } }, { nombre: "asc" }],
   });
   return {
@@ -211,7 +216,7 @@ export async function catalogoSede(db: Database, actorId: string, organizacionId
       const ss = s.sedes[0];
       const enSede = ss ? { habilitado: ss.habilitado, precio: ss.precio?.toFixed(2) ?? null, duracionMinutos: ss.duracionMinutos, sena: senaDe(ss.senaTipo, ss.senaValor), reservableOnline: ss.reservableOnline } : null;
       return {
-        id: s.id, nombre: s.nombre, categoria: s.categoria.nombre, activo: s.activo, duracionBase: s.duracionMinutos, senaBase: senaDe(s.senaTipo, s.senaValor),
+        id: s.id, nombre: s.nombre, categoria: s.categoria.nombre, universo: s.categoria.universo, activo: s.activo, duracionBase: s.duracionMinutos, senaBase: senaDe(s.senaTipo, s.senaValor),
         enSede, efectivo: servicioEfectivo({ duracionMinutos: s.duracionMinutos, bufferAntesMinutos: s.bufferAntesMinutos, bufferDespuesMinutos: s.bufferDespuesMinutos, sena: senaDe(s.senaTipo, s.senaValor), activo: s.activo }, enSede),
       };
     }),

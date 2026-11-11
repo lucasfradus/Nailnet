@@ -75,6 +75,13 @@ export type ItemPedido = {
    * dos profesionales). Lo que sigue sin esta marca empieza cuando terminó todo lo anterior.
    */
   conAnterior?: boolean;
+  /**
+   * Unidades de recurso pedidas (doc 31, etapa 4: recepción siempre elige la cabina; es el «requisito de
+   * unidad específica» que el doc 14 dejó pendiente). Cada una tiene que estar libre todo el intervalo, o
+   * no hay turno; lo que el requisito pida de más se completa con cualquiera libre. Una unidad que no es
+   * de un tipo requerido, o más unidades de un tipo que la cantidad pedida, dejan el ítem sin turno.
+   */
+  recursoIds?: string[];
 };
 export type DatosProfesional = { jornada: Intervalo[]; ocupado: Intervalo[]; cargaMinutos: number };
 export type DatosRecurso = { id: string; tipoRecursoId: string; ocupado: Intervalo[] };
@@ -100,14 +107,21 @@ function libre(ocupado: readonly Intervalo[], tentativo: readonly Intervalo[], i
   return !ocupado.some(o => cruza(o, intervalo)) && !tentativo.some(o => cruza(o, intervalo));
 }
 
-/** Unidades distintas por tipo, libres en todo el intervalo; orden estable por ID. */
+/** Unidades distintas por tipo, libres en todo el intervalo: primero las pedidas, el resto en orden estable por ID. */
 function asignarRecursos(item: ItemPedido, intervalo: Intervalo, recursos: Consulta["recursos"], tentativos: Map<string, Intervalo[]>): string[] | null {
+  const pedidas = new Set(item.recursoIds ?? []);
+  const disponible = (r: DatosRecurso) => libre(r.ocupado, tentativos.get(r.id) ?? [], intervalo);
   const elegidos: string[] = [];
   for (const req of item.requisitos) {
-    const libres = recursos.filter(r => r.tipoRecursoId === req.tipoRecursoId && libre(r.ocupado, tentativos.get(r.id) ?? [], intervalo)).map(r => r.id).sort();
-    if (libres.length < req.cantidad) return null;
-    elegidos.push(...libres.slice(0, req.cantidad));
+    const delTipo = recursos.filter(r => r.tipoRecursoId === req.tipoRecursoId);
+    const propias = delTipo.filter(r => pedidas.has(r.id));
+    if (propias.length > req.cantidad || !propias.every(disponible)) return null;
+    const resto = delTipo.filter(r => !pedidas.has(r.id) && disponible(r)).map(r => r.id).sort();
+    if (propias.length + resto.length < req.cantidad) return null;
+    elegidos.push(...propias.map(r => r.id).sort(), ...resto.slice(0, req.cantidad - propias.length));
   }
+  // Una unidad pedida que no corresponde a ningún requisito (otro tipo, o que no está entre los recursos).
+  if ([...pedidas].some(id => !elegidos.includes(id))) return null;
   return elegidos;
 }
 

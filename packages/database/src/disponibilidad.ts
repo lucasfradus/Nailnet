@@ -9,8 +9,13 @@ import { configuracionEfectiva } from "./configuracion.ts";
 
 type Db = Database | Prisma.TransactionClient;
 export type Canal = "ONLINE" | "RECEPCION";
-/** `conAnterior`: el ítem empieza junto con el anterior (doc 29). Solo en recepción. */
-export type Pedido = { sedeId: string; fecha: string; canal: Canal; items: { servicioId: string; profesionalId?: string | null; conAnterior?: boolean }[] };
+/**
+ * `conAnterior`: el ítem empieza junto con el anterior (doc 29). `recursoIds`: las unidades de recurso que
+ * eligió recepción (doc 31, etapa 4: la cabina la elige siempre recepción). Las dos cosas, solo en recepción.
+ */
+export type Pedido = { sedeId: string; fecha: string; canal: Canal; items: { servicioId: string; profesionalId?: string | null; conAnterior?: boolean; recursoIds?: string[] }[] };
+/** `ignorarReservaId`: la ocupación de esa reserva no cuenta (para ofrecer a dónde moverla, doc 31). */
+export type OpcionesConsulta = { ignorarReservaId?: string | null };
 
 /** Falta configuración que el negocio todavía no definió: el motor no supone valores. */
 export class ConfiguracionIncompleta extends Error {
@@ -36,12 +41,14 @@ export const semanal = <T extends { diaSemana: number; inicioMinutos: number; fi
  * `bloqueados`: dentro de la transacción de retención, limita candidatos y recursos a las filas ya
  * bloqueadas. Así no puede asignarse un profesional o recurso que apareció después de tomar los locks.
  */
-export async function cargarConsulta(db: Db, organizacionId: string, pedido: Pedido, ahora: Date, bloqueados?: { profesionales: ReadonlySet<string>; recursos: ReadonlySet<string> }) {
+export async function cargarConsulta(db: Db, organizacionId: string, pedido: Pedido, ahora: Date, bloqueados?: { profesionales: ReadonlySet<string>; recursos: ReadonlySet<string> }, opciones: OpcionesConsulta = {}) {
   const { sedeId, canal } = pedido;
   if (!validarFecha(pedido.fecha)) throw new DatosInvalidos("Fecha inválida");
   if (!pedido.items.length || pedido.items.length > 4) throw new DatosInvalidos("Elegí entre 1 y 4 servicios");
   if (canal === "ONLINE" && pedido.items.some(i => i.conAnterior)) throw new DatosInvalidos("Los servicios a la vez se toman en recepción");
-  exigirIds(sedeId, ...pedido.items.flatMap(i => [i.servicioId, i.profesionalId]));
+  // El portal no elige cabina: el motor asigna cualquiera libre (doc 31, etapa 4).
+  if (canal === "ONLINE" && pedido.items.some(i => i.recursoIds?.length)) throw new DatosInvalidos("La cabina se elige en recepción");
+  exigirIds(sedeId, opciones.ignorarReservaId, ...pedido.items.flatMap(i => [i.servicioId, i.profesionalId, ...(i.recursoIds ?? [])]));
   const sede = await db.sede.findFirst({ where: { id: sedeId, organizacionId, activo: true, franquiciado: { activo: true } }, select: { timezone: true } });
   if (!sede) throw new AccesoDenegado();
   const tz = sede.timezone;
@@ -76,6 +83,7 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
     if (!e?.habilitado) throw new DatosInvalidos("Hay un servicio que no está disponible en esta sede");
     if (canal === "ONLINE" && !e.reservableOnline) throw new DatosInvalidos("Hay un servicio que no se reserva online en esta sede");
   }
+  await validarRecursosPedidos(db, organizacionId, sedeId, pedido, efectivos);
 
   // Candidatos: activos, vinculados a la sede, habilitados para el servicio y con TODAS sus skills.
   const profesionales = await db.profesional.findMany({
@@ -92,7 +100,9 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
   const profIds = profesionales.map(p => p.id);
   // Secuencial a propósito: dentro de una transacción todas las consultas comparten conexión.
   const horarios = await db.horarioProfesional.findMany({ where: { profesionalId: { in: profIds }, sedeId } });
-  const ocupaciones = await db.reservaItem.findMany({ where: { profesionalId: { in: profIds }, ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, reserva: reservaActiva(ahora) }, select: { profesionalId: true, ocupaDesde: true, ocupaHasta: true } });
+  // Sin la propia reserva, para ofrecer moverla dentro de su mismo horario (doc 31). Sin opción, todas.
+  const reservaQueOcupa = (): Prisma.ReservaWhereInput => opciones.ignorarReservaId ? { AND: [reservaActiva(ahora), { id: { not: opciones.ignorarReservaId } }] } : reservaActiva(ahora);
+  const ocupaciones = await db.reservaItem.findMany({ where: { profesionalId: { in: profIds }, ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, reserva: reservaQueOcupa() }, select: { profesionalId: true, ocupaDesde: true, ocupaHasta: true } });
   const bloqueos = await db.bloqueoAgenda.findMany({ where: { profesionalId: { in: profIds }, inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } } });
   const horarioSede = await db.horarioSede.findMany({ where: { sedeId } });
   const excepciones = await db.excepcionHorario.findMany({ where: { organizacionId, fecha: new Date(`${pedido.fecha}T00:00:00Z`), OR: [{ sedeId }, { sedeId: null }] } });
@@ -112,7 +122,7 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
   const recursos = tipos.length ? await db.recurso.findMany({
     where: { sedeId, activo: true, tipoRecursoId: { in: tipos }, ...(bloqueados ? { id: { in: [...bloqueados.recursos] } } : {}) },
     include: {
-      ocupaciones: { where: { ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, item: { reserva: reservaActiva(ahora) } }, select: { ocupaDesde: true, ocupaHasta: true } },
+      ocupaciones: { where: { ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, item: { reserva: reservaQueOcupa() } }, select: { ocupaDesde: true, ocupaHasta: true } },
       bloqueos: { where: { inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } }, select: { inicio: true, fin: true } },
     },
   }) : [];
@@ -125,6 +135,7 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
       return {
         servicioId: i.servicioId, duracionMinutos: e.duracionMinutos, bufferAntesMinutos: e.bufferAntesMinutos, bufferDespuesMinutos: e.bufferDespuesMinutos,
         requisitos: e.servicio.recursos, candidatos: i.profesionalId ? candidatos.filter(c => c === i.profesionalId) : candidatos, conAnterior: !!i.conAnterior,
+        ...(i.recursoIds?.length ? { recursoIds: [...i.recursoIds] } : {}),
       };
     }),
     profesionales: datos,
@@ -132,6 +143,31 @@ export async function cargarConsulta(db: Db, organizacionId: string, pedido: Ped
     desdeMs, hastaMs: fueraDeHorizonte ? -1 : null,
   };
   return { consulta, efectivos, tipos, nombres: new Map(profesionales.map(p => [p.id, [p.nombre, p.apellido].filter(Boolean).join(" ")])) };
+}
+
+/**
+ * Las unidades pedidas por recepción tienen que ser recursos activos de la sede, de un tipo que el servicio
+ * requiere, sin repetir y sin pasarse de la cantidad del requisito (doc 31, etapa 4; doc 14: recursos).
+ * Se valida acá con mensajes claros; el motor igual descarta cualquier pedido que no corresponda.
+ */
+async function validarRecursosPedidos(db: Db, organizacionId: string, sedeId: string, pedido: Pedido, efectivos: Map<string, { servicio: { nombre: string; recursos: { tipoRecursoId: string; cantidad: number }[] } }>) {
+  const todos = pedido.items.flatMap(i => i.recursoIds ?? []);
+  if (!todos.length) return;
+  const filas = await db.recurso.findMany({ where: { id: { in: [...new Set(todos)] }, organizacionId, sedeId, activo: true }, select: { id: true, nombre: true, tipoRecursoId: true } });
+  const porId = new Map(filas.map(f => [f.id, f]));
+  for (const i of pedido.items) {
+    const pedidos = i.recursoIds ?? [];
+    if (new Set(pedidos).size !== pedidos.length) throw new DatosInvalidos("Elegiste dos veces la misma cabina");
+    const { servicio } = efectivos.get(i.servicioId)!;
+    for (const id of pedidos) {
+      const r = porId.get(id);
+      if (!r) throw new DatosInvalidos("La cabina elegida no está disponible en esta sede");
+      if (!servicio.recursos.some(q => q.tipoRecursoId === r.tipoRecursoId)) throw new DatosInvalidos(`${r.nombre} no es de las que usa ${servicio.nombre}`);
+    }
+    for (const q of servicio.recursos) {
+      if (pedidos.filter(id => porId.get(id)!.tipoRecursoId === q.tipoRecursoId).length > q.cantidad) throw new DatosInvalidos(`${servicio.nombre} usa ${q.cantidad === 1 ? "una sola unidad" : `${q.cantidad} unidades`} de ese tipo`);
+    }
+  }
 }
 
 function presentar(turno: Turno, nombres: Map<string, string>) {

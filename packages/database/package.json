@@ -25,7 +25,8 @@
     "./caja": "./src/caja.ts",
     "./incidencias": "./src/incidencias.ts",
     "./reportes": "./src/reportes.ts",
-    "./tablero": "./src/tablero.ts"
+    "./tablero": "./src/tablero.ts",
+    "./agenda-dia": "./src/agenda-dia.ts"
   },
   "scripts": {
     "generate": "prisma generate",

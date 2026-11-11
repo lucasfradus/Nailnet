@@ -1,6 +1,6 @@
 # Universos de recepción · propuesta · 2026-11-11
 
-Propuesta (D21). Sale de una segunda visita del usuario al local y del prototipo navegable que revisó el 2026-11-11. Extiende el tablero de recepción (29-tablero-recepcion.md, D20). **Etapa 1 implementada el 2026-11-11** (ver «Etapa 1: implementación» abajo); la etapa 2 está diseñada (ver «Etapa 2: diseño») y las demás, propuestas.
+Propuesta (D21). Sale de una segunda visita del usuario al local y del prototipo navegable que revisó el 2026-11-11. Extiende el tablero de recepción (29-tablero-recepcion.md, D20). **Etapas 1 y 5 implementadas el 2026-11-11.** De las etapas 2 y 4 está hecha la capa de datos y falta la pantalla. La etapa 3 está propuesta.
 
 ## Qué se vio en el local
 
@@ -29,7 +29,7 @@ El tablero del doc 29 resuelve bien el primero. Para el segundo, una lista de pr
 2. **Manos y pies: sentar desde el tablero.** Elegir una clienta en espera y resaltar quién puede; sentarla con un toque, sin pasar por «Atender ahora». Alta rápida de la clienta sin turno. Libres ordenadas por quién espera hace más y ocupadas por quién termina antes. Franja con las próximas dos horas de cada profesional.
 3. **Flexibilidad con los turnos de Manos y pies.** Cambiar de profesional un turno reservado. Turno que llega con su profesional ocupada: pasa primero a la espera. Pasar una atención en curso a otra profesional. Sentar aunque pise un turno cercano, con aviso. Sumar un servicio a una atención en curso, para que la visita sea una sola comanda.
 4. **Tratamientos: agenda del día en grilla.** Columnas por profesional o por cabina (las cabinas rotan), bloques por duración y línea de la hora actual. Mover un turno a otro horario o a otra profesional de la misma especialidad. Reservar tocando un hueco. Huecos del día para ofrecer por teléfono.
-5. **Reportes por universo.** Las secciones de 30-reportes.md, separadas.
+5. **Reportes por universo** (hecha). Las secciones de 30-reportes.md, para toda la sede o para un universo.
 
 Cada etapa es un cambio que se puede usar solo.
 
@@ -161,10 +161,20 @@ La pestaña Tratamientos pasa de listas a una grilla del día. Se apoya en lo qu
 - Huecos del día de una hora o más, para ofrecer por teléfono.
 - Debajo siguen «Por cobrar» y la entrada y salida de las profesionales.
 
+## Etapa 5: reportes por universo · 2026-11-11
+
+La pantalla Reportes se ve para toda la sede, como antes, o para un universo. Las definiciones están en 30-reportes.md, sección «Por universo».
+
+- El selector aparece solo si la sede tiene servicios de los dos universos, y se conserva al cambiar el período. El CSV acepta `universo`.
+- Con un universo: ventas y base comisionable solo con las líneas de sus servicios (el descuento se prorratea sobre la venta completa y después se filtra); turnos y clientes con algún servicio suyo; ocupación y presencia de sus profesionales.
+- **Lo que es de la venta completa no se separa:** ticket promedio, cobros por medio de pago y señas. Tampoco los productos, que no tienen universo.
+- El universo de un servicio es el de su categoría al momento del reporte: cambiar una categoría de universo mueve también su historia.
+
 ## Verificación
 
 - `npm run test:database` (207 pruebas): el universo de la categoría (por defecto, edición, valor inválido, herencia al servicio) y el tablero separado (sede con un solo universo, profesional de los dos, profesional sin servicios, turnos de hoy, espera, por cobrar compartido, resumen de pestañas y atención de una profesional sin entrada marcada). El seed corre dos veces y agrega los tratamientos una sola.
 - `npm run check` y `npm run test:domain`.
+- Etapa 5, en un navegador real contra la demo, con una atención cobrada de cada universo y una mixta con descuento: los totales de cada universo dan lo esperado con el descuento prorrateado, los seis CSV bajan, el de cobros con un universo y un universo desconocido responden 400, y una sede de un solo universo no muestra el selector.
 - Probado en un navegador real (Chromium) contra una base local con la demo:
   - las dos pestañas con su resumen, y cada una con sus profesionales, servicios, espera y turnos;
   - el orden de las secciones y los botones de Tratamientos;

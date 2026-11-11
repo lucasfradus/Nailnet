@@ -87,13 +87,13 @@ Migración `202611110010_universos`. Dominio en `packages/domain/src/catalogo.ts
 | ¿Las cabinas de Tratamientos son fijas por profesional? | No, van rotando | Etapa 4: la grilla necesita también la vista por cabina |
 | ¿Quién elige la cabina? | Recepción, siempre | Etapa 4: al reservar y al mover se elige la cabina; el motor tiene que aceptar una unidad pedida |
 | ¿Hay que marcar la llegada en Tratamientos? | No. Solo se marca cuando empieza la sesión | Etapa 4: «Empezó» en lugar de «Llegó» |
+| ¿La ficha es obligatoria para cobrar? | No. La pantalla la pide, pero se puede cobrar sin ficha | Etapa 2 |
+| Sin ficha, ¿se puede sentar un servicio que exige consentimiento firmado? | No: primero la ficha. Qué consentimientos exige cada servicio se define en su ficha del catálogo | Etapa 2 |
 
 Siguen abiertas:
 
 - **Profesionales compartidas:** ¿alguna trabaja en los dos universos? Hoy aparecería en las dos pestañas.
 - **Recepción:** ¿cada recepcionista mira un universo, o todas alternan? Hoy cada navegador recuerda el suyo.
-- **Cobrar sin ficha:** al cobrar, la pantalla pide completar la ficha y deja cobrar igual con un aviso. Falta confirmar si tiene que ser obligatoria.
-- **Consentimientos:** sin ficha no se sienta un servicio que exige consentimiento firmado. Falta confirmar que así está bien.
 
 ## Etapa 2: diseño · 2026-11-11
 

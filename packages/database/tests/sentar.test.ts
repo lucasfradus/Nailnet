@@ -154,13 +154,15 @@ test("sentar desde la espera (doc 31, etapa 2)", async (t) => {
       assert.deepEqual((await prepararVenta(db, R, O, centro, primero.reservaId)).turno?.espera, { nombre: "Pía", telefono: "1177778888" });
       await assert.rejects(sentarEspera(db, R, O, { esperaId: espera.id, items: [{ servicioId: pies, profesionalId: ana }] }, en("12:12")), /de los que pidió/, "los pies ya se sentaron");
 
+      // Etapa 3b (doc 31): una sola comanda por visita. Lo que se sienta después se suma al turno en curso.
       const segundo = await sentarEspera(db, R, O, { esperaId: espera.id, items: [{ servicioId: manos, profesionalId: ana }] }, en("12:15"));
       pia = segundo.reservaId;
+      assert.equal(segundo.reservaId, primero.reservaId);
+      assert.deepEqual(segundo.items.map(i => [i.servicioId, i.profesionalId, iso(i.inicio)]), [[pies, bea, en("12:10").toISOString()], [manos, ana, en("12:15").toISOString()]]);
       const cerrada = await db.esperaRecepcion.findUniqueOrThrow({ where: { id: espera.id } });
-      assert.deepEqual([cerrada.estado, cerrada.reservaId, cerrada.servicioIds], ["ATENDIDA", segundo.reservaId, [manos]]);
-      assert.deepEqual(await db.reserva.findMany({ where: { id: { in: [primero.reservaId, segundo.reservaId] } }, select: { clienteProvisional: true } }), [{ clienteProvisional: "Pía" }, { clienteProvisional: "Pía" }]);
+      assert.deepEqual([cerrada.estado, cerrada.reservaId, cerrada.servicioIds], ["ATENDIDA", primero.reservaId, [manos]]);
+      assert.deepEqual(await db.reserva.findMany({ where: { id: { in: [primero.reservaId, segundo.reservaId] } }, select: { clienteProvisional: true } }), [{ clienteProvisional: "Pía" }]);
       await terminarAtencion(db, R, O, primero.reservaId, en("13:20"));
-      await terminarAtencion(db, R, O, segundo.reservaId, en("13:20"));
     });
 
     await t.test("dos recepcionistas sientan a la misma clienta a la vez: entra un solo turno", async () => {

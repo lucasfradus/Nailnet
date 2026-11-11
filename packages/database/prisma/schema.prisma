@@ -103,6 +103,8 @@ enum TipoEventoReserva {
   REPROGRAMADA
   ATENDIDA
   AUSENTE
+  // Universos, etapa 3b (doc 31): a una atención en curso se le sumó un servicio (una sola comanda por visita).
+  SERVICIO_SUMADO
 }
 
 enum Ambiente {
@@ -656,7 +658,10 @@ model EsperaRecepcion {
   sede            Sede         @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
   cliente         Cliente?     @relation(fields: [organizacionId, clienteId], references: [organizacionId, id], onDelete: Restrict)
   profesional     Profesional? @relation(fields: [organizacionId, profesionalId], references: [organizacionId, id], onDelete: Restrict)
-  reserva         Reserva?     @relation(fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+  // El turno con el que se cerró la espera.
+  reserva         Reserva?     @relation("EsperaCerrada", fields: [organizacionId, reservaId], references: [organizacionId, id], onDelete: Restrict)
+  // Universos, etapa 3b (doc 31): los turnos que salieron de esta espera (Reserva.esperaId).
+  turnos          Reserva[]    @relation("TurnoDeEspera")
 
   @@unique([organizacionId, id])
   @@index([sedeId, estado, llegada])
@@ -813,6 +818,12 @@ model Reserva {
   // la clienta con turno) y terminó («Terminó» libera a la profesional y recorta la agenda a ese minuto).
   iniciadaEn         DateTime?
   terminadaEn        DateTime?
+  // Universos, etapa 3b (doc 31): la clienta con turno llegó y espera a su profesional (todavía sin empezar).
+  // Nunca en una atención sin turno previo (CHECK en la migración).
+  llegoEn            DateTime?
+  // La espera de la que salió el turno: une la visita en una sola comanda y precarga la ficha al cobrar.
+  esperaId           String?           @db.Uuid
+  espera             EsperaRecepcion?  @relation("TurnoDeEspera", fields: [organizacionId, esperaId], references: [organizacionId, id], onDelete: Restrict)
   creadoPor          String?           @db.Uuid
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -824,10 +835,11 @@ model Reserva {
   checkouts          CheckoutPago[]
   pagos              Pago[]
   ventas             Venta[]
-  esperas            EsperaRecepcion[]
+  esperas            EsperaRecepcion[] @relation("EsperaCerrada")
 
   @@unique([organizacionId, id])
   @@index([sedeId, estado])
+  @@index([esperaId])
 }
 
 // Un servicio con su profesional e intervalo; snapshots de condiciones al reservar.

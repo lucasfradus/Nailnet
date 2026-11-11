@@ -49,6 +49,8 @@ export async function encolarEmailReserva(tx: Tx, ev: EventoReserva) {
   const d = (ev.detalle && typeof ev.detalle === "object" && !Array.isArray(ev.detalle) ? ev.detalle : {}) as Record<string, unknown>;
   let tipo: string;
   let payload: { reservaId: string; anteriorId?: string };
+  // Doc 31, etapa 3b: `sentarTurno` reprograma con la clienta en el local; no hay nada que avisarle.
+  if (d.sentada === true) return null;
   if (ev.tipo === "REPROGRAMADA" && typeof d.nuevaReservaId === "string") { tipo = TIPO_EMAIL.reprogramada; payload = { reservaId: d.nuevaReservaId, anteriorId: ev.reservaId }; }
   // Un cliente atendido en el momento (sin turno previo) no recibe confirmación: ya está en la sede.
   else if ((ev.tipo === "CREADA" && ev.estadoNuevo === "CONFIRMADA" && !d.reprogramadaDesde && !d.sinTurnoPrevio) || ev.tipo === "CONFIRMADA") { tipo = TIPO_EMAIL.confirmada; payload = { reservaId: ev.reservaId }; }

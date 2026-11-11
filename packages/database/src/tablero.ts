@@ -5,7 +5,7 @@ import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds, sedesConPermiso } from "./access.ts";
 import { ConfiguracionIncompleta, reservaActiva } from "./disponibilidad.ts";
-import { PROFESIONAL_OCUPADA, TurnoNoDisponible, tomarTurno, type TurnoTomado } from "./reservas.ts";
+import { PROFESIONAL_OCUPADA, TurnoNoDisponible, sumarEnAtencion, tomarTurno, type TurnoTomado } from "./reservas.ts";
 
 // Tablero de recepción (doc 29, D20): quién está en el local, quién está libre y para qué, quién atiende a
 // quién y qué falta cobrar. Las profesionales no usan el celular en el salón: todo lo marca recepción.
@@ -106,6 +106,11 @@ const YA_NO_ESPERA = "Esa clienta ya no está en la lista de espera (la atendió
  * sistema avisa, no traba: sus turnos reservados que todavía no empezaron no cuentan como ocupación, y el
  * evento de creación guarda en `pisadas` cuáles pisó. Siguen contando las atenciones en curso, las ausencias,
  * la jornada y los recursos (ver `OpcionesConsulta`).
+ *
+ * Etapa 3b (doc 31), una sola comanda por visita: el turno guarda `esperaId`. Si esa espera ya tiene un turno
+ * con la atención en curso (un sentado parcial), lo que se sienta después se suma a ese turno
+ * (`sumarEnAtencion`, con los mismos locks y la espera bloqueada en la misma transacción) y se devuelve ese
+ * turno. Si no, se crea uno como siempre. El cierre de la espera no cambia.
  */
 export async function sentarEspera(db: Database, actorId: string, organizacionId: string, datos: { esperaId: string; items: { servicioId: string; profesionalId: string }[]; pisar?: boolean }, ahora = new Date()): Promise<TurnoTomado> {
   if (!datos.items.length) throw new DatosInvalidos("Elegí al menos un servicio");
@@ -122,10 +127,13 @@ export async function sentarEspera(db: Database, actorId: string, organizacionId
   const restantes = e.servicioIds.filter(id => !servicioIds.includes(id));
   const mismos = (a: string[]) => a.length === e.servicioIds.length && a.every((id, n) => id === e.servicioIds[n]);
 
-  const antes = async (tx: Prisma.TransactionClient) => {
+  const bloquearEspera = async (tx: Prisma.TransactionClient) => {
     await tx.$queryRaw`SELECT id FROM "EsperaRecepcion" WHERE id = ${datos.esperaId}::uuid FOR UPDATE`;
     const actual = await tx.esperaRecepcion.findUniqueOrThrow({ where: { id: datos.esperaId }, select: { estado: true, servicioIds: true } });
     if (actual.estado !== "ESPERANDO" || !mismos(actual.servicioIds)) throw new DatosInvalidos(YA_NO_ESPERA);
+  };
+  const antes = async (tx: Prisma.TransactionClient) => {
+    await bloquearEspera(tx);
     if (!e.clienteId && await tx.servicioConsentimiento.count({ where: { organizacionId, servicioId: { in: servicioIds } } }))
       throw new DatosInvalidos("Ese servicio exige un consentimiento firmado: elegí o cargá la ficha de la clienta antes de sentarla");
   };
@@ -136,12 +144,16 @@ export async function sentarEspera(db: Database, actorId: string, organizacionId
     });
     if (count !== 1) throw new DatosInvalidos(YA_NO_ESPERA);
   };
+  // Una comanda por visita: la clienta ya se está atendiendo por esta espera. El consentimiento sin ficha lo
+  // verifica `sumarEnAtencion` contra el turno (que pudo recibir la ficha después de sentarla).
+  const enCurso = await db.reserva.findFirst({ where: { organizacionId, esperaId: datos.esperaId, estado: "CONFIRMADA", iniciadaEn: { not: null } }, orderBy: { createdAt: "asc" }, select: { id: true } });
+  if (enCurso) return sumarEnAtencion(db, actorId, organizacionId, enCurso.id, datos.items, ahora, { pisar: datos.pisar, antes: bloquearEspera, despues, evento: { esperaId: datos.esperaId } });
   // Al minuto, como «Atender ahora»: el turno empieza ahora y el motor lo valida con «ahora» como límite.
   const inicio = new Date(Math.floor(ahora.getTime() / 60_000) * 60_000);
   try {
     return await tomarTurno(db, actorId, organizacionId, {
       sedeId: e.sedeId, fecha: aLocal(inicio, e.sede.timezone).fecha, canal: "RECEPCION", clienteId: e.clienteId, clienteProvisional: e.clienteId ? null : e.nombre,
-      items: datos.items.map((i, n) => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, conAnterior: n > 0 })), inicio, sinTurnoPrevio: true,
+      items: datos.items.map((i, n) => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, conAnterior: n > 0 })), inicio, sinTurnoPrevio: true, esperaId: datos.esperaId,
     }, inicio, { antes, despues, evento: { esperaId: datos.esperaId }, ...(datos.pisar ? { consulta: { pisar: datos.items.map(i => i.profesionalId) } } : {}) });
   } catch (err) {
     if (err instanceof TurnoNoDisponible) throw new DatosInvalidos(PROFESIONAL_OCUPADA);
@@ -170,6 +182,11 @@ type ClienteBreve = { id: string; nombre: string; apellido: string | null } | nu
  * entre ahora y dos horas más, recortadas a esa ventana: la atención en curso y los turnos reservados).
  * Donde hay cliente, también `clienteProvisional` (el nombre de la clienta sentada sin ficha), y en cada
  * espera, su ficha si la tiene.
+ *
+ * Etapa 3 (doc 31): cada turno por llegar trae `riesgos` (sus profesionales que atienden a otra clienta y
+ * terminan después de la hora de su servicio en ese turno, o vienen demoradas). `llegaron` trae los turnos de
+ * hoy cuya clienta llegó y espera a su profesional (`registrarLlegada`), por orden de llegada; esos turnos ya
+ * no están en `porLlegar`, y el resumen por universo los cuenta entre las esperas.
  */
 export async function tableroSede(db: Database, actorId: string, organizacionId: string, sedeId: string, ahora = new Date(), opciones: { universo?: Universo | null } = {}) {
   await exigirSede(db, actorId, organizacionId, sedeId);
@@ -255,8 +272,15 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
 
   // Se traen los turnos hasta el fin del día: Tratamientos los muestra todos; el resto, solo los cercanos.
   const porLlegar = await db.reserva.findMany({
-    where: { organizacionId, sedeId, estado: "CONFIRMADA", iniciadaEn: null, items: { some: { posicion: 0, inicio: { lt: finDia > cerca ? finDia : cerca, gte: new Date(ahora.getTime() - POR_LLEGAR_MS) } } } },
+    where: { organizacionId, sedeId, estado: "CONFIRMADA", iniciadaEn: null, llegoEn: null, items: { some: { posicion: 0, inicio: { lt: finDia > cerca ? finDia : cerca, gte: new Date(ahora.getTime() - POR_LLEGAR_MS) } } } },
     select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, profesionalId: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
+  });
+  // Etapa 3b (doc 31): las clientas con turno de hoy que llegaron y esperan a su profesional, por orden de
+  // llegada. Salen de los turnos por llegar.
+  const llegados = await db.reserva.findMany({
+    where: { organizacionId, sedeId, estado: "CONFIRMADA", iniciadaEn: null, llegoEn: { not: null }, items: { some: { posicion: 0, inicio: { gte: inicioDia, lt: finDia } } } },
+    select: { id: true, llegoEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, servicioId: true, profesionalId: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    orderBy: [{ llegoEn: "asc" }, { id: "asc" }],
   });
   const porCobrar = await db.reserva.findMany({
     where: { organizacionId, sedeId, estado: "ATENDIDA", ventas: { none: { estado: { not: "ANULADA" } } }, items: { some: { posicion: 0, inicio: { gte: new Date(ahora.getTime() - POR_COBRAR_DIAS * 86_400_000) } } } },
@@ -290,6 +314,12 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
     return [{ profesionalId, profesional: nombre(it.profesional), demorada, libreEstimado: demorada ? null : fin }];
   });
   const llegan = porLlegar.map(r => ({ ...resumen(r), riesgos: riesgos(r) })).sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+  const llegaron = llegados.map(r => ({
+    reservaId: r.id, cliente: r.cliente as ClienteBreve, clienteProvisional: r.clienteProvisional, llegoEn: r.llegoEn!, inicio: r.items[0]!.inicio,
+    items: r.items.map(i => ({ servicioId: i.servicioId, servicio: i.servicio.nombre, profesionalId: i.profesionalId, profesional: nombre(i.profesional) })),
+  }));
+  // Como los turnos por llegar: es del universo si tiene algún servicio suyo. Ya están en el local, así que sin ventana de horario.
+  const llegoEn = (r: (typeof llegados)[number], x: Universo) => r.items.some(i => i.servicio.categoria.universo === x);
 
   // Una profesional está en un universo si hace algún servicio suyo. Sin servicios habilitados aparece en
   // los dos, para que recepción igual pueda marcarle la entrada y la salida.
@@ -305,12 +335,13 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
     universos: activos.length > 1 ? UNIVERSOS.map(x => {
       // En el local: con la entrada marcada acá, o atendiendo acá aunque no se la hayan marcado.
       const enLocal = filas.filter(f => proEn(f, x) && ((f.presencia && !f.presencia.otraSede) || (f.atencion && !f.atencion.enOtraSede)));
-      return { universo: x, libres: enLocal.filter(f => !f.atencion).length, atendiendo: enLocal.filter(f => f.atencion).length, esperas: esperas.filter(e => esperaEn(e, x)).length, porLlegar: llegan.filter(r => llegaEn(r, x)).length };
+      return { universo: x, libres: enLocal.filter(f => !f.atencion).length, atendiendo: enLocal.filter(f => f.atencion).length, esperas: esperas.filter(e => esperaEn(e, x)).length + llegados.filter(r => llegoEn(r, x)).length, porLlegar: llegan.filter(r => llegaEn(r, x)).length };
     }) : [],
     servicios: servicios.filter(s => !universo || s.servicio.categoria.universo === universo).map(s => ({ id: s.servicio.id, nombre: s.servicio.nombre, duracionMinutos: s.duracionMinutos ?? s.servicio.duracionMinutos })),
     profesionales: universo ? filas.filter(f => proEn(f, universo)).map(f => ({ ...f, servicioIds: f.servicioIds.filter(id => universoDe.get(id) === universo) })) : filas,
     porLlegar: llegan.filter(r => universo ? llegaEn(r, universo) : r.inicio < cerca),
     esperas: universo ? esperas.filter(e => esperaEn(e, universo)) : esperas,
+    llegaron: universo ? llegaron.filter((_, n) => llegoEn(llegados[n]!, universo)) : llegaron,
     porCobrar: porCobrar.map(r => ({ ...resumen(r), terminadaEn: r.terminadaEn ?? r.items.at(-1)!.fin }))
       .sort((a, b) => a.terminadaEn.getTime() - b.terminadaEn.getTime()),
   };

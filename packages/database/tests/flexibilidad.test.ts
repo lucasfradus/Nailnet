@@ -14,6 +14,7 @@ import { crearBloqueo, crearProfesional, crearRecurso, guardarHabilidades, guard
 import { pasarAtencion, registrarLlegada, reprogramarReserva, sentarTurno, sumarServicio, terminarAtencion, tomarTurno } from "../src/reservas.ts";
 import { agregarEspera, esperaSeFue, sentarEspera, tableroSede } from "../src/tablero.ts";
 import { destinosDeTurno } from "../src/agenda-dia.ts";
+import { disponiblesAhora } from "../src/disponibilidad.ts";
 import { prepararVenta, registrarVenta } from "../src/ventas.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
@@ -77,6 +78,18 @@ test("flexibilidad en Manos y pies (doc 31, etapa 3)", async (t) => {
     await crearBloqueo(db, M, O, bea, { inicio: en("11:30"), fin: en("12:00"), motivo: "Médico" });
 
     // ─── 3a ──────────────────────────────────────────────────────────────────
+
+    await t.test("disponiblesAhora: lo que entra pisando un turno, y hasta cuándo", async () => {
+      const de = async (id: string, hhmm: string) => {
+        const p = (await disponiblesAhora(db, R, O, centro, en(hhmm))).profesionales.find(x => x.id === id)!;
+        return { estado: p.estado, ahora: [...p.entranAhora].sort(), pisando: [...p.entranPisando].sort(), libreHasta: p.libreHasta, finJornada: p.finJornada };
+      };
+      assert.deepEqual(await de(ana, "09:30"), { estado: "libre", ahora: [], pisando: [manos, pies].sort(), libreHasta: en("22:00"), finJornada: en("22:00") }, "pisaría su turno de las 10:00");
+      assert.deepEqual(await de(dani, "10:00"), { estado: "libre", ahora: [], pisando: [], libreHasta: en("10:30"), finJornada: en("10:30") }, "no le entra antes del fin de su jornada");
+      assert.deepEqual(await de(bea, "10:35"), { estado: "ocupada", ahora: [], pisando: [pies], libreHasta: en("11:30"), finJornada: en("22:00") }, "manos no entra antes de su ausencia; pies sí, pisando");
+      assert.deepEqual(await de(eli, "09:30"), { estado: "libre", ahora: [manos, pies].sort(), pisando: [], libreHasta: en("22:00"), finJornada: en("22:00") }, "a Eli le entra todo sin pisar");
+      assert.deepEqual((await de(dani, "07:30")).finJornada, null, "fuera de su horario");
+    });
 
     let deEva = "";
     await t.test("sentar igual: sin pisar no entra; con pisar entra y el evento guarda lo pisado", async () => {

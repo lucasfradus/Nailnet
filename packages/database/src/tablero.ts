@@ -186,7 +186,8 @@ type ClienteBreve = { id: string; nombre: string; apellido: string | null } | nu
  * Etapa 3 (doc 31): cada turno por llegar trae `riesgos` (sus profesionales que atienden a otra clienta y
  * terminan después de la hora de su servicio en ese turno, o vienen demoradas). `llegaron` trae los turnos de
  * hoy cuya clienta llegó y espera a su profesional (`registrarLlegada`), por orden de llegada; esos turnos ya
- * no están en `porLlegar`, y el resumen por universo los cuenta entre las esperas.
+ * no están en `porLlegar`, y el resumen por universo los cuenta entre las esperas. Para la pantalla, los turnos
+ * traen `items` (servicio y profesional de cada uno) y la atención en curso, `servicioIds`.
  */
 export async function tableroSede(db: Database, actorId: string, organizacionId: string, sedeId: string, ahora = new Date(), opciones: { universo?: Universo | null } = {}) {
   await exigirSede(db, actorId, organizacionId, sedeId);
@@ -227,7 +228,7 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   // Una atención en curso sigue ocupando a la profesional aunque se haya pasado del horario estimado.
   const enCurso = await db.reservaItem.findMany({
     where: { organizacionId, profesionalId: { in: ids }, terminadoEn: null, reserva: { estado: "CONFIRMADA", iniciadaEn: { not: null } } },
-    select: { profesionalId: true, fin: true, ocupaDesde: true, ocupaHasta: true, servicio: { select: { nombre: true } }, reserva: { select: { id: true, sedeId: true, iniciadaEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } } } } },
+    select: { profesionalId: true, servicioId: true, fin: true, ocupaDesde: true, ocupaHasta: true, servicio: { select: { nombre: true } }, reserva: { select: { id: true, sedeId: true, iniciadaEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } } } } },
     orderBy: { inicio: "asc" },
   });
   // Último «Terminó» de hoy de cada una, para saber desde cuándo está libre.
@@ -261,7 +262,7 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
       presencia: presencia ? { id: presencia.id, entrada: presencia.entrada, otraSede: presencia.sedeId === sedeId ? null : presencia.sede.nombre } : null,
       atencion: reservaId ? {
         reservaId, enOtraSede: atencion[0]!.reserva.sedeId !== sedeId, cliente: atencion[0]!.reserva.cliente as ClienteBreve, clienteProvisional: atencion[0]!.reserva.clienteProvisional,
-        servicios: atencion.map(i => i.servicio.nombre), desde: atencion[0]!.reserva.iniciadaEn!, finEstimado: atencion.at(-1)!.fin,
+        servicios: atencion.map(i => i.servicio.nombre), servicioIds: atencion.map(i => i.servicioId), desde: atencion[0]!.reserva.iniciadaEn!, finEstimado: atencion.at(-1)!.fin,
       } : null,
       // Desde cuándo deja de estar libre: el próximo turno reservado, con su preparación.
       proximo: proximo ? { reservaId: proximo.reserva.id, inicio: proximo.inicio, ocupaDesde: proximo.ocupaDesde, servicio: proximo.servicio.nombre, cliente: proximo.reserva.cliente as ClienteBreve, otraSede: proximo.reserva.sedeId !== sedeId } : null,
@@ -273,7 +274,7 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   // Se traen los turnos hasta el fin del día: Tratamientos los muestra todos; el resto, solo los cercanos.
   const porLlegar = await db.reserva.findMany({
     where: { organizacionId, sedeId, estado: "CONFIRMADA", iniciadaEn: null, llegoEn: null, items: { some: { posicion: 0, inicio: { lt: finDia > cerca ? finDia : cerca, gte: new Date(ahora.getTime() - POR_LLEGAR_MS) } } } },
-    select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, profesionalId: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicioId: true, profesionalId: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
   });
   // Etapa 3b (doc 31): las clientas con turno de hoy que llegaron y esperan a su profesional, por orden de
   // llegada. Salen de los turnos por llegar.
@@ -284,7 +285,7 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   });
   const porCobrar = await db.reserva.findMany({
     where: { organizacionId, sedeId, estado: "ATENDIDA", ventas: { none: { estado: { not: "ANULADA" } } }, items: { some: { posicion: 0, inicio: { gte: new Date(ahora.getTime() - POR_COBRAR_DIAS * 86_400_000) } } } },
-    select: { id: true, terminadaEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, profesionalId: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
+    select: { id: true, terminadaEn: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } }, items: { orderBy: { posicion: "asc" }, select: { inicio: true, fin: true, servicioId: true, profesionalId: true, servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } },
     take: 100,
   });
   // Etapa 3: la lista de espera de hoy, por orden de llegada. Una espera olvidada de otro día no se muestra.
@@ -296,6 +297,8 @@ export async function tableroSede(db: Database, actorId: string, organizacionId:
   const resumen = (r: (typeof porLlegar)[number]) => ({
     reservaId: r.id, cliente: r.cliente as ClienteBreve, clienteProvisional: r.clienteProvisional, inicio: r.items[0]!.inicio,
     servicios: r.items.map(i => `${i.servicio.nombre} · ${nombre(i.profesional)}`),
+    // Etapa 3 (doc 31): servicio y profesional de cada uno, para «Cambiar de profesional» en el salón.
+    items: r.items.map(i => ({ servicioId: i.servicioId, profesionalId: i.profesionalId })),
     universos: UNIVERSOS.filter(x => r.items.some(i => i.servicio.categoria.universo === x)),
   });
   // Etapa 3a (doc 31): turno en riesgo. Una profesional del turno atiende a otra clienta y su fin estimado

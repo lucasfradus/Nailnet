@@ -221,8 +221,8 @@ test("grilla del día de Tratamientos (doc 31, etapa 4)", async (t) => {
       assert.deepEqual(tr.apertura.map(x => [x.desde.toISOString(), x.hasta.toISOString()]), [[iso("08:00"), iso("22:00")]]);
       assert.deepEqual(tr.servicios.map(s => [s.nombre, s.duracionMinutos, s.recursos]), [["Limpieza facial", 60, cabina], ["Masaje", 30, cabina]]);
       assert.deepEqual(tr.recursos.map(r => [r.nombre, r.tipo, r.tipoRecursoId]), [["Cabina 1", "Cabina", tipoCabina.id], ["Cabina 2", "Cabina", tipoCabina.id], ["Cabina 3", "Cabina", tipoCabina.id]], "activas de la sede, del tipo que piden sus servicios");
-      // Profesionales del universo, la que no tiene servicios, y Ana porque tiene un servicio en una reserva de Tratamientos.
-      assert.deepEqual(tr.profesionales.map(p => [p.nombre, p.servicioIds.length]), [["Ana", 0], ["Eva", 2], ["Flor", 2], ["Gabi", 0]]);
+      // Profesionales del universo y la que no tiene servicios. Ana no: su parte de la reserva mixta es de Manos y pies.
+      assert.deepEqual(tr.profesionales.map(p => [p.nombre, p.servicioIds.length]), [["Eva", 2], ["Flor", 2], ["Gabi", 0]]);
       const florDia = tr.profesionales.find(p => p.id === flor)!;
       assert.deepEqual(florDia.jornada.map(j => [j.desde.toISOString(), j.hasta.toISOString()]), [[iso("08:00"), iso("22:00")]]);
       assert.deepEqual(florDia.ausencias.map(x => [x.desde.toISOString(), x.hasta.toISOString(), x.motivo]), [[iso("20:00"), iso("21:00"), "Médico"]]);
@@ -238,7 +238,7 @@ test("grilla del día de Tratamientos (doc 31, etapa 4)", async (t) => {
       assert.deepEqual(estado(movido), ["CONFIRMADA"]);
       assert.deepEqual(estado(varios), ["CONFIRMADA", "CONFIRMADA"]);
       const mixtos = tr.turnos.filter(x => x.reservaId === mixta);
-      assert.deepEqual(mixtos.map(x => [x.posicion, x.itemsDeLaReserva, x.servicio, x.profesionalId, x.recursoIds]), [[0, 2, "Limpieza facial", eva, [cab1]], [1, 2, "Manos", ana, []]], "con todos sus servicios");
+      assert.deepEqual(mixtos.map(x => [x.posicion, x.itemsDeLaReserva, x.servicio, x.profesionalId, x.recursoIds]), [[0, 2, "Limpieza facial", eva, [cab1]]], "de la visita mixta, solo el servicio de este universo; itemsDeLaReserva avisa que tiene otro");
       const t19 = tr.turnos.find(x => x.reservaId === deEva19)!;
       assert.deepEqual({ ...t19, inicio: t19.inicio.toISOString(), fin: t19.fin.toISOString(), ocupaDesde: t19.ocupaDesde.toISOString(), ocupaHasta: t19.ocupaHasta.toISOString(), iniciadaEn: null }, {
         reservaId: deEva19, itemId: t19.itemId, posicion: 0, itemsDeLaReserva: 1, profesionalId: eva, recursoIds: [cab1],
@@ -250,19 +250,19 @@ test("grilla del día de Tratamientos (doc 31, etapa 4)", async (t) => {
       // La retención vencida ya no se muestra.
       assert.deepEqual((await agendaDia(db, R, O, { sedeId: centro, fecha: FECHA, universo: "TRATAMIENTOS" }, en("16:30"))).turnos.filter(x => x.reservaId === pendiente), []);
 
-      // Manos y pies: solo sus servicios y profesionales; la reserva mixta también aparece.
+      // Manos y pies: solo sus servicios y profesionales; de la reserva mixta, su parte.
       const mp = await agendaDia(db, R, O, { sedeId: centro, fecha: FECHA, universo: "MANOS_PIES" }, ahora);
       assert.deepEqual(mp.servicios.map(s => s.nombre), ["Manos", "Pies"]);
       assert.deepEqual(mp.recursos.map(r => r.nombre), ["Sillón 1"]);
-      assert.deepEqual(mp.profesionales.map(p => p.nombre), ["Ana", "Eva", "Gabi"], "Eva por la reserva mixta; Gabi, sin servicios, en los dos");
-      assert.deepEqual([...new Set(mp.turnos.map(x => x.reservaId))], [mixta]);
+      assert.deepEqual(mp.profesionales.map(p => p.nombre), ["Ana", "Gabi"], "Eva no hace nada de este universo; Gabi, sin servicios, en los dos");
+      assert.deepEqual(mp.turnos.map(x => [x.reservaId, x.servicio, x.profesionalId]), [[mixta, "Manos", ana]]);
 
       // Sin universo, todo.
       const todo = await agendaDia(db, R, O, { sedeId: centro, fecha: FECHA }, ahora);
       assert.deepEqual(todo.servicios.map(s => s.nombre), ["Limpieza facial", "Manos", "Masaje", "Pies"]);
       assert.deepEqual(todo.recursos.map(r => r.nombre), ["Cabina 1", "Cabina 2", "Cabina 3", "Sillón 1"]);
       assert.deepEqual(todo.profesionales.map(p => p.nombre), ["Ana", "Eva", "Flor", "Gabi"]);
-      assert.equal(todo.turnos.length, tr.turnos.length);
+      assert.equal(todo.turnos.length, tr.turnos.length + mp.turnos.length, "cada servicio está en un solo universo");
 
       // Otro día: no es hoy y no hay turnos.
       const manana = await agendaDia(db, R, O, { sedeId: centro, fecha: "2099-10-14", universo: "TRATAMIENTOS" }, ahora);

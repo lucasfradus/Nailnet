@@ -29,7 +29,8 @@ export type EstadoGrilla = "PENDIENTE_PAGO" | "CONFIRMADA" | "EN_SESION" | "POR_
  * - profesionales con la misma regla que el tablero (hace algún servicio suyo; sin servicios, en los dos),
  *   más cualquiera que tenga un turno ese día en la grilla, aunque ya no haga el servicio;
  * - servicios habilitados en la sede del universo, y las unidades activas de los tipos que piden;
- * - turnos de las reservas que tienen algún servicio del universo (con todos sus servicios).
+ * - turnos: solo los servicios del universo. De una visita mixta (manos con una profesional y un masaje
+ *   con otra) cada grilla muestra lo suyo; `itemsDeLaReserva` dice que el turno tiene más servicios.
  * Sin `universo`, todo. Cancelados y vencidos no se muestran.
  */
 export async function agendaDia(db: Database, actorId: string, organizacionId: string, filtro: { sedeId: string; fecha: string; universo?: Universo | null }, ahora = new Date()) {
@@ -71,8 +72,7 @@ export async function agendaDia(db: Database, actorId: string, organizacionId: s
     },
     orderBy: [{ inicio: "asc" }, { posicion: "asc" }],
   });
-  const reservasDelUniverso = new Set(filas.filter(f => !universo || f.servicio.categoria.universo === universo).map(f => f.reservaId));
-  const turnos = filas.filter(f => reservasDelUniverso.has(f.reservaId)).map(f => {
+  const turnos = filas.filter(f => !universo || f.servicio.categoria.universo === universo).map(f => {
     const r = f.reserva;
     const estado: EstadoGrilla =
       r.estado === "AUSENTE" ? "AUSENTE"

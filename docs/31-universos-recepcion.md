@@ -84,7 +84,9 @@ Migración `202611110010_universos`. Dominio en `packages/domain/src/catalogo.ts
 |---|---|---|
 | ¿Se puede sentar con solo el nombre? | Sí. La ficha se completa después. La tarjeta tiene que distinguir si la clienta ya tiene ficha o no | Etapa 2 |
 | ¿Sentar aunque pise un turno cercano? | Sí, sentar igual, con aviso | Etapa 3 |
-| ¿Las cabinas de Tratamientos son fijas por profesional? | No, van rotando | Etapa 4: la grilla necesita también la vista por cabina, y mover un turno tiene que reasignar la cabina |
+| ¿Las cabinas de Tratamientos son fijas por profesional? | No, van rotando | Etapa 4: la grilla necesita también la vista por cabina |
+| ¿Quién elige la cabina? | Recepción, siempre | Etapa 4: al reservar y al mover se elige la cabina; el motor tiene que aceptar una unidad pedida |
+| ¿Hay que marcar la llegada en Tratamientos? | No. Solo se marca cuando empieza la sesión | Etapa 4: «Empezó» en lugar de «Llegó» |
 
 Siguen abiertas:
 
@@ -130,6 +132,34 @@ Sentar desde el tablero de Manos y pies, sin pasar por «Atender ahora», y con 
 - **Con ficha o sin ficha:** la espera, la tarjeta de la profesional y por cobrar muestran «Sin ficha» cuando la clienta no la tiene; con ficha, el nombre enlaza a ella.
 - **Cobro:** si el turno no tiene ficha, la pantalla de cobro pide primero buscarla o crearla (con el nombre y el teléfono de la espera ya cargados). Se puede cobrar sin ficha, con aviso.
 - Tratamientos no cambia.
+
+## Etapa 4: diseño · 2026-11-11
+
+La pestaña Tratamientos pasa de listas a una grilla del día. Se apoya en lo que ya existe para operar el turno (doc 17): `tomarTurno`, `reprogramarReserva`, «Llegó», «Terminó», cancelar y ausente.
+
+**Repositorio** (archivo nuevo `packages/database/src/agenda-dia.ts`)
+
+- **`agendaDia`**: lo que la grilla necesita de una fecha y un universo.
+  - Apertura de la sede ese día, paso de la grilla y si la fecha es hoy.
+  - Profesionales del universo (misma regla que el tablero), con su jornada y sus ausencias del día.
+  - Cabinas: las unidades activas de la sede de los tipos de recurso que piden los servicios del universo.
+  - Turnos del día (sin cancelados ni vencidos), uno por servicio: profesional, cabinas asignadas, horario, servicio, clienta y estado para la grilla (pendiente de seña, confirmado, en sesión, por cobrar, cobrado o ausente).
+- **`destinosDeTurno`**: a dónde se puede mover un turno confirmado en una fecha. Por cada profesional que hace el servicio, los inicios que el motor aceptaría, sin contar la ocupación del propio turno (para poder correrlo media hora). Un turno de varios servicios solo cambia de horario, con las mismas profesionales.
+- **Cabina elegida por recepción.** El pedido al motor admite, por servicio, las unidades de recurso pedidas (`recursoIds`). Con una unidad pedida el motor usa esa o no hay turno; sin pedir, asigna cualquiera libre, como hoy (el portal sigue así). Es el «requisito de unidad específica» que el doc 14 dejó pendiente.
+- **`destinosDeTurno`** informa, para cada inicio, qué cabinas están libres.
+- **Mover** es `reprogramarReserva`, con profesional y cabina de destino: atómico, conserva precio y seña. También sirve para cambiar solo la cabina. Un turno pendiente de seña no se mueve.
+- **Reservar en un hueco** es `tomarTurno` con profesional, cabina e inicio. Exige cliente: se busca o se crea con nombre y teléfono, como hoy.
+- **«Empezó»** (`marcarLlegada` con otro nombre en pantalla): marca que la sesión empezó. Si la clienta llegó antes de su hora y la profesional y la cabina están libres hasta el turno, la ocupación se adelanta a este minuto. Así «Terminó» vale en cualquier momento después de empezar y desaparece el límite de la etapa 1. Si no están libres, se rechaza con el motivo.
+
+**Pantalla**
+
+- Navegación por fecha (hoy, anterior, siguiente), porque los tratamientos se reservan con anticipación. Las acciones del día («Empezó», «Terminó») solo valen hoy.
+- Columnas por profesional o por cabina, y se opera desde cualquiera de las dos vistas. En la de cabina, tocar un hueco reserva en esa cabina y pide la profesional; en la de profesional, pide la cabina entre las libres.
+- Bloques con la altura de su duración y el estado en color y en texto; línea de la hora actual; fuera de la jornada, sombreado.
+- Tocar un turno abre su panel con las acciones que le corresponden. «Mover» resalta los destinos válidos en la grilla y un toque lo mueve, eligiendo la cabina si hay más de una libre; también se puede arrastrar.
+- Tocar un inicio libre abre «Nuevo turno» con la profesional (o la cabina) y la hora ya puestas.
+- Huecos del día de una hora o más, para ofrecer por teléfono.
+- Debajo siguen «Por cobrar» y la entrada y salida de las profesionales.
 
 ## Verificación
 

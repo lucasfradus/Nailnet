@@ -37,6 +37,27 @@ Sección **Recepción** con lo que registra el tablero de recepción. Tiene dos 
 
 Solo cuentan las atenciones cerradas con «Terminó» desde el tablero. Las marcadas «Atendido» en la agenda no tienen hora real de fin. Un profesional sin presencia ni atenciones en el período no aparece.
 
+## Por universo (doc 31, etapa 5) · 2026-11-11
+
+Si la sede tiene servicios habilitados de los dos universos (Manos y pies y Tratamientos), la pantalla muestra arriba «Toda la sede / Manos y pies / Tratamientos». Toda la sede es lo de siempre, sin ningún cambio. El universo elegido va en la URL (`?universo=manos` o `?universo=tratamientos`, los mismos slugs que Recepción) y se conserva al cambiar el período, en «Este mes», en «Mes anterior» y en los CSV.
+
+`reporteSede` acepta `universo` y devuelve `universos` (los que tienen algún servicio habilitado y activo en la sede) y `universo` (el que se aplicó). **Con un solo universo activo, el pedido se ignora** y el reporte es el de toda la sede, igual que en el tablero. Un servicio es del universo de su categoría (en el momento del reporte, no en el de la venta).
+
+| Sección | Con un universo elegido |
+|---|---|
+| Ventas por servicio y por profesional | Solo las líneas de servicios del universo. El descuento se prorratea sobre la venta completa, productos incluidos, como siempre, y después se filtran las líneas. «Ventas» cuenta las que tienen alguna línea del universo; el total y los descuentos son los de esas líneas. Las anuladas se informan igual, con sus líneas del universo. |
+| Productos | No tienen universo: quedan fuera (`productos` es nulo). |
+| Ticket promedio y cobros | Son de la venta completa y no se pueden partir: no se calculan (`ticketPromedio` y `cobros` nulos). La pantalla lo dice en una línea y el CSV `cobros` responde 400. |
+| Turnos | Las reservas con algún servicio del universo. Una con servicios de los dos cuenta en los dos, así que la suma de los dos universos puede superar a la sede. |
+| Ocupación | Las profesionales del universo, con la regla del tablero: hace algún servicio suyo habilitado en la sede (con todas sus habilidades); sin servicios, es de los dos. Disponible: toda su jornada, aunque también trabaje en el otro universo. Ocupado y pendiente de pago: solo los servicios del universo. |
+| Clientes | Los que tuvieron en el período alguna atención con un servicio del universo. «Nuevo» sigue siendo la primera atención en la sede, de cualquier universo: quien ya vino a Tratamientos y prueba Manos y pies es recurrente. |
+| Recepción | Presencia de las profesionales del universo (misma regla que en ocupación). Atendiendo: solo los servicios del universo. Atenciones (cantidad, duración real y estimada): las que tienen algún servicio del universo, con la duración de la atención completa, porque «Llegó» y «Terminó» son de la reserva. Lista de espera: por el universo del primer servicio pedido, como en el tablero; si ese servicio ya no existe, cuenta en los dos. |
+| Base comisionable | Solo los servicios del universo, con su parte del descuento prorrateado sobre la venta completa. |
+
+Para la regla de la profesional se miran todas las que estuvieron vinculadas a la sede, también las dadas de baja, porque el período puede ser pasado. Una profesional que ya no figura en la sede cuenta en los dos.
+
+CSV: `GET /reportes/csv?seccion=…&desde=…&hasta=…&universo=manos|tratamientos`. Mismo alcance y permisos que sin universo; un valor desconocido responde 400. El nombre del archivo lleva el universo.
+
 ## Comisiones: qué falta
 
 D10 sigue pendiente: porcentaje y si se calcula sobre el bruto o el neto impositivo. Por eso el reporte muestra la **base**, no un importe a pagar. Cuando se defina, se agrega el porcentaje (versionado por profesional o por servicio) y la columna a pagar. La liquidación cerrada (que no se recalcula y ajusta reembolsos posteriores) es L01.
@@ -58,4 +79,5 @@ Se eligió devengar al cobro completo (confirmado por el usuario el 2026-10-22):
 
 - Dominio: prorrateo exacto (también con restos), porcentajes sin denominador, celdas CSV (números, negativos, comillas, `;` y fórmulas neutralizadas) y permisos por rol.
 - Integración (`packages/database/tests/reportes.test.ts`): una venta cobrada con descuento, una con saldo pendiente y una anulada con reverso; turnos atendidos, ausente, cancelado y reprogramado; clienta nueva y recurrente; ocupación por profesional; recepción, admin de otra sede y franquiciado ajeno rechazados; período inválido; recepción del tablero (presencia abierta y cerrada, una atención que se pasa del estimado y una que termina antes, lista de espera con atendida, ida y sin cerrar, y un día sin datos).
+- Por universo (`reportes por universo` en el mismo archivo): sede con servicios de los dos universos; venta mixta (servicio de cada universo y un producto) con descuento prorrateado, base comisionable, turnos con una reserva mixta, ocupación de profesionales de uno, de los dos y sin servicios, clienta recurrente por una atención del otro universo, presencia, atenciones y lista de espera por el primer servicio; pedido inválido y sin permiso; y con un solo universo activo, pedir uno da exactamente el reporte de toda la sede. Las pruebas de toda la sede no cambiaron.
 - Backoffice local con la demo: pantalla del mes en curso y descarga CSV (200 con `text/csv`, 400 con período invertido, 404 con sección inexistente).

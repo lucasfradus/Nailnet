@@ -2,8 +2,14 @@
 // Solo lectura. Cada sección declara su fecha de corte: ventas por fecha de venta, cobros por fecha del
 // cobro, turnos por el inicio del primer servicio, base comisionable por la fecha en que la venta quedó
 // cobrada completa. Dinero en centavos (bigint); nunca Number.
+//
+// Por universo (doc 31, etapa 5): con `filtro.universo`, y si la sede ofrece servicios de los dos, cada
+// sección se limita a ese universo con la regla escrita en docs/30-reportes.md («Por universo»). Lo que es
+// de la venta completa (ticket promedio y cobros) no se puede partir y no se calcula. Sin universo, todo
+// queda exactamente como antes.
 import { AccesoDenegado, cubreSede, tienePermiso } from "@nailnet/domain";
 import { aUtc } from "@nailnet/domain/agenda";
+import { UNIVERSOS, esUniverso, type Universo } from "@nailnet/domain/catalogo";
 import { aIntervalos, aperturaDelDia, jornadaDelDia, ocupacionDelDia, type Intervalo } from "@nailnet/domain/disponibilidad";
 import { sumarDias, validarPeriodo } from "@nailnet/domain/gastos";
 import { minutosEnVentana, porcentaje, promedio, prorratearDescuento } from "@nailnet/domain/reportes";
@@ -17,10 +23,23 @@ const MARGEN = 4 * 3_600_000;
 const nombre = (p: { nombre: string; apellido: string | null }) => [p.nombre, p.apellido].filter(Boolean).join(" ");
 const sumar = <K>(m: Map<K, bigint>, k: K, v: bigint) => m.set(k, (m.get(k) ?? 0n) + v);
 
-export async function reporteSede(db: Database, actorId: string, organizacionId: string, filtro: { sedeId: string; desde: string; hasta: string }, ahora = new Date()) {
+type FiltroReporte = { sedeId: string; desde: string; hasta: string; universo?: Universo | null };
+/** Sin universo pedido, el reporte es el de toda la sede: trae los cobros y los productos. */
+type ReporteCompleto = Omit<ReporteSede, "universo" | "cobros" | "ventas"> & {
+  universo: null; cobros: NonNullable<ReporteSede["cobros"]>; ventas: Omit<ReporteSede["ventas"], "productos"> & { productos: bigint };
+};
+
+export function reporteSede(db: Database, actorId: string, organizacionId: string, filtro: FiltroReporte & { universo?: null }, ahora?: Date): Promise<ReporteCompleto>;
+export function reporteSede(db: Database, actorId: string, organizacionId: string, filtro: FiltroReporte, ahora?: Date): Promise<ReporteSede>;
+export function reporteSede(db: Database, actorId: string, organizacionId: string, filtro: FiltroReporte, ahora = new Date()) {
+  return armarReporte(db, actorId, organizacionId, filtro, ahora);
+}
+
+async function armarReporte(db: Database, actorId: string, organizacionId: string, filtro: FiltroReporte, ahora: Date) {
   exigirIds(filtro.sedeId);
   const error = validarPeriodo(filtro.desde, filtro.hasta);
   if (error) throw new DatosInvalidos(error);
+  if (filtro.universo != null && !esUniverso(filtro.universo)) throw new DatosInvalidos("Universo inválido: Manos y pies o Tratamientos");
   const actor = await asignacionesActor(db, actorId, organizacionId);
   const franquiciadoDe = await mapaSedes(db, organizacionId);
   if (!actor.some(a => tienePermiso(a, "reporte:leer") && cubreSede(a, filtro.sedeId, franquiciadoDe))) throw new AccesoDenegado();
@@ -28,24 +47,61 @@ export async function reporteSede(db: Database, actorId: string, organizacionId:
   const { desde, hasta } = filtro;
   const periodo = { gte: aUtc(desde, 0, sede.timezone), lt: aUtc(sumarDias(hasta, 1), 0, sede.timezone) };
   const base = { organizacionId, sedeId: sede.id };
+  // Universos activos: los que tienen algún servicio habilitado en la sede. Con uno solo no hay nada que
+  // separar (como en el tablero) y el pedido se ignora: `universo` dice qué se aplicó de verdad.
+  const habilitados = await db.servicioSede.findMany({
+    where: { ...base, habilitado: true, servicio: { activo: true } },
+    select: { servicio: { select: { id: true, skills: { select: { skillId: true } }, categoria: { select: { universo: true } } } } },
+  });
+  const universos = UNIVERSOS.filter(x => habilitados.some(s => s.servicio.categoria.universo === x));
+  const universo = filtro.universo && universos.length > 1 ? filtro.universo : null;
+  const alcance: Alcance = { universo, fuera: universo ? await profesionalesFuera(db, base, habilitados, universo) : new Set() };
 
   return {
-    sede, desde, hasta,
-    ventas: await ventas(db, base, desde, hasta),
-    cobros: await cobros(db, base, periodo),
-    turnos: await turnos(db, base, periodo),
-    ocupacion: await ocupacion(db, base, desde, hasta, sede.timezone, ahora),
-    clientes: await clientes(db, base, periodo),
-    comisiones: await comisiones(db, base, periodo),
-    recepcion: await recepcion(db, base, periodo, ahora),
+    sede, desde, hasta, universo, universos,
+    ventas: await ventas(db, base, desde, hasta, universo),
+    // Los cobros son de la venta completa: no se pueden partir entre universos.
+    cobros: universo ? null : await cobros(db, base, periodo),
+    turnos: await turnos(db, base, periodo, universo),
+    ocupacion: await ocupacion(db, base, desde, hasta, sede.timezone, ahora, alcance),
+    clientes: await clientes(db, base, periodo, universo),
+    comisiones: await comisiones(db, base, periodo, universo),
+    recepcion: await recepcion(db, base, periodo, ahora, alcance),
   };
 }
-export type ReporteSede = Awaited<ReturnType<typeof reporteSede>>;
+export type ReporteSede = Awaited<ReturnType<typeof armarReporte>>;
 type Base = { organizacionId: string; sedeId: string };
+/** `fuera`: profesionales de la sede que no son del universo elegido (vacío sin universo). */
+type Alcance = { universo: Universo | null; fuera: Set<string> };
+
+/**
+ * Misma regla que el tablero (doc 31): una profesional es del universo si hace algún servicio suyo
+ * habilitado en la sede (con todas sus habilidades); sin servicios, es de los dos. Se miran todas las que
+ * pasaron por la sede, también las dadas de baja, porque el período puede ser pasado. Devuelve las que
+ * quedan fuera: una profesional que ya no está vinculada a la sede no figura y cuenta en los dos.
+ */
+async function profesionalesFuera(db: Database, base: Base, habilitados: { servicio: { id: string; skills: { skillId: string }[]; categoria: { universo: Universo } } }[], universo: Universo) {
+  const profesionales = await db.profesional.findMany({
+    where: { organizacionId: base.organizacionId, sedes: { some: { sedeId: base.sedeId } } },
+    select: { id: true, servicios: { select: { servicioId: true } }, skills: { select: { skillId: true } } },
+  });
+  const fuera = new Set<string>();
+  for (const p of profesionales) {
+    const hace = habilitados.filter(({ servicio: s }) => p.servicios.some(x => x.servicioId === s.id) && s.skills.every(k => p.skills.some(x => x.skillId === k.skillId)));
+    if (hace.length && !hace.some(s => s.servicio.categoria.universo === universo)) fuera.add(p.id);
+  }
+  return fuera;
+}
+
+/** Un ítem cuenta en el universo si es un servicio de una categoría de ese universo. */
+const enUniverso = (universo: Universo | null) => (item: { servicio: { categoria: { universo: Universo } } | null }) =>
+  !universo || item.servicio?.categoria.universo === universo;
+/** Filtro de reservas: alguna con un servicio del universo. Sin universo no agrega nada. */
+const conServicioDe = (universo: Universo | null) => (universo ? [{ items: { some: { servicio: { categoria: { universo } } } } }] : []);
 
 // ─── Ventas: por fecha de venta, netas de descuento ───────────────────────────
 
-const conItems = { items: { orderBy: { posicion: "asc" }, include: { servicio: { select: { nombre: true } }, profesional: { select: { nombre: true, apellido: true } } } } } as const;
+const conItems = { items: { orderBy: { posicion: "asc" }, include: { servicio: { select: { nombre: true, categoria: { select: { universo: true } } } }, profesional: { select: { nombre: true, apellido: true } } } } } as const;
 
 /** Líneas de una venta con su parte del descuento ya restada. */
 function lineasNetas<T extends { subtotal: Parameters<typeof centavos>[0] }>(v: { descuento: Parameters<typeof centavos>[0]; items: T[] }) {
@@ -54,16 +110,22 @@ function lineasNetas<T extends { subtotal: Parameters<typeof centavos>[0] }>(v: 
   return v.items.map((item, k) => ({ item, bruto: brutos[k]!, descuento: descuentos[k]!, neto: brutos[k]! - descuentos[k]! }));
 }
 
-async function ventas(db: Database, base: Base, desde: string, hasta: string) {
-  const filas = await db.venta.findMany({ where: { ...base, fecha: { gte: new Date(`${desde}T00:00:00Z`), lte: new Date(`${hasta}T00:00:00Z`) } }, include: conItems });
+async function ventas(db: Database, base: Base, desde: string, hasta: string, universo: Universo | null) {
+  const todas = await db.venta.findMany({ where: { ...base, fecha: { gte: new Date(`${desde}T00:00:00Z`), lte: new Date(`${hasta}T00:00:00Z`) } }, include: conItems });
+  // Con universo: el descuento se prorratea sobre la venta completa, como siempre, y después se quedan
+  // solo las líneas de servicios del universo. Los productos no tienen universo y quedan fuera.
+  const delUniverso = enUniverso(universo);
+  const lineas = (v: (typeof todas)[number]) => (universo ? lineasNetas(v).filter(l => l.item.tipo === "SERVICIO" && delUniverso(l.item)) : lineasNetas(v));
+  const filas = universo ? todas.filter(v => lineas(v).length) : todas;
   const vigentes = filas.filter(v => v.estado !== "ANULADA");
   const anuladas = filas.filter(v => v.estado === "ANULADA");
   const completadas = vigentes.filter(v => v.estado === "COMPLETADA");
-  const total = (xs: typeof filas) => xs.reduce((m, v) => m + centavos(v.total), 0n);
+  const total = (xs: typeof filas) => xs.reduce((m, v) => m + (universo ? lineas(v).reduce((a, l) => a + l.neto, 0n) : centavos(v.total)), 0n);
+  const descuentos = (xs: typeof filas) => xs.reduce((m, v) => m + (universo ? lineas(v).reduce((a, l) => a + l.descuento, 0n) : centavos(v.descuento)), 0n);
   const porServicio = new Map<string, { nombre: string; cantidad: number; neto: bigint }>();
   const porProfesional = new Map<string, { nombre: string; servicios: number; neto: bigint }>();
   let servicios = 0n, productos = 0n;
-  for (const v of vigentes) for (const { item, neto } of lineasNetas(v)) {
+  for (const v of vigentes) for (const { item, neto } of lineas(v)) {
     if (item.tipo === "PRODUCTO") { productos += neto; continue; }
     servicios += neto;
     const s = porServicio.get(item.servicioId!) ?? { nombre: item.servicio?.nombre ?? item.descripcion, cantidad: 0, neto: 0n };
@@ -75,9 +137,10 @@ async function ventas(db: Database, base: Base, desde: string, hasta: string) {
   const porNeto = <T extends { neto: bigint }>(a: T, b: T) => (a.neto === b.neto ? 0 : a.neto > b.neto ? -1 : 1);
   return {
     cantidad: vigentes.length, completadas: completadas.length, pendientes: vigentes.length - completadas.length,
-    total: total(vigentes), descuentos: vigentes.reduce((m, v) => m + centavos(v.descuento), 0n), servicios, productos,
+    total: total(vigentes), descuentos: descuentos(vigentes), servicios, productos: universo ? null : productos,
     // Ticket promedio (doc 02): ventas completadas, netas de descuento, sobre la cantidad de ventas completadas.
-    ticketPromedio: completadas.length ? totalCompletadas / BigInt(completadas.length) : null,
+    // Es de la venta completa: con universo no se calcula.
+    ticketPromedio: !universo && completadas.length ? totalCompletadas / BigInt(completadas.length) : null,
     anuladas: { cantidad: anuladas.length, total: total(anuladas) },
     porServicio: [...porServicio.values()].sort(porNeto),
     porProfesional: [...porProfesional.values()].sort(porNeto),
@@ -103,9 +166,10 @@ async function cobros(db: Database, base: Base, periodo: { gte: Date; lt: Date }
 
 // ─── Turnos: por inicio del primer servicio de la reserva ─────────────────────
 
-async function turnos(db: Database, base: Base, periodo: { gte: Date; lt: Date }) {
+async function turnos(db: Database, base: Base, periodo: { gte: Date; lt: Date }, universo: Universo | null) {
+  // Con universo: las reservas con algún servicio suyo (una con servicios de los dos cuenta en los dos).
   const filas = await db.reserva.findMany({
-    where: { ...base, items: { some: { posicion: 0, inicio: periodo } } },
+    where: { ...base, AND: [{ items: { some: { posicion: 0, inicio: periodo } } }, ...conServicioDe(universo)] },
     select: { estado: true, sinTurnoPrevio: true, reemplazadaPor: { select: { id: true } } },
   });
   const cuenta = (pred: (r: (typeof filas)[number]) => boolean) => filas.filter(pred).length;
@@ -129,16 +193,18 @@ async function turnos(db: Database, base: Base, periodo: { gte: Date; lt: Date }
 
 const FIRMES = ["CONFIRMADA", "ATENDIDA", "AUSENTE"] as const;
 
-async function ocupacion(db: Database, base: Base, desde: string, hasta: string, tz: string, ahora: Date) {
+async function ocupacion(db: Database, base: Base, desde: string, hasta: string, tz: string, ahora: Date, alcance: Alcance) {
   const dias: string[] = [];
   for (let d = desde; d <= hasta; d = sumarDias(d, 1)) dias.push(d);
   const ventana = { gte: new Date(aUtc(desde, 0, tz).getTime() - MARGEN), lt: new Date(aUtc(sumarDias(hasta, 1), 0, tz).getTime() + MARGEN) };
-  const profesionales = await db.profesional.findMany({ where: { organizacionId: base.organizacionId, sedes: { some: { sedeId: base.sedeId } } }, select: { id: true, nombre: true, apellido: true } });
+  // Con universo: sus profesionales, con toda su jornada disponible, y solo los minutos de sus servicios.
+  const profesionales = (await db.profesional.findMany({ where: { organizacionId: base.organizacionId, sedes: { some: { sedeId: base.sedeId } } }, select: { id: true, nombre: true, apellido: true } }))
+    .filter(p => !alcance.fuera.has(p.id));
   const profIds = profesionales.map(p => p.id);
   const [horarios, items, bloqueos, horarioSede, excepciones] = await Promise.all([
     db.horarioProfesional.findMany({ where: { profesionalId: { in: profIds }, sedeId: base.sedeId } }),
     db.reservaItem.findMany({
-      where: { profesionalId: { in: profIds }, ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, reserva: { OR: [{ estado: { in: [...FIRMES] } }, { estado: { in: ["PENDIENTE_PAGO", "PAGO_EN_REVISION"] }, expiraEn: { gt: ahora } }] } },
+      where: { profesionalId: { in: profIds }, ocupaDesde: { lt: ventana.lt }, ocupaHasta: { gt: ventana.gte }, ...(alcance.universo ? { servicio: { categoria: { universo: alcance.universo } } } : {}), reserva: { OR: [{ estado: { in: [...FIRMES] } }, { estado: { in: ["PENDIENTE_PAGO", "PAGO_EN_REVISION"] }, expiraEn: { gt: ahora } }] } },
       select: { profesionalId: true, ocupaDesde: true, ocupaHasta: true, reserva: { select: { estado: true } } },
     }),
     db.bloqueoAgenda.findMany({ where: { profesionalId: { in: profIds }, inicio: { lt: ventana.lt }, fin: { gt: ventana.gte } } }),
@@ -172,8 +238,10 @@ async function ocupacion(db: Database, base: Base, desde: string, hasta: string,
 
 // ─── Clientes: nuevos = primera atención en la sede dentro del período ────────
 
-async function clientes(db: Database, base: Base, periodo: { gte: Date; lt: Date }) {
-  const atendidas = await db.reserva.findMany({ where: { ...base, estado: "ATENDIDA", items: { some: { posicion: 0, inicio: periodo } } }, select: { clienteId: true } });
+async function clientes(db: Database, base: Base, periodo: { gte: Date; lt: Date }, universo: Universo | null) {
+  // Con universo: los atendidos con algún servicio suyo. «Nuevo» sigue siendo la primera atención en la
+  // sede, de cualquier universo: quien ya vino a Manos y pies y prueba Tratamientos no es clienta nueva.
+  const atendidas = await db.reserva.findMany({ where: { ...base, estado: "ATENDIDA", AND: [{ items: { some: { posicion: 0, inicio: periodo } } }, ...conServicioDe(universo)] }, select: { clienteId: true } });
   const ids = [...new Set(atendidas.flatMap(r => (r.clienteId ? [r.clienteId] : [])))];
   const previos = ids.length ? await db.reserva.findMany({
     where: { ...base, estado: "ATENDIDA", clienteId: { in: ids }, items: { some: { posicion: 0, inicio: { lt: periodo.gte } } } },
@@ -191,25 +259,39 @@ async function clientes(db: Database, base: Base, periodo: { gte: Date; lt: Date
 export const MARGEN_DEMORA_MINUTOS = 5;
 const minutos = (a: Date, b: Date) => (b.getTime() - a.getTime()) / 60_000;
 
-async function recepcion(db: Database, base: Base, periodo: { gte: Date; lt: Date }, ahora: Date) {
+// Con universo: presencia de sus profesionales; atenciones con algún servicio suyo (la duración real es de
+// la atención completa, porque «Llegó» y «Terminó» son de la reserva); minutos atendiendo, solo de sus
+// servicios; y la lista de espera por el universo del primer servicio pedido.
+
+async function recepcion(db: Database, base: Base, periodo: { gte: Date; lt: Date }, ahora: Date, alcance: Alcance) {
+  const { universo, fuera } = alcance;
   const ventana = { desde: periodo.gte.getTime(), hasta: periodo.lt.getTime() };
   const presencias = await db.presenciaProfesional.findMany({
     where: { ...base, entrada: { lt: periodo.lt }, OR: [{ salida: null }, { salida: { gt: periodo.gte } }] },
     select: { profesionalId: true, entrada: true, salida: true, profesional: { select: { nombre: true, apellido: true } } },
   });
   const atenciones = await db.reserva.findMany({
-    where: { ...base, estado: "ATENDIDA", terminadaEn: periodo, iniciadaEn: { not: null } },
-    select: { id: true, iniciadaEn: true, terminadaEn: true, items: { select: { profesionalId: true, inicio: true, fin: true, duracionMinutos: true, terminadoEn: true, profesional: { select: { nombre: true, apellido: true } } } } },
+    where: { ...base, estado: "ATENDIDA", terminadaEn: periodo, iniciadaEn: { not: null }, AND: conServicioDe(universo) },
+    select: { id: true, iniciadaEn: true, terminadaEn: true, items: { select: { profesionalId: true, inicio: true, fin: true, duracionMinutos: true, terminadoEn: true, profesional: { select: { nombre: true, apellido: true } }, servicio: { select: { categoria: { select: { universo: true } } } } } } },
   });
-  const esperas = await db.esperaRecepcion.findMany({ where: { ...base, llegada: periodo }, select: { estado: true, llegada: true, cerradaEn: true } });
+  const anotadas = await db.esperaRecepcion.findMany({ where: { ...base, llegada: periodo }, select: { estado: true, llegada: true, cerradaEn: true, servicioIds: true } });
+  // La espera es del universo de lo primero que pidió (como en el tablero). Se busca en todo el catálogo,
+  // no solo en lo habilitado hoy; si el servicio ya no existe, cuenta en los dos.
+  const universoDe = universo ? new Map((await db.servicio.findMany({
+    where: { organizacionId: base.organizacionId, id: { in: [...new Set(anotadas.flatMap(e => e.servicioIds.slice(0, 1)))] } },
+    select: { id: true, categoria: { select: { universo: true } } },
+  })).map(s => [s.id, s.categoria.universo])) : null;
+  const esperas = universoDe ? anotadas.filter(e => (universoDe.get(e.servicioIds[0]!) ?? universo) === universo) : anotadas;
+  const delUniverso = enUniverso(universo);
 
   const porProfesional = new Map<string, { nombre: string; presenteMinutos: number; atendiendoMinutos: number; atenciones: Set<string> }>();
   const fila = (id: string, p: { nombre: string; apellido: string | null }) => porProfesional.get(id) ?? porProfesional.set(id, { nombre: nombre(p), presenteMinutos: 0, atendiendoMinutos: 0, atenciones: new Set() }).get(id)!;
-  for (const p of presencias) fila(p.profesionalId, p.profesional).presenteMinutos += minutosEnVentana(p.entrada.getTime(), p.salida?.getTime() ?? null, ventana, ahora.getTime());
+  for (const p of presencias) if (!fuera.has(p.profesionalId)) fila(p.profesionalId, p.profesional).presenteMinutos += minutosEnVentana(p.entrada.getTime(), p.salida?.getTime() ?? null, ventana, ahora.getTime());
   const reales: number[] = [], estimadas: number[] = [];
   let demoradas = 0;
   for (const a of atenciones) {
     for (const i of a.items) {
+      if (!delUniverso(i) || fuera.has(i.profesionalId)) continue;
       const f = fila(i.profesionalId, i.profesional);
       f.atendiendoMinutos += Math.max(0, minutos(i.inicio, i.terminadoEn ?? i.fin));
       f.atenciones.add(a.id);
@@ -243,11 +325,13 @@ async function recepcion(db: Database, base: Base, periodo: { gte: Date; lt: Dat
 // Propuesta de D10 (doc 02): por servicio atendido y totalmente cobrado, después de descuento, sin
 // productos. El porcentaje sigue pendiente, por eso se informa la base y no un importe a pagar.
 
-async function comisiones(db: Database, base: Base, periodo: { gte: Date; lt: Date }) {
+async function comisiones(db: Database, base: Base, periodo: { gte: Date; lt: Date }, universo: Universo | null) {
+  // Con universo: el descuento se prorratea sobre la venta completa y después se filtran sus servicios.
+  const delUniverso = enUniverso(universo);
   const filas = await db.venta.findMany({ where: { ...base, estado: "COMPLETADA", completadaEn: periodo }, include: conItems });
   const porProfesional = new Map<string, { nombre: string; servicios: number; bruto: bigint; descuento: bigint; base: bigint }>();
   for (const v of filas) for (const { item, bruto, descuento, neto } of lineasNetas(v)) {
-    if (item.tipo !== "SERVICIO") continue;
+    if (item.tipo !== "SERVICIO" || !delUniverso(item)) continue;
     const p = porProfesional.get(item.profesionalId!) ?? { nombre: item.profesional ? nombre(item.profesional) : "—", servicios: 0, bruto: 0n, descuento: 0n, base: 0n };
     porProfesional.set(item.profesionalId!, { ...p, servicios: p.servicios + 1, bruto: p.bruto + bruto, descuento: p.descuento + descuento, base: p.base + neto });
   }

@@ -33,6 +33,7 @@
     "validate": "prisma validate",
     "migrate": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
+    "demo:turnos": "tsx prisma/demo-turnos.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "usuario:password": "tsx prisma/establecer-password.ts",

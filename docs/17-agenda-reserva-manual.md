@@ -108,3 +108,13 @@ Durante esta etapa los tests detectaron un bug propio: el filtro de la validaci�
   - cambios de calendario rechazados y aceptados;
   - alcance.
 - Prueba E2E con `next dev`: reservar 09:00, reprogramar a 11:00 desde la agenda (09:00 queda libre) y cancelar con motivo (visible solo con «incluir cancelados»). No se probó en un navegador real.
+
+## Agenda del día en línea de tiempo · 2026-11-16
+
+En la vista de un día, arriba de la lista de turnos, la agenda se ve como en la maqueta del tablero de recepción: una fila por profesional, las horas de izquierda a derecha y cada servicio como un bloque del largo de su duración.
+
+- Los datos salen de `agendaDia` (doc 31, etapa 4), sin universo: todas las profesionales de la sede con su jornada y ausencias, y los turnos del día sin cancelados ni vencidos. El filtro de profesional también aplica a la línea.
+- Estado del bloque en color, con el detalle al pasar el mouse: turno reservado (punteado), pendiente de seña (punteado ámbar), en atención, demorada (rayado rojo desde el fin estimado hasta ahora), terminó por cobrar y cobrado. Un servicio terminado se dibuja hasta la hora real en que terminó.
+- Fuera de la jornada de cada profesional, sombreado; las ausencias, rayadas en rojo; las que no trabajan ese día van al final. La línea roja marca la hora actual cuando la fecha es hoy.
+- Es para mirar el día: tocar un bloque baja a su fila en la lista, donde siguen las acciones (atendido, ausente, reprogramar, cancelar, cobrar). La vista semana sigue como lista.
+- Componente en `apps/backoffice/src/app/(panel)/agenda/linea-tiempo.tsx`; estilos `.lt-*` en `globals.css`.

@@ -7,10 +7,12 @@ import { listarProfesionales } from "@nailnet/database/profesionales";
 import { agendaSede } from "@nailnet/database/reservas";
 import { ocupacionSede } from "@nailnet/database/disponibilidad";
 import { ventasDeReservas } from "@nailnet/database/ventas";
+import { agendaDia } from "@nailnet/database/agenda-dia";
 import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { accionAtendida, accionAusente, accionCancelarReserva } from "../acciones";
+import { LineaDeTiempo } from "./linea-tiempo";
 
 export const metadata: Metadata = { title: "Agenda · Sicurella" };
 type Params = { fecha?: string; vista?: string; profesional?: string; cerrados?: string; ok?: string };
@@ -26,7 +28,8 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
   const sedeId = sedeActual.id;
 
   const tz = sedeActual.timezone;
-  const hoy = aLocal(new Date(), tz).fecha;
+  const ahora = new Date();
+  const hoy = aLocal(ahora, tz).fecha;
   const fecha = q.fecha ?? hoy;
   const semana = q.vista === "semana";
   const agenda = await agendaSede(db(), actorId, organizacion.id, { sedeId, desde: fecha, dias: semana ? 7 : 1, profesionalId: q.profesional || null, incluirCerrados: q.cerrados === "1" })
@@ -34,6 +37,8 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
   if (!agenda) notFound();
   const profesionales = await listarProfesionales(db(), actorId, organizacion.id, { sedeId }).catch(() => []);
   const ocupacion = semana ? [] : (await ocupacionSede(db(), actorId, organizacion.id, sedeId, fecha)).filter(o => !q.profesional || o.profesional.id === q.profesional);
+  // Vista día: la línea de tiempo por profesional (sin cancelados ni vencidos, como la grilla de recepción).
+  const linea = semana ? null : await agendaDia(db(), actorId, organizacion.id, { sedeId, fecha }, ahora);
   const horas = (m: number) => `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60}` : ""}`;
   // O01: los turnos atendidos se cobran desde aquí; si ya tienen venta, se enlaza.
   const atendidas = agenda.items.filter(i => i.estado === "ATENDIDA" && i.posicion === 0).map(i => i.reservaId);
@@ -66,10 +71,12 @@ export default async function Agenda({ searchParams }: { searchParams: Promise<P
         {o.profesional.nombre} {Math.round(100 * o.ocupadoMinutos / o.disponibleMinutos)}% · {horas(o.ocupadoMinutos)} de {horas(o.disponibleMinutos)}
       </span>)}</div>}
 
+    {linea && <LineaDeTiempo dia={linea}ahora={ahora} profesionalId={q.profesional || null} />}
+
     {!agenda.items.length && <p className="intro">Sin turnos{semana ? " esta semana" : " este día"}.</p>}
     {[...porDia.entries()].map(([d, items]) => <div key={d}>
       {semana && <h2 className="subtitulo">{dia(new Date(`${d}T12:00:00Z`))}</h2>}
-      <div className="tabla">{items.map(i => <article key={i.itemId} className={["CANCELADA", "EXPIRADA"].includes(i.estado) ? "fila inactiva" : "fila"}>
+      <div className="tabla">{items.map(i => <article key={i.itemId} id={`t-${i.itemId}`} className={["CANCELADA", "EXPIRADA"].includes(i.estado) ? "fila inactiva" : "fila"}>
         <div className="fila-cabecera"><h2>{hora(i.inicio)} – {hora(i.fin)} · {i.servicio}</h2><span className={`tag estado-${i.estado.toLowerCase()}`}>{ESTADOS[i.estado]}</span></div>
         <p>{i.cliente ? <Link href={`/clientes/${i.cliente.id}`}>{i.cliente.nombre} {i.cliente.apellido}</Link> : <>{i.clienteProvisional ?? "Clienta"} <span className="tag sin-ficha">sin ficha</span></>}{i.cliente?.telefono ? ` · ${i.cliente.telefono}` : ""}
           {" · "}{i.profesional.nombre} {i.profesional.apellido}{i.recursos.length ? ` · ${i.recursos.join(", ")}` : ""}{i.canal === "ONLINE" ? " · online" : ""}{i.sinTurnoPrevio ? " · sin turno previo" : ""}

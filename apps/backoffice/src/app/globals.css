@@ -415,3 +415,41 @@ button.peligro{color:var(--texto-error)}
   .trat-lateral{position:static}
   .trat-panel.abierto{position:fixed;left:12px;right:12px;bottom:12px;z-index:30;max-height:62vh;overflow-y:auto;box-shadow:0 -10px 40px -10px rgb(16 24 40 / .35)}
 }
+/* Agenda del día en línea de tiempo: una fila por profesional, las horas de izquierda a derecha y los
+   servicios como bloques del largo de su duración; línea roja en la hora actual. Tocar un bloque baja a
+   su fila en la lista, donde están las acciones. En pantallas angostas se desplaza en horizontal. */
+.lt{--lt-nombre:132px;display:grid;gap:10px;margin:16px 0 20px}
+.lt-scroll{overflow-x:auto;background:var(--color-background);border:1px solid var(--color-border);border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.lt-scroll:focus-visible{outline:2px solid var(--color-ring);outline-offset:2px}
+.lt-lienzo{position:relative;min-width:860px}
+.lt-fila{display:grid;grid-template-columns:var(--lt-nombre) 1fr;min-height:48px;border-top:1px solid var(--gris-100)}
+.lt-cabecera{min-height:30px;border-top:0}
+.lt-nombre{position:sticky;left:0;z-index:4;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:6px 12px;background:var(--color-background);border-right:1px solid var(--gris-100);min-width:0}
+.lt-nombre strong{font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lt-nombre small{font-size:11px;color:var(--color-muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lt-libre-dia .lt-nombre strong{color:var(--color-muted-foreground);font-weight:500}
+.lt-pista{position:relative;min-width:0}
+.lt-linea{position:absolute;top:0;bottom:0;border-left:1px solid var(--gris-100)}
+.lt-hora{position:absolute;top:7px;transform:translateX(-50%);font-size:11px;color:var(--color-muted-foreground);font-variant-numeric:tabular-nums}
+.lt-hora:first-child{transform:none;margin-left:4px}
+.lt-fuera{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,var(--gris-100) 0 5px,var(--gris-50) 5px 10px)}
+.lt-bloqueo{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(135deg,var(--fondo-error) 0 5px,var(--color-background) 5px 10px);border-left:1px solid #FECDCA;border-right:1px solid #FECDCA}
+.lt-bloque{position:absolute;top:6px;bottom:6px;z-index:2;display:flex;flex-direction:column;justify-content:center;padding:2px 6px;overflow:hidden;border:1px solid transparent;border-radius:var(--radius-md);font-size:11px;line-height:1.25;white-space:nowrap;text-decoration:none;color:inherit}
+.lt-bloque b,.lt-bloque span{overflow:hidden;text-overflow:ellipsis}.lt-bloque b{font-weight:600}
+.lt-bloque:hover{z-index:3;box-shadow:0 0 0 2px var(--color-primary)}
+.lt-bloque:focus-visible{z-index:3;outline:2px solid var(--color-ring);outline-offset:1px}
+.lt-reservado{background:var(--color-background);color:var(--teal-800);border:1.5px dashed var(--teal-500)}
+.lt-pendiente{background:var(--color-background);color:var(--color-warning);border:1.5px dashed var(--color-warning)}
+.lt-curso{background:var(--color-warning-soft);color:var(--color-warning);border:1px solid var(--color-warning)}
+.lt-cobrar{background:var(--teal-50);color:var(--teal-800);border:1px solid var(--teal-500)}
+.lt-cobrada{background:var(--gris-100);color:var(--color-muted-foreground);border:1px solid var(--color-border)}
+.lt-ausente{background:var(--gris-100);color:var(--color-muted-foreground);border:1px dashed var(--color-input)}.lt-ausente b{text-decoration:line-through}
+.lt-demora{position:absolute;top:6px;bottom:6px;z-index:2;background:repeating-linear-gradient(135deg,var(--fondo-error) 0 6px,transparent 6px 11px);border:1px solid var(--texto-error);border-left:0;border-radius:0 var(--radius-md) var(--radius-md) 0}
+.lt-ahora{position:absolute;top:0;bottom:0;z-index:5;width:2px;background:var(--texto-error);pointer-events:none}
+.lt-ahora span{position:absolute;top:4px;left:4px;padding:0 5px;border-radius:9999px;background:var(--texto-error);color:#fff;font-size:10.5px;font-weight:600;line-height:16px;font-variant-numeric:tabular-nums}
+.lt-leyenda{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--color-muted-foreground)}
+.lt-leyenda span{display:inline-flex;align-items:center;gap:6px}
+.lt-leyenda i{position:static;flex:none;display:inline-block;width:22px;height:12px;border-radius:3px}
+.lt-leyenda i.lt-demora{border-left:1px solid var(--texto-error);border-radius:3px}
+.tabla .fila{scroll-margin-top:calc(var(--alto-barra) + 16px)}.tabla .fila:target{box-shadow:0 0 0 2px var(--color-primary)}
+.lt-leyenda i.lt-fuera{border:1px solid var(--color-border)}

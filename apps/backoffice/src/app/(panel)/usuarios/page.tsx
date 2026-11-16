@@ -6,7 +6,8 @@ import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { ROLES } from "@/lib/etiquetas";
-import { accionCrearUsuario, accionEstadoUsuario, accionInvitar, accionOtorgarRol, accionRevocarRol } from "../acciones";
+import { recuperacionPorEmail } from "@/lib/emails";
+import { accionCrearUsuario, accionEstadoUsuario, accionInvitar, accionOtorgarRol, accionRestablecer, accionRevocarRol } from "../acciones";
 
 export const metadata: Metadata = { title: "Usuarios · Sicurella", referrer: "no-referrer" };
 
@@ -34,6 +35,7 @@ export default async function Usuarios({ searchParams }: { searchParams: Promise
   const usuarios = filtro ? todos.filter(u => u.asignaciones.some(a => filtro.roles.includes(a.rol))) : todos;
   const opciones = puede.administrarUsuarios ? await opcionesDeRol(db(), actorId, organizacion.id) : [];
   // Con una sede elegida, se ofrecen primero los roles de esa sede.
+  const conEmails = recuperacionPorEmail();
   const ordenadas = sede ? [...opciones].sort((a, b) => Number(b.asignacion.sedeId === sede.id) - Number(a.asignacion.sedeId === sede.id)) : opciones;
 
   return <section className="panel">
@@ -63,6 +65,10 @@ export default async function Usuarios({ searchParams }: { searchParams: Promise
         </Formulario>}
         {u.administrable && <div className="acciones">
           {u.activo && !u.tienePassword && <Formulario accion={accionInvitar} boton="Generar enlace de activación" className="en-linea" secundario>
+            <input type="hidden" name="usuarioId" value={u.id} />
+          </Formulario>}
+          {u.activo && u.tienePassword && conEmails && <Formulario accion={accionRestablecer} boton="Restablecer contraseña" className="en-linea" secundario
+            confirmar={`¿Enviar a ${u.email} un enlace para elegir una nueva contraseña?`}>
             <input type="hidden" name="usuarioId" value={u.id} />
           </Formulario>}
           <Formulario accion={accionEstadoUsuario} boton={u.activo ? "Desactivar" : "Reactivar"} className="en-linea" secundario

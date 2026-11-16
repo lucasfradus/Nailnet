@@ -1,10 +1,12 @@
 import "dotenv/config";
 import { test } from "node:test";
+import { randomBytes } from "node:crypto";
+import { llaveroDesde } from "@nailnet/domain/secretos";
 import assert from "node:assert/strict";
 import { AccesoDenegado } from "@nailnet/domain";
 import { createDatabase } from "../src/client.ts";
 import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarFranquiciados, listarSedes } from "../src/access.ts";
-import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, listarUsuarios, opcionesDeRol, otorgarRol, revocarRol } from "../src/usuarios.ts";
+import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, listarUsuarios, opcionesDeRol, otorgarRol, revocarRol, solicitarRestablecimiento } from "../src/usuarios.ts";
 import { establecerPassword, iniciarSesion, restablecerPassword } from "../src/auth.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 
@@ -132,6 +134,34 @@ test("administración de sedes y usuarios con alcance", async (t) => {
       await iniciarSesion(db, { email: recep2.email, password: "mi clave de activación" });
       const audit = await db.auditLog.findFirstOrThrow({ where: { accion: "usuario.invitar", entidadId: recep2.id } });
       assert.equal(JSON.stringify(audit).includes(token), false, "la auditoría no guarda el token");
+    });
+
+    await t.test("restablecimiento: solo cuentas con contraseña, dentro del alcance, y el enlace va por email", async () => {
+      const recep3 = await crearUsuario(db, a.franquiciado.id, a.org.id, { email: emailNuevo("recep3"), nombre: "Recep Tres", asignacion: recepcion(a.centro.id) });
+      await assert.rejects(solicitarRestablecimiento(db, a.franquiciado.id, a.org.id, recep3.usuarioId), DatosInvalidos, "sin contraseña: va el enlace de activación");
+      await establecerPassword(db, recep3.usuarioId, "clave vieja del usuario");
+      await assert.rejects(solicitarRestablecimiento(db, a.admin.id, a.org.id, recep3.usuarioId), AccesoDenegado, "fuera del alcance del admin de otra sede");
+      await assert.rejects(solicitarRestablecimiento(db, a.franquiciado.id, a.org.id, a.franquiciado.id), AccesoDenegado, "no sobre uno mismo");
+      await assert.rejects(solicitarRestablecimiento(db, b.master.id, b.org.id, recep3.usuarioId), AccesoDenegado, "otra organización");
+
+      // Sin envío (desarrollo) devuelve el token; la contraseña vieja sigue valiendo hasta usarlo.
+      const r = await solicitarRestablecimiento(db, a.franquiciado.id, a.org.id, recep3.usuarioId);
+      assert.ok(r.token);
+      await iniciarSesion(db, { email: emailNuevo("recep3"), password: "clave vieja del usuario" });
+      await restablecerPassword(db, r.token!, "clave nueva del usuario");
+      await iniciarSesion(db, { email: emailNuevo("recep3"), password: "clave nueva del usuario" });
+      const audit = await db.auditLog.findFirstOrThrow({ where: { accion: "usuario.restablecer", entidadId: recep3.usuarioId } });
+      assert.equal(JSON.stringify(audit).includes(r.token!), false, "la auditoría no guarda el token");
+
+      // Con envío, el token no vuelve a quien lo pidió: solo viaja (cifrado) en el job del email.
+      const llavero = llaveroDesde(`v1:${randomBytes(32).toString("base64")}`, "v1");
+      const conEnvio = await solicitarRestablecimiento(db, a.master.id, a.org.id, recep3.usuarioId, { enlace: tok => `https://x.invalid/restablecer#${tok}`, llavero });
+      assert.equal(conEnvio.token, null);
+      assert.equal(await db.job.count({ where: { tipo: "email.recuperacion", payload: { path: ["usuarioId"], equals: recep3.usuarioId } } }), 1);
+
+      // Comparte el límite por email con «Recuperar acceso» (3 por hora): el tercero entra, el cuarto no.
+      await solicitarRestablecimiento(db, a.master.id, a.org.id, recep3.usuarioId);
+      await assert.rejects(solicitarRestablecimiento(db, a.master.id, a.org.id, recep3.usuarioId), DatosInvalidos, "límite de pedidos");
     });
 
     await t.test("IDs mal formados se rechazan como acceso denegado, sin llegar a la base", async () => {

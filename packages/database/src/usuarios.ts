@@ -1,6 +1,8 @@
 import { AccesoDenegado, administraUsuario, asignacionValida, cubreSede, puedeOtorgar, tienePermiso, veUsuario, type Asignacion, type FranquiciadoDeSede } from "@nailnet/domain";
 import { normalizarEmail } from "@nailnet/domain/credenciales";
+import type { Llavero } from "@nailnet/domain/secretos";
 import type { Database } from "./client.ts";
+import { encolarEmailRecuperacion } from "./emails.ts";
 import type { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, bloquearOrganizacion, exigirIds, mapaSedes } from "./access.ts";
 import { POLITICA_ACCESO, emitirTokenAcceso } from "./auth.ts";
@@ -177,5 +179,34 @@ export async function emitirInvitacion(db: Database, actorId: string, organizaci
     const enlace = await emitirTokenAcceso(tx, usuarioId, POLITICA_ACCESO.invitacionMs);
     await auditar(tx, organizacionId, actorId, "usuario.invitar", "Usuario", usuarioId);
     return enlace;
+  });
+}
+
+/**
+ * Restablecimiento iniciado por un administrador para una cuenta que ya tiene contraseña. El enlace va
+ * solo al email del usuario (mismo email y vencimiento que «Recuperar acceso»): quien lo dispara nunca
+ * lo ve, así que no le sirve para tomar la cuenta. La contraseña actual sigue valiendo hasta que el
+ * usuario elija otra. Comparte el límite de pedidos por email con la recuperación, para no inundar su casilla.
+ *
+ * Sin `envio` (desarrollo sin llavero) devuelve el token para que quien llama lo muestre en la consola del servidor.
+ */
+export async function solicitarRestablecimiento(db: Database, actorId: string, organizacionId: string, usuarioId: string, envio?: { enlace: (token: string) => string; llavero: Llavero }) {
+  exigirIds(usuarioId);
+  return db.$transaction(async tx => {
+    const { actor, franquiciadoDe } = await contexto(tx, actorId, organizacionId);
+    const membresia = await tx.membresiaOrganizacion.findUnique({ where: { organizacionId_usuarioId: { organizacionId, usuarioId } }, include: { asignaciones: true, usuario: { select: { email: true, activo: true, passwordHash: true } } } });
+    if (!membresia || usuarioId === actorId || !administraUsuario(actor, membresia.asignaciones, franquiciadoDe)) throw new AccesoDenegado();
+    if (!membresia.activo || !membresia.usuario.activo) throw new DatosInvalidos("El usuario está inactivo");
+    if (!membresia.usuario.passwordHash) throw new DatosInvalidos("El usuario todavía no activó su cuenta; generale un enlace de activación");
+    const { email } = membresia.usuario;
+    const ahora = new Date();
+    const desde = new Date(ahora.getTime() - POLITICA_ACCESO.ventanaRecuperacionMs);
+    const pedidos = await tx.intentoAcceso.count({ where: { tipo: "RECUPERACION", email, createdAt: { gte: desde } } });
+    if (pedidos >= POLITICA_ACCESO.maxRecuperacionesPorEmail) throw new DatosInvalidos("Ya se enviaron varios enlaces a este usuario en la última hora. Esperá un rato antes de reenviar.");
+    await tx.intentoAcceso.create({ data: { tipo: "RECUPERACION", email, ip: null, exitoso: true } });
+    const { id, token, expiraEn } = await emitirTokenAcceso(tx, usuarioId, POLITICA_ACCESO.recuperacionMs, ahora);
+    if (envio) await encolarEmailRecuperacion(tx, { usuarioId, tokenId: id, enlace: envio.enlace(token), llavero: envio.llavero });
+    await auditar(tx, organizacionId, actorId, "usuario.restablecer", "Usuario", usuarioId);
+    return { email, expiraEn, token: envio ? null : token };
   });
 }

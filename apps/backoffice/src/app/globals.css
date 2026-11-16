@@ -415,3 +415,15 @@ button.peligro{color:var(--texto-error)}
   .trat-lateral{position:static}
   .trat-panel.abierto{position:fixed;left:12px;right:12px;bottom:12px;z-index:30;max-height:62vh;overflow-y:auto;box-shadow:0 -10px 40px -10px rgb(16 24 40 / .35)}
 }
+
+/* Medios de pago de la sede (D22, doc 32) */
+.medios-pago{display:grid;border:1px solid var(--gris-200);border-radius:var(--radius-md);overflow:hidden;margin:12px 0}
+.medios-pago .medio{display:grid;grid-template-columns:64px minmax(140px,1.4fr) minmax(110px,1fr) 96px minmax(110px,1fr) 64px;gap:10px;align-items:center;padding:8px 12px}
+.medios-pago .medio.solo-lectura{grid-template-columns:minmax(140px,1.4fr) minmax(110px,1fr) 96px minmax(110px,1fr) 64px}
+.medios-pago .medio+.medio{border-top:1px solid var(--gris-200)}
+.medios-pago .cabecera{font-size:12px;font-weight:500;color:var(--color-muted-foreground);background:var(--gris-50)}
+.medios-pago .medio input:not([type=checkbox]){width:100%}
+.medios-pago .tipo,.medios-pago .ejemplo{font-size:13px;color:var(--color-muted-foreground)}
+.medios-pago .apagado>:not(.check){color:var(--color-muted-foreground)}
+input.corto{flex:0 1 150px!important}
+@media(max-width:720px){.medios-pago .medio{grid-template-columns:44px minmax(0,1fr) 60px 48px;gap:6px;padding:8px}.medios-pago .medio input:not([type=checkbox]){padding:6px}.medios-pago .medio.solo-lectura{grid-template-columns:minmax(0,1fr) 64px 40px}.medios-pago .tipo,.medios-pago .ejemplo{display:none}}

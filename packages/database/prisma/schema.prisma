@@ -194,6 +194,7 @@ model Sede {
   compras                 Compra[]
   ventas                  Venta[]
   cobrosVenta             CobroVenta[]
+  mediosPago              MedioPagoSede[]
   cajas                   Caja[]
   movimientosCaja         MovimientoCaja[]
   presencias              PresenciaProfesional[]
@@ -345,16 +346,20 @@ model ConfiguracionOrganizacion {
 }
 
 model ConfiguracionSede {
-  organizacionId            String   @db.Uuid
-  sedeId                    String   @id @db.Uuid
+  organizacionId            String           @db.Uuid
+  sedeId                    String           @id @db.Uuid
   horizonteReservaDias      Int?
   anticipacionMinimaMinutos Int?
   pasoGrillaMinutos         Int?
   retencionMinutos          Int?
   // D6: si recepción exige seña por Mercado Pago. null = heredar; sin valor en ningún nivel = no exige.
   recepcionExigeSena        Boolean?
-  updatedAt                 DateTime @updatedAt
-  sede                      Sede     @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  // D22: redondeo de los precios con ajuste por medio de pago. Paso en pesos (0 = sin redondeo).
+  // null = por defecto: $100 hacia abajo.
+  redondeoPaso              Int?
+  redondeoSentido           SentidoRedondeo?
+  updatedAt                 DateTime         @updatedAt
+  sede                      Sede             @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
 
   @@unique([organizacionId, sedeId])
 }
@@ -588,18 +593,18 @@ model ServicioSede {
 
 // Profesional de la organización; puede trabajar en varias sedes. Usuario opcional (agenda propia, más adelante).
 model Profesional {
-  id             String                @id @default(uuid()) @db.Uuid
-  organizacionId String                @db.Uuid
+  id             String                 @id @default(uuid()) @db.Uuid
+  organizacionId String                 @db.Uuid
   nombre         String
   apellido       String?
-  usuarioId      String?               @db.Uuid
+  usuarioId      String?                @db.Uuid
   // Foto pública (portal). Reemplazarla crea otra Imagen y borra la anterior.
-  fotoId         String?               @db.Uuid
-  activo         Boolean               @default(true)
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  organizacion   Organizacion          @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
-  foto           Imagen?               @relation(fields: [organizacionId, fotoId], references: [organizacionId, id], onDelete: Restrict)
+  fotoId         String?                @db.Uuid
+  activo         Boolean                @default(true)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  organizacion   Organizacion           @relation(fields: [organizacionId], references: [id], onDelete: Restrict)
+  foto           Imagen?                @relation(fields: [organizacionId, fotoId], references: [organizacionId, id], onDelete: Restrict)
   sedes          ProfesionalSede[]
   skills         ProfesionalSkill[]
   servicios      ProfesionalServicio[]
@@ -1480,7 +1485,12 @@ model CobroVenta {
   sedeId            String          @db.Uuid
   ventaId           String          @db.Uuid
   tipo              TipoCobro
+  // Tipo del medio: define el comportamiento (solo EFECTIVO mueve la caja) y agrupa los reportes.
   medio             MedioCobro
+  // Medio de pago de la sede con que se cobró (D22, doc 32) y su nombre en ese momento. Los cobros
+  // anteriores a D22 no lo tienen: se muestran por su tipo.
+  medioPagoId       String?         @db.Uuid
+  medioNombre       String?
   monto             Decimal         @db.Decimal(12, 2)
   // Número de operación, últimos dígitos de la tarjeta, etc. Texto libre opcional.
   referencia        String?
@@ -1495,6 +1505,7 @@ model CobroVenta {
   caja              Caja?           @relation(fields: [organizacionId, cajaId], references: [organizacionId, id], onDelete: Restrict)
   revierte          CobroVenta?     @relation("ReversoCobro", fields: [organizacionId, revierteId], references: [organizacionId, id], onDelete: Restrict)
   reverso           CobroVenta?     @relation("ReversoCobro")
+  medioPago         MedioPagoSede?  @relation(fields: [organizacionId, sedeId, medioPagoId], references: [organizacionId, sedeId, id], onDelete: Restrict)
   movimientoCaja    MovimientoCaja?
 
   @@unique([organizacionId, id])
@@ -1503,6 +1514,38 @@ model CobroVenta {
   @@index([ventaId])
   @@index([cajaId])
   @@index([sedeId, createdAt])
+  @@index([medioPagoId])
+}
+
+// Sentido del redondeo de los precios con ajuste por medio de pago (D22).
+enum SentidoRedondeo {
+  ABAJO
+  CERCANO
+  ARRIBA
+}
+
+// D22 (doc 32). Medio de pago de una sede: nombre visible, tipo (comportamiento y reportes) y ajuste en
+// porcentaje sobre el precio de lista (negativo = descuento, positivo = recargo). Cada sede nace con los
+// seis medios estándar en 0% (trigger de la migración). Un medio con cobros no se borra: se deshabilita.
+// El tipo no cambia después del alta: los cobros guardan el suyo.
+model MedioPagoSede {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizacionId String       @db.Uuid
+  sedeId         String       @db.Uuid
+  nombre         String
+  tipo           MedioCobro
+  // Porcentaje con hasta 2 decimales: entre −90 y +100.
+  ajustePct      Decimal      @default(0) @db.Decimal(5, 2)
+  habilitado     Boolean      @default(true)
+  orden          Int
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  sede           Sede         @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  cobros         CobroVenta[]
+
+  @@unique([organizacionId, id])
+  @@unique([organizacionId, sedeId, id])
+  @@index([sedeId, orden])
 }
 
 // Caja de una sede desde su apertura hasta su cierre. Una sola ABIERTA por sede (índice único parcial).

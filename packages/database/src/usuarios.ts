@@ -49,7 +49,9 @@ export async function listarUsuarios(db: Database, actorId: string, organizacion
   });
   return membresias
     .filter(m => veUsuario(actor, m.asignaciones, franquiciadoDe))
-    .filter(m => !filtro.sedeId || m.asignaciones.some(a => a.sedeId === filtro.sedeId))
+    // Con sede elegida entran también quienes la cubren desde arriba (master y franquiciado de esa sede),
+    // que no tienen sedeId propio.
+    .filter(m => !filtro.sedeId || m.asignaciones.some(a => cubreSede(a, filtro.sedeId!, franquiciadoDe)))
     .map(m => ({
       id: m.usuario.id,
       email: m.usuario.email,

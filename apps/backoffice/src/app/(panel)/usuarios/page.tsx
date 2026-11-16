@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { listarUsuarios, opcionesDeRol } from "@nailnet/database/usuarios";
 import { Formulario } from "@/components/formulario";
@@ -15,17 +16,37 @@ function SelectorRol({ opciones }: { opciones: Opcion[] }) {
   return <select name="asignacion" aria-label="Rol">{opciones.map(o => <option key={valor(o)} value={valor(o)}>{o.etiqueta}</option>)}</select>;
 }
 
-export default async function Usuarios() {
+// Filtro por rol. «admin» agrupa los tres roles con poder de administración.
+const ADMINISTRACION = ["MASTER_FRANQUICIADOR", "FRANQUICIADO", "ADMIN_SEDE"];
+const FILTROS: Record<string, { etiqueta: string; roles: string[] }> = {
+  admin: { etiqueta: "Administración (todos)", roles: ADMINISTRACION },
+  ...Object.fromEntries(Object.entries(ROLES).map(([rol, etiqueta]) => [rol, { etiqueta, roles: [rol] }])),
+};
+
+export default async function Usuarios({ searchParams }: { searchParams: Promise<{ rol?: string }> }) {
+  const { rol } = await searchParams;
+  const filtro = rol && Object.hasOwn(FILTROS, rol) ? FILTROS[rol] : undefined;
   const { sesion, organizacion, sede, puede } = await requerirOrganizacion();
   if (!puede.verUsuarios) notFound();
   const actorId = sesion.usuario.id;
-  const usuarios = await listarUsuarios(db(), actorId, organizacion.id, { sedeId: sede?.id });
+  const todos = await listarUsuarios(db(), actorId, organizacion.id, { sedeId: sede?.id });
+  // Se filtra sobre las asignaciones visibles para el actor, así no se revelan roles fuera de su alcance.
+  const usuarios = filtro ? todos.filter(u => u.asignaciones.some(a => filtro.roles.includes(a.rol))) : todos;
   const opciones = puede.administrarUsuarios ? await opcionesDeRol(db(), actorId, organizacion.id) : [];
   // Con una sede elegida, se ofrecen primero los roles de esa sede.
   const ordenadas = sede ? [...opciones].sort((a, b) => Number(b.asignacion.sedeId === sede.id) - Number(a.asignacion.sedeId === sede.id)) : opciones;
 
   return <section className="panel">
     <p className="eyebrow">EQUIPO{sede ? ` · ${sede.nombre.toUpperCase()}` : ""}</p><h1>Usuarios</h1>
+    <form className="en-linea" role="search">
+      <select name="rol" defaultValue={filtro ? rol : ""} aria-label="Filtrar por rol">
+        <option value="">Todos los roles</option>
+        {Object.entries(FILTROS).map(([clave, f]) => <option key={clave} value={clave}>{f.etiqueta}</option>)}
+      </select>
+      <button className="secundario">Filtrar</button>
+      {filtro && <Link href="/usuarios">Quitar filtro</Link>}
+    </form>
+    {filtro && <p className="ayuda">{usuarios.length} de {todos.length} usuarios con rol {filtro.etiqueta.toLowerCase()}.</p>}
     <div className="tabla">
       {usuarios.map(u => <article key={u.id} className={u.activo ? "fila" : "fila inactiva"}>
         <div className="fila-cabecera"><h2>{u.nombre}</h2>
@@ -50,7 +71,7 @@ export default async function Usuarios() {
           </Formulario>
         </div>}
       </article>)}
-      {!usuarios.length && <p>No hay usuarios en tu alcance{sede ? " para esta sede" : ""}.</p>}
+      {!usuarios.length && <p>{filtro ? `Nadie con rol ${filtro.etiqueta.toLowerCase()}` : "No hay usuarios"} en tu alcance{sede ? " para esta sede" : ""}.</p>}
     </div>
 
     {ordenadas.length > 0 && <>

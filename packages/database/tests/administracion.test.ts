@@ -76,7 +76,13 @@ test("administración de sedes y usuarios con alcance", async (t) => {
       assert.ok((await listarUsuarios(db, a.master.id, a.org.id)).some(u => u.id === a.sinRol.id));
       await assert.rejects(listarUsuarios(db, a.recepcion.id, a.org.id), AccesoDenegado);
       await assert.rejects(listarUsuarios(db, a.franquiciado.id, a.org.id, { sedeId: a.sur.id }), AccesoDenegado);
-      assert.ok((await listarUsuarios(db, a.franquiciado.id, a.org.id, { sedeId: a.norte.id })).every(u => u.asignaciones.some(x => x.sedeId === a.norte.id)));
+      const norteDeFran = await listarUsuarios(db, a.franquiciado.id, a.org.id, { sedeId: a.norte.id });
+      assert.ok(norteDeFran.every(u => u.asignaciones.some(x => x.sedeId === a.norte.id || x.alcance !== "SEDE")));
+      assert.ok(norteDeFran.some(u => u.id === a.franquiciado.id), "el franquiciado cubre Norte aunque no tenga sedeId");
+      assert.ok(!norteDeFran.some(u => u.id === b.admin.id), "admin de Sur no entra al filtrar por Norte");
+      const norteDeMaster = await listarUsuarios(db, a.master.id, a.org.id, { sedeId: a.norte.id });
+      assert.ok(norteDeMaster.some(u => u.id === a.master.id), "el master cubre todas las sedes");
+      assert.ok(!norteDeMaster.some(u => u.id === a.sinRol.id), "sin rol no cubre ninguna sede");
       const opciones = await opcionesDeRol(db, a.franquiciado.id, a.org.id);
       assert.ok(opciones.every(o => o.asignacion.rol === "ADMIN_SEDE" || o.asignacion.rol === "RECEPCIONISTA"));
       assert.ok(!opciones.some(o => o.asignacion.sedeId === a.sur.id));

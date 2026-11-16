@@ -9,7 +9,8 @@ import { ErrorResend, enmascararEmail, transporteFalso, transporteResend } from 
 
 /**
  * Transporte de emails (P03, doc 24):
- * - con RESEND_API_KEY (y RESEND_FROM, obligatorio con ella), Resend;
+ * - con RESEND_API_KEY (y RESEND_FROM, obligatorio con ella), Resend. RESEND_REPLY_TO, opcional, es
+ *   adónde llegan las respuestas (útil mientras el remitente es de un dominio prestado);
  * - sin clave, fuera de producción o con EMAIL_SIMULADO=true, el transporte falso: no sale nada a la
  *   red y el mensaje se muestra en la consola (el contenido completo solo fuera de producción, porque el
  *   de recuperación lleva un enlace de acceso);
@@ -21,7 +22,8 @@ function crearTransporte(): TransporteEmail | null {
   if (apiKey) {
     const de = process.env.RESEND_FROM;
     if (!de) throw new Error("RESEND_FROM es obligatoria junto con RESEND_API_KEY (p. ej. «Sicurella <turnos@dominio-verificado>»)");
-    const resend = transporteResend({ apiKey, de });
+    const responderA = process.env.RESEND_REPLY_TO || undefined;
+    const resend = transporteResend({ apiKey, de, responderA });
     // Un 4xx de Resend (validación, dominio sin verificar, clave inválida) no se arregla reintentando: va
     // directo a revisión. Red, 429 y 5xx se relanzan tal cual y la cola reintenta.
     return { nombre: "resend", enviar: (m, signal) => resend.enviar(m, signal).catch(e => { throw e instanceof ErrorResend ? new ErrorPermanente(e.message) : e; }) };

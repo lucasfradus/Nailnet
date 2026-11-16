@@ -46,16 +46,21 @@ const REMITENTE = /^(?:[^<>\r\n]{1,100} <[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+>|[^\s<>@
 
 export const remitenteValido = (de: string) => REMITENTE.test(de);
 
-export function transporteResend(config: { apiKey: string; de: string; fetch?: Fetch }): TransporteEmail {
+/**
+ * `responderA` (opcional) es el Reply-To: adónde llegan las respuestas del cliente. Sirve cuando el
+ * remitente es de un dominio prestado (p. ej. un subdominio de Clic mientras no esté el de la marca).
+ */
+export function transporteResend(config: { apiKey: string; de: string; responderA?: string; fetch?: Fetch }): TransporteEmail {
   if (!config.apiKey) throw new Error("Falta la API key de Resend");
   if (!remitenteValido(config.de)) throw new Error("Remitente de Resend inválido: usar «Nombre <direccion@dominio>»");
+  if (config.responderA !== undefined && !remitenteValido(config.responderA)) throw new Error("Dirección de respuesta de Resend inválida: usar «direccion@dominio» o «Nombre <direccion@dominio>»");
   const fetchImpl = config.fetch ?? fetch;
   return {
     nombre: "resend",
     async enviar(m, signal) {
       if (!m.claveIdempotencia || m.claveIdempotencia.length > 256) throw new ErrorResend(400, "Clave de idempotencia inválida");
       const tags = Object.entries(m.etiquetas ?? {}).filter(([k, v]) => ETIQUETA.test(k) && ETIQUETA.test(v)).map(([name, value]) => ({ name, value }));
-      const cuerpo = { from: config.de, to: [m.para], subject: m.asunto, html: m.html, text: m.texto, ...(tags.length ? { tags } : {}) };
+      const cuerpo = { from: config.de, to: [m.para], ...(config.responderA ? { reply_to: config.responderA } : {}), subject: m.asunto, html: m.html, text: m.texto, ...(tags.length ? { tags } : {}) };
       let respuesta: Response;
       try {
         respuesta = await fetchImpl(`${API}/emails`, {

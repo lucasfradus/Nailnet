@@ -2,7 +2,7 @@
 
 Implementa P03. Migración `202610140020_emails`. Lógica en `packages/database/src/emails.ts`, plantillas en `packages/domain/src/emails.ts`, cliente HTTP en `packages/integrations/src/resend.ts` y firma del webhook en `packages/domain/src/resend.ts`. El worker conecta el transporte (`apps/worker/src/manejadores.ts`).
 
-**Estado:** probado con transportes falsos y Postgres real. **Falta enviar de verdad:** no hay API key de Resend ni dominio verificado (D03). Sin eso, staging simula y producción deja los emails en cola.
+**Estado:** probado con transportes falsos y Postgres real. **2026-11-16:** el usuario cargó `RESEND_API_KEY` (una key propia de Nailnet, en la misma cuenta de Resend que Clicnet) y `RESEND_FROM` con el dominio de Clic, que ya estaba verificado en esa cuenta. El dominio de Sicurella queda para producción (D03). **Falta:** el webhook de Nailnet (ver Pendiente) y confirmar el primer envío real.
 
 ## Qué se envía
 
@@ -117,7 +117,9 @@ Todas solo de servidor; nunca con prefijo `VITE_`.
 
 ## Pendiente
 
-- **Envío real y webhook** contra Resend (puesta en marcha, arriba). No se probó con la API real: el cuerpo, los códigos de error y la firma siguen la documentación y el vector de ejemplo de Svix.
+- **Webhook de Nailnet en Resend (postergado por el usuario, 2026-11-16).** El de Clicnet no sirve: los webhooks de Resend son por URL. Crear uno hacia `https://<backoffice>/api/webhooks/resend`, con los eventos del paso 3 de la puesta en marcha, y cargar `RESEND_WEBHOOK_SECRET` en el backoffice. Hasta entonces los envíos quedan en `ENVIADO` y no se ven entregas, rebotes ni quejas en `EnvioEmail` ni en la bandeja de incidencias.
+- **Primer envío real:** una reserva a un email propio para confirmar que `EnvioEmail` pasa a `ENVIADO` (y a `ENTREGADO` cuando esté el webhook). No se probó con la API real: el cuerpo, los códigos de error y la firma siguen la documentación y el vector de ejemplo de Svix.
+- **`RESEND_REPLY_TO`:** cargarlo con una dirección de Sicurella mientras el remitente sea de Clic.
 - **Bandeja de revisión (M04):** hecha, ver [28-incidencias.md](28-incidencias.md). Los envíos `FALLIDO`, `REBOTADO` o `QUEJA` y los trabajos fallidos se ven en la bandeja, y un trabajo fallido se puede rearmar. Falta mostrarlos en la ficha del turno.
 - **Rebotes:** un email que rebota no marca al cliente. Falta decidir si se deja de enviarle o se avisa a la sede.
 - **Invitaciones de usuario:** el enlace de activación (doc 10) se sigue mostrando a quien lo genera; se puede pasar a este mismo mecanismo.

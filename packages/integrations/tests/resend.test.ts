@@ -28,6 +28,17 @@ test("envía con idempotencia, texto y etiquetas válidas", async () => {
   assert.deepEqual(cuerpo, { from: DE, to: ["lucia@example.com"], subject: "Tu turno está confirmado", html: "<p>Hola</p>", text: "Hola", tags: [{ name: "tipo", value: "reserva_confirmada" }] });
 });
 
+test("reply_to solo si se configura y con formato válido", async () => {
+  const llamadas: Llamada[] = [];
+  const t = transporteResend({ apiKey: KEY, de: "Sicurella <turnos@mail.clic.example>", responderA: "Sicurella <hola@sicurella.example>", fetch: falso(200, { id: "x1" }, llamadas) });
+  await t.enviar(mensaje);
+  const cuerpo = JSON.parse(String(llamadas[0]!.init.body));
+  assert.equal(cuerpo.reply_to, "Sicurella <hola@sicurella.example>");
+  assert.equal(cuerpo.from, "Sicurella <turnos@mail.clic.example>");
+  assert.throws(() => transporteResend({ apiKey: KEY, de: DE, responderA: "hola@sicurella.example\r\nBcc: otro@example.com" }));
+  assert.throws(() => transporteResend({ apiKey: KEY, de: DE, responderA: "" }));
+});
+
 test("errores: transitorios se reintentan, permanentes van a revisión, sin la API key", async () => {
   const enviar = (status: number, cuerpo: unknown) => transporteResend({ apiKey: KEY, de: DE, fetch: falso(status, cuerpo) }).enviar(mensaje);
   for (const [status, cuerpo] of [[500, { name: "internal_server_error" }], [503, null], [429, { name: "rate_limit_exceeded", message: "Too many requests" }], [409, { name: "concurrent_idempotent_requests" }]] as const) {

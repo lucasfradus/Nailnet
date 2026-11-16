@@ -2,7 +2,7 @@
 
 Implementa P03. Migración `202610140020_emails`. Lógica en `packages/database/src/emails.ts`, plantillas en `packages/domain/src/emails.ts`, cliente HTTP en `packages/integrations/src/resend.ts` y firma del webhook en `packages/domain/src/resend.ts`. El worker conecta el transporte (`apps/worker/src/manejadores.ts`).
 
-**Estado:** probado con transportes falsos y Postgres real. **Falta enviar de verdad:** no hay API key de Resend ni dominio verificado (D03). Sin eso, staging simula y producción deja los emails en cola.
+**Estado:** probado con transportes falsos y Postgres real. **2026-11-16:** el usuario cargó `RESEND_API_KEY` (una key propia de Nailnet, en la misma cuenta de Resend que Clicnet) y `RESEND_FROM` con el dominio de Clic, que ya estaba verificado en esa cuenta. El dominio de Sicurella queda para producción (D03). **Falta:** el webhook de Nailnet (ver Pendiente) y confirmar el primer envío real.
 
 ## Qué se envía
 
@@ -97,6 +97,7 @@ Todas solo de servidor; nunca con prefijo `VITE_`.
 |---|---|---|
 | `RESEND_API_KEY` | worker | **Secreto.** API key de Resend con permiso de envío (`sending_access`), idealmente restringida al dominio |
 | `RESEND_FROM` | worker | Remitente, p. ej. `Sicurella <turnos@sicurella.com.ar>`. El dominio tiene que estar verificado en Resend |
+| `RESEND_REPLY_TO` | worker | Opcional. Reply-To de todos los emails: adónde llegan las respuestas del cliente. Mismo formato que `RESEND_FROM`; uno inválido hace fallar el arranque del worker |
 | `EMAIL_SIMULADO` | worker | `true` para simular sin clave con `NODE_ENV=production` (staging; el IaC lo fija ahí) |
 | `NAILNET_CLAVES_CIFRADO`, `NAILNET_CLAVE_ACTIVA` | backoffice y worker | Ya existían (doc 11). El worker las necesita para descifrar el enlace de recuperación. `compose.yaml` ahora también se las pasa al worker local |
 | `RESEND_WEBHOOK_SECRET` | backoffice | **Secreto.** `whsec_…` del webhook configurado en Resend |
@@ -107,6 +108,8 @@ Todas solo de servidor; nunca con prefijo `VITE_`.
 ## Puesta en marcha (pendiente del usuario)
 
 1. **Dominio:** verificar en Resend el dominio del remitente (SPF y DKIM, y DMARC recomendado), por ejemplo un subdominio `mail.sicurella.com.ar` para no tocar el correo existente. Decidir la dirección: `turnos@…` o `no-responder@…`.
+   - **Mientras no haya acceso al dominio de Sicurella (decidido 2026-11-16):** usar un subdominio de Clic, p. ej. `RESEND_FROM=Sicurella <turnos@mail.<dominio de Clic>>`. El cliente ve «Sicurella» como nombre. Cargar `RESEND_REPLY_TO` con una dirección de Sicurella para que las respuestas no lleguen a Clic. Los rebotes y quejas pesan sobre la reputación de ese subdominio, no del dominio principal de Clic.
+   - Al pasar a producción con el dominio de Sicurella, verificarlo y cambiar `RESEND_FROM` (y quitar o ajustar `RESEND_REPLY_TO`). No hay que tocar código.
 2. Crear una API key con permiso solo de envío y cargar `RESEND_API_KEY` y `RESEND_FROM` en el worker, por ambiente.
 3. Crear el webhook en Resend hacia `https://<backoffice>/api/webhooks/resend` con los eventos `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained` y `email.failed`. Cargar su secreto en `RESEND_WEBHOOK_SECRET`.
 4. Probar una reserva de recepción con un email propio: llega la confirmación, `EnvioEmail` pasa a `ENVIADO` y después a `ENTREGADO`.
@@ -114,7 +117,9 @@ Todas solo de servidor; nunca con prefijo `VITE_`.
 
 ## Pendiente
 
-- **Envío real y webhook** contra Resend (puesta en marcha, arriba). No se probó con la API real: el cuerpo, los códigos de error y la firma siguen la documentación y el vector de ejemplo de Svix.
+- **Webhook de Nailnet en Resend (postergado por el usuario, 2026-11-16).** El de Clicnet no sirve: los webhooks de Resend son por URL. Crear uno hacia `https://<backoffice>/api/webhooks/resend`, con los eventos del paso 3 de la puesta en marcha, y cargar `RESEND_WEBHOOK_SECRET` en el backoffice. Hasta entonces los envíos quedan en `ENVIADO` y no se ven entregas, rebotes ni quejas en `EnvioEmail` ni en la bandeja de incidencias.
+- **Primer envío real:** una reserva a un email propio para confirmar que `EnvioEmail` pasa a `ENVIADO` (y a `ENTREGADO` cuando esté el webhook). No se probó con la API real: el cuerpo, los códigos de error y la firma siguen la documentación y el vector de ejemplo de Svix.
+- **`RESEND_REPLY_TO`:** cargarlo con una dirección de Sicurella mientras el remitente sea de Clic.
 - **Bandeja de revisión (M04):** hecha, ver [28-incidencias.md](28-incidencias.md). Los envíos `FALLIDO`, `REBOTADO` o `QUEJA` y los trabajos fallidos se ven en la bandeja, y un trabajo fallido se puede rearmar. Falta mostrarlos en la ficha del turno.
 - **Rebotes:** un email que rebota no marca al cliente. Falta decidir si se deja de enviarle o se avisa a la sede.
 - **Invitaciones de usuario:** el enlace de activación (doc 10) se sigue mostrando a quien lo genera; se puede pasar a este mismo mecanismo.

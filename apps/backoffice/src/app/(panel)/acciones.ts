@@ -4,7 +4,10 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { AccesoDenegado, type Asignacion } from "@nailnet/domain";
 import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes, zonaHorariaValida } from "@nailnet/database/access";
-import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol } from "@nailnet/database/usuarios";
+import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol, solicitarRestablecimiento } from "@nailnet/database/usuarios";
+import { llaveroEntorno } from "@nailnet/database/configuracion";
+import type { Llavero } from "@nailnet/domain/secretos";
+import { recuperacionPorEmail } from "@/lib/emails";
 import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configurarSenaRecepcion, eliminarCredencial, exigirGestionCredenciales, guardarCredencial } from "@nailnet/database/configuracion";
 import { ambientePagos } from "@nailnet/database/pagos";
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
@@ -108,6 +111,20 @@ export async function accionInvitar(_: Estado, form: FormData) {
     const base = urlBackoffice();
     // Se muestra una sola vez a quien lo generó; no se guarda ni se registra.
     return `Enlace de activación (vence ${expiraEn.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" })}): ${base}/restablecer#${token}`;
+  }, "");
+}
+export async function accionRestablecer(_: Estado, form: FormData) {
+  // Sin envío de emails no hay a dónde mandar el enlace (y mostrárselo al admin le permitiría tomar la cuenta).
+  if (!recuperacionPorEmail()) return { error: "El envío de emails no está habilitado; el usuario no recibiría el enlace" };
+  return ejecutar("/usuarios", async (actor, org) => {
+    const base = urlBackoffice();
+    const enlace = (token: string) => `${base}/restablecer#${token}`;
+    // Igual que «Recuperar acceso»: sin llavero (desarrollo fuera de Docker) el enlace va a la consola del servidor.
+    let llavero: Llavero | null = null;
+    try { llavero = llaveroEntorno(); } catch (e) { if (!(e instanceof CifradoNoConfigurado) || produccion) throw e; }
+    const r = await solicitarRestablecimiento(db(), actor, org, texto(form, "usuarioId"), llavero ? { enlace, llavero } : undefined);
+    if (r.token) console.info(`[desarrollo, sin NAILNET_CLAVES_CIFRADO] Enlace de restablecimiento para ${r.email}: ${enlace(r.token)}`);
+    return `Le enviamos a ${r.email} un enlace para elegir una nueva contraseña (vence en 30 minutos). Su contraseña actual sigue valiendo hasta que la cambie.`;
   }, "");
 }
 

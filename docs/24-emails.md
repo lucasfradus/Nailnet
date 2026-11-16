@@ -11,7 +11,7 @@ Implementa P03. Migración `202610140020_emails`. Lógica en `packages/database/
 | `email.reserva_confirmada` | Reserva creada ya confirmada (recepción, online sin seña) o pendiente que se confirma (seña aprobada, R04) | `email.reserva_confirmada:{reservaId}` | Cliente |
 | `email.reserva_cancelada` | Cancelación (R03) | `email.reserva_cancelada:{reservaId}` | Cliente |
 | `email.reserva_reprogramada` | Reprogramación (R03). Lleva el horario nuevo y menciona el anterior; la reserva nueva no manda otra confirmación | `email.reserva_reprogramada:{reservaId original}` | Cliente |
-| `email.recuperacion` | Pedido de «Recuperar acceso» en el backoffice | `email.recuperacion:{tokenId}` | Usuario |
+| `email.recuperacion` | Pedido de «Recuperar acceso» en el backoffice, o «Restablecer contraseña» de un admin en Usuarios (el admin no ve el enlace) | `email.recuperacion:{tokenId}` | Usuario |
 
 - **Reservas:** el gancho está en `registrarEvento` (`reservas.ts`), que todas las transiciones ya usan. Así cualquier camino que confirme, cancele o reprograme (recepción, portal, Mercado Pago) avisa sin que cada uno se acuerde.
 - **Sin email del cliente** (frecuente en recepción) no se encola nada.

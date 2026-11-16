@@ -97,6 +97,7 @@ Todas solo de servidor; nunca con prefijo `VITE_`.
 |---|---|---|
 | `RESEND_API_KEY` | worker | **Secreto.** API key de Resend con permiso de envío (`sending_access`), idealmente restringida al dominio |
 | `RESEND_FROM` | worker | Remitente, p. ej. `Sicurella <turnos@sicurella.com.ar>`. El dominio tiene que estar verificado en Resend |
+| `RESEND_REPLY_TO` | worker | Opcional. Reply-To de todos los emails: adónde llegan las respuestas del cliente. Mismo formato que `RESEND_FROM`; uno inválido hace fallar el arranque del worker |
 | `EMAIL_SIMULADO` | worker | `true` para simular sin clave con `NODE_ENV=production` (staging; el IaC lo fija ahí) |
 | `NAILNET_CLAVES_CIFRADO`, `NAILNET_CLAVE_ACTIVA` | backoffice y worker | Ya existían (doc 11). El worker las necesita para descifrar el enlace de recuperación. `compose.yaml` ahora también se las pasa al worker local |
 | `RESEND_WEBHOOK_SECRET` | backoffice | **Secreto.** `whsec_…` del webhook configurado en Resend |
@@ -107,6 +108,8 @@ Todas solo de servidor; nunca con prefijo `VITE_`.
 ## Puesta en marcha (pendiente del usuario)
 
 1. **Dominio:** verificar en Resend el dominio del remitente (SPF y DKIM, y DMARC recomendado), por ejemplo un subdominio `mail.sicurella.com.ar` para no tocar el correo existente. Decidir la dirección: `turnos@…` o `no-responder@…`.
+   - **Mientras no haya acceso al dominio de Sicurella (decidido 2026-11-16):** usar un subdominio de Clic, p. ej. `RESEND_FROM=Sicurella <turnos@mail.<dominio de Clic>>`. El cliente ve «Sicurella» como nombre. Cargar `RESEND_REPLY_TO` con una dirección de Sicurella para que las respuestas no lleguen a Clic. Los rebotes y quejas pesan sobre la reputación de ese subdominio, no del dominio principal de Clic.
+   - Al pasar a producción con el dominio de Sicurella, verificarlo y cambiar `RESEND_FROM` (y quitar o ajustar `RESEND_REPLY_TO`). No hay que tocar código.
 2. Crear una API key con permiso solo de envío y cargar `RESEND_API_KEY` y `RESEND_FROM` en el worker, por ambiente.
 3. Crear el webhook en Resend hacia `https://<backoffice>/api/webhooks/resend` con los eventos `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained` y `email.failed`. Cargar su secreto en `RESEND_WEBHOOK_SECRET`.
 4. Probar una reserva de recepción con un email propio: llega la confirmación, `EnvioEmail` pasa a `ENVIADO` y después a `ENTREGADO`.

@@ -94,6 +94,7 @@ export default defineRailway((ctx) => {
       // y producción los deja pendientes en la cola hasta configurarla.
       RESEND_API_KEY: preserve(),
       RESEND_FROM: preserve(),
+      RESEND_REPLY_TO: preserve(),
       ...(staging ? { EMAIL_SIMULADO: "true" } : {}),
     },
   });

@@ -77,6 +77,7 @@ Las variables `VITE_` terminan en el bundle público: nunca poner secretos.
 | `MP_APP_ID`, `MP_CLIENT_SECRET` | Referencias a las del backoffice. Renovación de los tokens OAuth de las sedes |
 | `RESEND_API_KEY` | **Secreto: cargar a mano.** API key de Resend (solo envío). Sin ella, staging simula los emails y producción los deja en cola (doc 24). El llavero de arriba también descifra los enlaces de recuperación |
 | `RESEND_FROM` | Remitente con dominio verificado en Resend, p. ej. `Sicurella <turnos@sicurella.com.ar>`. Obligatoria con la API key |
+| `RESEND_REPLY_TO` | Opcional. Adónde llegan las respuestas del cliente; útil mientras el remitente es de un subdominio de Clic (doc 24) |
 | `EMAIL_SIMULADO` | `true` solo en `staging` (lo fija el IaC): emails simulados mientras no haya API key |
 
 ## IP del cliente

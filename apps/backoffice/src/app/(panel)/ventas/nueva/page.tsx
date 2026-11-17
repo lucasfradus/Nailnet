@@ -11,7 +11,8 @@ import { requerirOrganizacion } from "@/lib/contexto";
 import { accionAtendida } from "../../acciones";
 import { cantidad } from "../../stock/formato";
 import { accionAsignarFicha, accionCrearFichaTurno, accionRegistrarVenta } from "../acciones";
-import { FILAS_COBRO, FILAS_PRODUCTO, FILAS_SERVICIO, PestanasVentas, pesos } from "../comun";
+import { FILAS_PRODUCTO, FILAS_SERVICIO, PestanasVentas, pesos } from "../comun";
+import { CobroRapido } from "./cobro-rapido";
 
 export const metadata: Metadata = { title: "Cobrar · Sicurella" };
 
@@ -35,7 +36,6 @@ export default async function NuevaVenta({ searchParams }: { searchParams: Promi
   const sinFicha = turno && !turno.cliente;
   const buscar = q.buscar?.trim() ?? "";
   const candidatos = sinFicha && buscar ? await listarClientes(db(), sesion.usuario.id, organizacion.id, { texto: buscar }).catch(e => { if (e instanceof AccesoDenegado) return []; throw e; }) : [];
-  const filas = turno ? [...turno.items.map(i => ({ ...i, precio: i.precio.replace(".", ",") })), ...Array.from({ length: FILAS_SERVICIO - turno.items.length }, () => null)] : [];
 
   return <section className="panel">
     <p className="eyebrow"><Link href="/ventas">VENTAS</Link> · {sede.nombre.toUpperCase()}</p>
@@ -88,52 +88,14 @@ export default async function NuevaVenta({ searchParams }: { searchParams: Promi
         <p className="alerta error">El turno no está marcado como atendido. Se cobra después de atender.</p>
         {turno.estado === "CONFIRMADA" && <Formulario accion={accionAtendida} boton="Marcar atendido" className="en-linea" secundario><input type="hidden" name="reservaId" value={turno.id} /></Formulario>}
       </div>
-      : <Formulario accion={accionRegistrarVenta} boton={turno ? "Registrar venta y cobros" : "Registrar venta"}>
-        <input type="hidden" name="sedeId" value={sede.id} />
-        {turno && <input type="hidden" name="reservaId" value={turno.id} />}
-        {/* Clave de idempotencia: un doble envío de este formulario devuelve la misma venta. */}
-        <input type="hidden" name="clave" value={randomUUID()} />
-
-        {turno && <fieldset className="servicios"><legend>Comanda: servicios realizados</legend>
-          {filas.map((f, i) => <div key={i} className="grilla">
-            {f && <input type="hidden" name={`reservaItem_${i}`} value={f.reservaItemId} />}
-            <select name={`servicio_${i}`} aria-label={`Servicio ${i + 1}`} defaultValue={f?.servicioId ?? ""}>
-              <option value="">{f ? "— no se hizo (quitar)" : "— agregar servicio"}</option>
-              {datos.servicios.map(s => <option key={s.id} value={s.id}>{s.nombre}{s.precioLista ? ` · lista ${pesos(s.precioLista)}` : " · sin precio de lista"}</option>)}
-            </select>
-            <select name={`profesional_${i}`} aria-label={`Profesional del servicio ${i + 1}`} defaultValue={f?.profesionalId ?? ""}>
-              <option value="">Profesional</option>
-              {datos.profesionales.map(p => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-            </select>
-            <input name={`precio_${i}`} inputMode="decimal" defaultValue={f?.precio ?? ""} placeholder="Precio de lista" aria-label={`Precio cobrado del servicio ${i + 1}`} pattern="\d{1,10}([.,]\d{1,2})?" />
-          </div>)}
-          <p className="ayuda">Cargá lo que figura en la comanda de la profesional. El precio se puede editar: vacío = precio de lista de la sede (en los servicios del turno se propone el pactado). Quedan guardados el de lista y el cobrado. Agregar un servicio no ocupa agenda: ya se hizo.</p>
-        </fieldset>}
-
-        <fieldset className="servicios"><legend>Productos {turno ? "(opcional)" : ""}</legend>
-          {datos.productos.length ? Array.from({ length: FILAS_PRODUCTO }, (_, i) => <div key={i} className="grilla">
-            <select name={`producto_${i}`} aria-label={`Producto ${i + 1}`} defaultValue="">
-              <option value="">{i === 0 ? "Elegí un producto" : "—"}</option>
-              {datos.productos.map(p => <option key={p.id} value={p.id}>{p.nombre} · {pesos(p.precio)} (hay {cantidad(p.stock, p.unidad)})</option>)}
-            </select>
-            <input name={`cantidad_${i}`} inputMode="decimal" placeholder="Cantidad (1)" aria-label={`Cantidad ${i + 1}`} />
-          </div>) : <p className="ayuda">No hay productos vendibles con precio en esta sede.</p>}
-        </fieldset>
-        <label>Descuento ($, opcional)<input name="descuento" inputMode="decimal" placeholder="0" pattern="\d{1,10}([.,]\d{1,2})?" title="Pesos, con hasta 2 decimales y sin separador de miles" /></label>
-
-        <fieldset className="servicios"><legend>Cobros</legend>
-          {Array.from({ length: FILAS_COBRO }, (_, i) => <div key={i} className="grilla">
-            <select name={`medio_${i}`} aria-label={`Medio del cobro ${i + 1}`} defaultValue={(datos.medios.find(m => m.tipo === (i === 0 ? "EFECTIVO" : "TARJETA_DEBITO")) ?? datos.medios[0])?.id}>
-              {datos.medios.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
-            </select>
-            <input name={`monto_${i}`} inputMode="decimal" placeholder="Monto $" aria-label={`Monto del cobro ${i + 1}`} pattern="\d{1,10}([.,]\d{1,2})?" />
-            <input name={`referencia_${i}`} maxLength={120} placeholder="Referencia (opcional)" aria-label={`Referencia del cobro ${i + 1}`} />
-          </div>)}
-        </fieldset>
-        <p className="ayuda">
-          Podés combinar medios (por ejemplo, parte en efectivo y parte con tarjeta). No se puede cobrar más que el total{turno && turno.anticipo !== "0.00" ? ` menos la seña (${pesos(turno.anticipo)})` : ""}: si no sabés el total, registrá la venta sin cobros y cobrá desde su detalle, donde se muestra el saldo.
-          {datos.cajaAbierta ? " El efectivo entra en la caja abierta." : " La caja está cerrada: para cobrar en efectivo, abrila primero desde Caja."}
-        </p>
-      </Formulario>}
+      : <CobroRapido accion={accionRegistrarVenta} sedeId={sede.id} reservaId={turno?.id ?? null}
+        // Clave de idempotencia: un doble envío de este formulario devuelve la misma venta.
+        clave={randomUUID()}
+        turnoItems={turno?.items.map(i => ({ reservaItemId: i.reservaItemId, servicioId: i.servicioId, profesionalId: i.profesionalId, precio: i.precio })) ?? []}
+        servicios={datos.servicios} profesionales={datos.profesionales}
+        productos={datos.productos.map(p => ({ id: p.id, nombre: p.nombre, precio: p.precio, stock: cantidad(p.stock, p.unidad) }))}
+        medios={datos.medios.map(m => ({ id: m.id, nombre: m.nombre, tipo: m.tipo, ajuste: m.ajuste.toString() }))}
+        redondeo={datos.redondeo} anticipo={turno?.anticipo ?? "0.00"} cajaAbierta={datos.cajaAbierta}
+        maxServicios={FILAS_SERVICIO} maxProductos={FILAS_PRODUCTO} />}
   </section>;
 }

@@ -5,7 +5,7 @@ import { AccesoDenegado } from "@nailnet/domain";
 import { DatosInvalidos } from "@nailnet/database/access";
 import { crearCliente } from "@nailnet/database/clientes";
 import { asignarClienteReserva } from "@nailnet/database/reservas";
-import { anularVenta, registrarCobro, registrarVenta } from "@nailnet/database/ventas";
+import { anularVenta, cambiarPrecioVenta, registrarCobro, registrarVenta } from "@nailnet/database/ventas";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import type { Estado } from "@/components/formulario";
@@ -66,7 +66,10 @@ export async function accionRegistrarVenta(_: Estado, form: FormData): Promise<E
   if (reservaId && servicios(form).some(s => !s.profesionalId)) return { error: "Elegí la profesional de cada servicio" };
   const r = await ejecutar((actor, org) => registrarVenta(db(), actor, org, {
     sedeId: texto(form, "sedeId"), reservaId, servicios: reservaId ? servicios(form) : undefined, productos: productos(form),
-    descuento: texto(form, "descuento"), cobros: cobros(form), claveIdempotencia: texto(form, "clave"),
+    descuento: texto(form, "descuento"), claveIdempotencia: texto(form, "clave"),
+    // D22: precio del medio elegido (vacío = lista). «Registrar sin cobrar» guarda el precio y no cobra.
+    medioPrecio: texto(form, "medioPrecio") || null,
+    cobros: texto(form, "enviar") === "pendiente" ? [] : cobros(form),
   }));
   if ("error" in r) return r;
   redirect(`/ventas/${r.ok.id}`);
@@ -103,4 +106,11 @@ export async function accionCrearFichaTurno(_: Estado, form: FormData): Promise<
     // Si la asignación falla (por ejemplo, otra recepcionista ya le puso una ficha), la ficha nueva queda creada igual.
     await asignarClienteReserva(db(), actor, org, texto(form, "reservaId"), id);
   }, "Ficha creada y asignada al turno");
+}
+
+/** D22: cambia el precio aplicado de una venta pendiente sin cobros (se anula y se registra otra igual). */
+export async function accionCambiarPrecio(_: Estado, form: FormData): Promise<Estado> {
+  const r = await ejecutar((actor, org) => cambiarPrecioVenta(db(), actor, org, texto(form, "ventaId"), { medioPrecio: texto(form, "medioPrecio") || null, claveIdempotencia: texto(form, "clave") }));
+  if ("error" in r) return r;
+  redirect(`/ventas/${r.ok.id}?precio=1`);
 }

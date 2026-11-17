@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aAjuste, ajusteDecimal, ajusteEditable, nombreRepetido, precioConAjuste, redondeoDe, textoAjuste, textoRedondeo, validarMedio, validarRedondeo, REDONDEO_POR_DEFECTO } from "../src/medios-pago.ts";
+import { aAjuste, ajusteDecimal, ajusteEditable, nombreRepetido, precioConAjuste, preciosConMedio, redondeoDe, textoAjuste, textoRedondeo, totalesConMedio, validarMedio, validarRedondeo, REDONDEO_POR_DEFECTO } from "../src/medios-pago.ts";
 import { validarCobro, validarCobros, type MedioDisponible } from "../src/ventas.ts";
 
 const $ = (pesos: number) => BigInt(pesos) * 100n;
@@ -75,9 +75,9 @@ test("medio: nombre, tipo solo al alta y rango del ajuste", () => {
 
 test("cobro con los medios de la sede: por id, por tipo (compatibilidad) y deshabilitados", () => {
   const medios: MedioDisponible[] = [
-    { id: "m-ef", tipo: "EFECTIVO", nombre: "Efectivo" },
-    { id: "m-dni", tipo: "TRANSFERENCIA", nombre: "Cuenta DNI" },
-    { id: "m-tr", tipo: "TRANSFERENCIA", nombre: "Transferencia" },
+    { id: "m-ef", tipo: "EFECTIVO", nombre: "Efectivo", ajuste: -1000n },
+    { id: "m-dni", tipo: "TRANSFERENCIA", nombre: "Cuenta DNI", ajuste: -1000n },
+    { id: "m-tr", tipo: "TRANSFERENCIA", nombre: "Transferencia", ajuste: 0n },
   ];
   assert.deepEqual(validarCobro({ medio: "m-tr", monto: "100" }, medios),
     { cobro: { medio: "TRANSFERENCIA", medioPagoId: "m-tr", medioNombre: "Transferencia", monto: 10_000n, referencia: null } });
@@ -87,4 +87,23 @@ test("cobro con los medios de la sede: por id, por tipo (compatibilidad) y desha
   assert.deepEqual(validarCobro({ medio: "EFECTIVO", monto: "1" }), { cobro: { medio: "EFECTIVO", medioPagoId: null, medioNombre: null, monto: 100n, referencia: null } }, "sin medios: solo el tipo");
   const v = validarCobros([{ medio: "m-ef", monto: "50" }, { medio: "m-dni", monto: "50" }], 10_000n, medios);
   assert.ok("cobros" in v && v.cobros.map(c => c.medioPagoId).join() === "m-ef,m-dni");
+});
+
+test("venta con medio: ajuste por ítem, después descuento y al final la seña (doc 32)", () => {
+  const servicio = (lista: number, editado: number | null = null) => ({ cantidad: 1000n, lista: $(lista), editado: editado === null ? null : $(editado) });
+  // Ejemplo del doc: lista 15.500, seña 30% sobre la lista (4.650), resto en efectivo −10% → 13.900 − 4.650 = 9.250.
+  assert.deepEqual(totalesConMedio([servicio(15_500)], -1000n, REDONDEO_POR_DEFECTO, 0n, $(4_650)),
+    { subtotal: $(13_900), descuento: 0n, total: $(13_900), anticipo: $(4_650), aCobrar: $(9_250) });
+  assert.equal((totalesConMedio([servicio(15_500)], 0n, REDONDEO_POR_DEFECTO, 0n, $(4_650)) as { aCobrar: bigint }).aCobrar, $(10_850), "con tarjeta: la lista");
+  // El descuento manual va después del ajuste del medio.
+  assert.equal((totalesConMedio([servicio(15_500), servicio(9_000)], -1000n, REDONDEO_POR_DEFECTO, $(1_000), 0n) as { total: bigint }).total, $(21_000), "13.900 + 8.100 − 1.000");
+  // Un precio editado es la excepción: no se ajusta.
+  const p = preciosConMedio([servicio(15_500, 12_000), servicio(9_000)], -1000n, REDONDEO_POR_DEFECTO);
+  assert.ok("lineas" in p);
+  assert.deepEqual(p.lineas.map(l => l.precioUnitario), [$(12_000), $(8_100)]);
+  assert.deepEqual(p.medio, [$(13_900), $(8_100)], "se guarda igual el precio del medio");
+  // Productos con cantidad: el precio unitario se ajusta y el subtotal queda al centavo.
+  assert.equal((totalesConMedio([{ cantidad: 2500n, lista: $(1_000), editado: null }], -1000n, REDONDEO_POR_DEFECTO, 0n, 0n) as { total: bigint }).total, $(2_250));
+  assert.ok("error" in totalesConMedio([{ cantidad: 1000n, lista: null, editado: null }], 0n, REDONDEO_POR_DEFECTO, 0n, 0n), "sin lista hay que indicar el precio");
+  assert.ok("error" in totalesConMedio([servicio(10_000)], -5000n, REDONDEO_POR_DEFECTO, 0n, $(6_000)), "la seña no puede superar el total con descuento");
 });

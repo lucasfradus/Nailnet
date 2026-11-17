@@ -60,7 +60,7 @@ export function estadoSegunCobros(total: bigint, anticipo: bigint, cobradoNeto: 
 export type CobroEntrada = { medio: string; monto: string; referencia?: string | null };
 export type CobroValidado = { medio: MedioCobro; medioPagoId: string | null; medioNombre: string | null; monto: bigint; referencia: string | null };
 /** Medio de pago habilitado en la sede, en el orden en que se muestra. */
-export type MedioDisponible = { id: string; tipo: MedioCobro; nombre: string };
+export type MedioDisponible = { id: string; tipo: MedioCobro; nombre: string; ajuste: bigint };
 
 /**
  * Valida un cobro. Con `medios` (los habilitados de la sede, en orden) el medio tiene que ser uno de

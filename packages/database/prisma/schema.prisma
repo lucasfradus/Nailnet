@@ -1425,6 +1425,11 @@ model Venta {
   // Seña de Mercado Pago aplicada (0 si no hubo) y el pago que la respalda.
   anticipo          Decimal           @default(0) @db.Decimal(12, 2)
   pagoAnticipoId    String?           @db.Uuid
+  // D22 (doc 32): medio cuyo precio se aplicó (null = lista), con su ajuste y el redondeo congelados.
+  medioPrecioId     String?           @db.Uuid
+  ajustePct         Decimal           @default(0) @db.Decimal(5, 2)
+  redondeoPaso      Int?
+  redondeoSentido   SentidoRedondeo?
   estado            EstadoVenta
   // Clave del formulario: un doble envío devuelve la misma venta en vez de crear otra.
   claveIdempotencia String
@@ -1440,6 +1445,7 @@ model Venta {
   items             VentaItem[]
   cobros            CobroVenta[]
   movimientosStock  MovimientoStock[]
+  medioPrecio       MedioPagoSede?    @relation(fields: [organizacionId, sedeId, medioPrecioId], references: [organizacionId, sedeId, id], onDelete: Restrict)
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, claveIdempotencia])
@@ -1465,6 +1471,9 @@ model VentaItem {
   descripcion    String
   cantidad       Decimal       @db.Decimal(14, 3)
   precioLista    Decimal?      @db.Decimal(12, 2)
+  // D22: precio con el ajuste del medio aplicado y redondeado (null en ventas anteriores a D22).
+  // precioUnitario difiere de este solo si recepción editó el precio.
+  precioMedio    Decimal?      @db.Decimal(12, 2)
   precioUnitario Decimal       @db.Decimal(12, 2)
   subtotal       Decimal       @db.Decimal(12, 2)
   venta          Venta         @relation(fields: [organizacionId, ventaId], references: [organizacionId, id], onDelete: Restrict)
@@ -1542,6 +1551,7 @@ model MedioPagoSede {
   updatedAt      DateTime     @updatedAt
   sede           Sede         @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
   cobros         CobroVenta[]
+  ventas         Venta[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, sedeId, id])

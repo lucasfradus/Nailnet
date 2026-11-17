@@ -10,6 +10,8 @@ import { ambientePagos } from "@nailnet/database/pagos";
 import { aHora } from "@nailnet/domain/agenda";
 import { listarCatalogo } from "@nailnet/database/catalogo";
 import { calendarioSede } from "@nailnet/database/profesionales";
+import { listarMediosPago } from "@nailnet/database/medios-pago";
+import { MediosPago } from "./medios-pago";
 import { Formulario } from "@/components/formulario";
 import { CamposSemana, textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
@@ -29,6 +31,7 @@ const SECCIONES = [
   { id: "resumen", nombre: "Resumen" },
   { id: "horarios", nombre: "Horarios" },
   { id: "reservas", nombre: "Reservas" },
+  { id: "medios", nombre: "Medios de pago" },
   { id: "recursos", nombre: "Recursos" },
   { id: "cobros", nombre: "Cobros y facturación" },
 ] as const;
@@ -77,6 +80,7 @@ export default async function ConfiguracionSede({ params, searchParams }: { para
   const tiposRecurso = seccion === "recursos" && cal?.editable ? (await listarCatalogo(db(), actorId, organizacion.id)).tiposRecurso : [];
   const credenciales = config.puedeCredenciales ? await listarCredenciales(db(), actorId, organizacion.id, sedeId) : [];
   const cuentaMp = credenciales.find(c => c.proveedor === "MERCADO_PAGO" && c.ambiente === ambienteMp);
+  const medios = seccion === "medios" ? await listarMediosPago(db(), actorId, organizacion.id, sedeId) : null;
   const sinDefinir = (Object.keys(PARAMETROS) as Parametro[]).filter(p => config.efectiva[p].origen === "SIN_DEFINIR");
   const conHorario = !!cal && Object.values(cal.semana).some(r => r?.length);
   const inactiva = <article><p className="ayuda">La sede está inactiva: reactivala desde el Resumen para editar esta sección.</p></article>;
@@ -204,6 +208,10 @@ export default async function ConfiguracionSede({ params, searchParams }: { para
           </select>
         </Formulario>
       </details>}
+    </div>}
+
+    {seccion === "medios" && medios && <div className="secciones">
+      <MediosPago sedeId={sede.id} medios={medios.medios} redondeo={medios.redondeo} puedeEditar={medios.puedeEditar && sede.activo} />
     </div>}
 
     {seccion === "recursos" && <div className="secciones">{!cal ? inactiva : <article>

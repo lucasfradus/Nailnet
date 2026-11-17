@@ -54,7 +54,7 @@ test("venta inválida: sin ítems, descuento mayor al subtotal, seña mayor al t
 });
 
 test("cobros: medios, montos exactos y nunca de más", () => {
-  assert.deepEqual(validarCobro({ medio: "EFECTIVO", monto: "21000", referencia: "  " }), { cobro: { medio: "EFECTIVO", monto: 2_100_000n, referencia: null } });
+  assert.deepEqual(validarCobro({ medio: "EFECTIVO", monto: "21000", referencia: "  " }), { cobro: { medio: "EFECTIVO", medioPagoId: null, medioNombre: null, monto: 2_100_000n, referencia: null } });
   assert.ok("error" in validarCobro({ medio: "CHEQUE", monto: "1" }));
   for (const monto of ["0", "-1", "1,234", "abc", ""]) assert.ok("error" in validarCobro({ medio: "EFECTIVO", monto }), monto);
   assert.ok("error" in validarCobro({ medio: "TRANSFERENCIA", monto: "1", referencia: "x".repeat(121) }));

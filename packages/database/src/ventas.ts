@@ -16,6 +16,7 @@ import { DatosInvalidos, auditar, exigirIds } from "./access.ts";
 import { SIN_CAJA, asentarMovimiento, cajaAbiertaBloqueada, centavos, exigirSedeVenta, hayCajaAbierta } from "./caja.ts";
 import { conReintento } from "./reservas.ts";
 import { egresarPorVenta, reponerPorAnulacionVenta, type ItemCantidad } from "./stock.ts";
+import { mediosHabilitados } from "./medios-pago.ts";
 
 type Tx = Prisma.TransactionClient;
 const esUnico = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
@@ -72,7 +73,7 @@ async function asentarCobros(tx: Tx, organizacionId: string, actorId: string, ve
   if (!caja && cobros.some(c => esEfectivo(c.medio))) throw new DatosInvalidos(SIN_CAJA_EFECTIVO);
   for (const [i, c] of cobros.entries()) {
     const cobro = await tx.cobroVenta.create({
-      data: { organizacionId, sedeId: venta.sedeId, ventaId: venta.id, tipo: "COBRO", medio: c.medio, monto: importe(c.monto), referencia: c.referencia, cajaId: caja?.id ?? null, claveIdempotencia: i === 0 ? clave : undefined, registradoPorId: actorId },
+      data: { organizacionId, sedeId: venta.sedeId, ventaId: venta.id, tipo: "COBRO", medio: c.medio, medioPagoId: c.medioPagoId, medioNombre: c.medioNombre, monto: importe(c.monto), referencia: c.referencia, cajaId: caja?.id ?? null, claveIdempotencia: i === 0 ? clave : undefined, registradoPorId: actorId },
       select: { id: true },
     });
     if (esEfectivo(c.medio)) await asentarMovimiento(tx, organizacionId, venta.sedeId, actorId, caja!, { tipo: "INGRESO_COBRO", monto: c.monto, cobroId: cobro.id });
@@ -233,7 +234,7 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
       if (!lineas.length) throw new DatosInvalidos("Agregá al menos un producto o cobrá un turno atendido");
       const totales = calcularVenta(lineas, descuento, anticipo?.monto ?? 0n);
       if ("error" in totales) throw new DatosInvalidos(totales.error);
-      const cobros = validarCobros(datos.cobros, totales.aCobrar);
+      const cobros = validarCobros(datos.cobros, totales.aCobrar, await mediosHabilitados(tx, organizacionId, datos.sedeId));
       if ("error" in cobros) throw new DatosInvalidos(cobros.error);
 
       const creada = await tx.venta.create({
@@ -257,7 +258,7 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
       const estado = await completarSiCorresponde(tx, venta);
       await auditar(tx, organizacionId, actorId, "venta.registrar", "Venta", creada.id, {
         sedeId: datos.sedeId, reservaId: datos.reservaId ?? null, total: importe(totales.total), anticipo: importe(totales.anticipo),
-        cobros: cobros.cobros.map(c => ({ medio: c.medio, monto: importe(c.monto) })), estado,
+        cobros: cobros.cobros.map(c => ({ medio: c.medio, medioPagoId: c.medioPagoId, monto: importe(c.monto) })), estado,
       });
       return { id: creada.id, estado, saldo: importe(saldoVenta(venta.total, venta.anticipo, venta.cobrado)), repetida: false };
     }, { maxWait: 10_000, timeout: 20_000 }));
@@ -284,7 +285,7 @@ export async function registrarCobroEn(tx: Tx, actorId: string, organizacionId: 
   await exigirSedeVenta(tx, actorId, organizacionId, venta.sedeId, "venta:registrar");
   if (venta.estado === "ANULADA") throw new DatosInvalidos("La venta está anulada");
   if (venta.estado === "COMPLETADA") throw new DatosInvalidos("La venta ya está cobrada por completo");
-  const v = validarCobros([cobro], saldoVenta(venta.total, venta.anticipo, venta.cobrado));
+  const v = validarCobros([cobro], saldoVenta(venta.total, venta.anticipo, venta.cobrado), await mediosHabilitados(tx, organizacionId, venta.sedeId));
   if ("error" in v) throw new DatosInvalidos(v.error);
   await asentarCobros(tx, organizacionId, actorId, venta, v.cobros, clave);
   const estado = await completarSiCorresponde(tx, venta);
@@ -336,12 +337,12 @@ export async function anularVenta(db: Database, actorId: string, organizacionId:
     if (venta.estado === "ANULADA") throw new DatosInvalidos("La venta ya fue anulada");
     // Orden de locks: venta → saldos de stock → caja.
     const repuestos = datos.reponerStock ? await reponerPorAnulacionVenta(tx, actorId, organizacionId, { sedeId: venta.sedeId, ventaId, motivo: `Anulación de venta: ${m.motivo}`.slice(0, 300) }) : 0;
-    const cobros = await tx.cobroVenta.findMany({ where: { organizacionId, ventaId, tipo: "COBRO", reverso: null }, orderBy: { createdAt: "asc" }, select: { id: true, medio: true, monto: true, movimientoCaja: { select: { id: true } } } });
+    const cobros = await tx.cobroVenta.findMany({ where: { organizacionId, ventaId, tipo: "COBRO", reverso: null }, orderBy: { createdAt: "asc" }, select: { id: true, medio: true, medioPagoId: true, medioNombre: true, monto: true, movimientoCaja: { select: { id: true } } } });
     const caja = cobros.length ? await cajaAbiertaBloqueada(tx, organizacionId, venta.sedeId) : null;
     if (!caja && cobros.some(c => c.medio === "EFECTIVO")) throw new DatosInvalidos(`${SIN_CAJA}: la anulación devuelve el efectivo cobrado`);
     for (const c of cobros) {
       const reverso = await tx.cobroVenta.create({
-        data: { organizacionId, sedeId: venta.sedeId, ventaId, tipo: "REVERSO", medio: c.medio, monto: c.monto.neg(), cajaId: caja?.id ?? null, revierteId: c.id, motivo: m.motivo, registradoPorId: actorId },
+        data: { organizacionId, sedeId: venta.sedeId, ventaId, tipo: "REVERSO", medio: c.medio, medioPagoId: c.medioPagoId, medioNombre: c.medioNombre, monto: c.monto.neg(), cajaId: caja?.id ?? null, revierteId: c.id, motivo: m.motivo, registradoPorId: actorId },
         select: { id: true },
       });
       if (c.medio === "EFECTIVO") await asentarMovimiento(tx, organizacionId, venta.sedeId, actorId, caja!, { tipo: "REVERSO", monto: -centavos(c.monto), motivo: m.motivo, cobroId: reverso.id, revierteId: c.movimientoCaja!.id });
@@ -403,6 +404,8 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
   }) : [];
   return {
     puedeAnular: puede("venta:anular"),
+    // Medios de pago habilitados de la sede, en orden (D22).
+    medios: await mediosHabilitados(db, organizacionId, sedeId),
     cajaAbierta: await hayCajaAbierta(db, actorId, organizacionId, sedeId).catch(e => { if (e instanceof AccesoDenegado) return false; throw e; }),
     turno,
     servicios: servicios.map(s => ({ id: s.id, nombre: s.nombre, precioLista: s.sedes[0]?.precio?.toFixed(2) ?? null })),
@@ -413,7 +416,7 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
 
 const incluirVenta = {
   items: { orderBy: { posicion: "asc" as const }, select: { tipo: true, descripcion: true, cantidad: true, precioLista: true, precioUnitario: true, profesionalId: true, subtotal: true, productoId: true, producto: { select: { unidad: true } } } },
-  cobros: { orderBy: { createdAt: "asc" as const }, select: { id: true, tipo: true, medio: true, monto: true, referencia: true, motivo: true, revierteId: true, registradoPorId: true, createdAt: true } },
+  cobros: { orderBy: { createdAt: "asc" as const }, select: { id: true, tipo: true, medio: true, medioNombre: true, monto: true, referencia: true, motivo: true, revierteId: true, registradoPorId: true, createdAt: true } },
   reserva: { select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } } } },
 } satisfies Prisma.VentaInclude;
 type VentaConDetalle = Prisma.VentaGetPayload<{ include: typeof incluirVenta }>;
@@ -427,7 +430,7 @@ function presentar(v: VentaConDetalle, nombre: Map<string, string>) {
     subtotal: v.subtotal.toFixed(2), descuento: v.descuento.toFixed(2), total: v.total.toFixed(2), anticipo: v.anticipo.toFixed(2),
     cobrado: importe(cobrado), saldo: importe(v.estado === "ANULADA" ? 0n : saldoVenta(centavos(v.total), centavos(v.anticipo), cobrado)),
     items: v.items.map(i => ({ tipo: i.tipo, descripcion: i.descripcion, cantidad: cantidadTexto(desdeDecimal(i.cantidad.toFixed(3))), unidad: i.producto?.unidad ?? null, precioLista: i.precioLista?.toFixed(2) ?? null, precioUnitario: i.precioUnitario.toFixed(2), profesionalId: i.profesionalId, subtotal: i.subtotal.toFixed(2) })),
-    cobros: v.cobros.map(c => ({ id: c.id, tipo: c.tipo, medio: MEDIO(c.medio), monto: c.monto.toFixed(2), referencia: c.referencia, motivo: c.motivo, por: nombre.get(c.registradoPorId) ?? "—", en: c.createdAt, revertido: revertidos.has(c.id) })),
+    cobros: v.cobros.map(c => ({ id: c.id, tipo: c.tipo, medio: MEDIO(c.medio), medioNombre: c.medioNombre, monto: c.monto.toFixed(2), referencia: c.referencia, motivo: c.motivo, por: nombre.get(c.registradoPorId) ?? "—", en: c.createdAt, revertido: revertidos.has(c.id) })),
     anulacion: v.estado === "ANULADA" ? { motivo: v.motivoAnulacion!, por: nombre.get(v.anuladaPorId!) ?? "—", en: v.anuladaEn! } : null,
   };
 }
@@ -481,6 +484,7 @@ export async function obtenerVenta(db: Database, actorId: string, organizacionId
   return {
     ...presentar(v, nombre),
     tieneProductos: v.items.some(i => i.tipo === "PRODUCTO"),
+    medios: v.estado === "PENDIENTE" ? await mediosHabilitados(db, organizacionId, v.sedeId) : [],
     puede: { cobrar: puede("venta:registrar") && v.estado === "PENDIENTE", anular: puede("venta:anular") && v.estado !== "ANULADA" },
     cajaAbierta: await hayCajaAbierta(db, actorId, organizacionId, v.sedeId).catch(e => { if (e instanceof AccesoDenegado) return false; throw e; }),
   };

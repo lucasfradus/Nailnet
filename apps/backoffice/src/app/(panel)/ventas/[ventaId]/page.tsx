@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { randomUUID } from "node:crypto";
 import { AccesoDenegado } from "@nailnet/domain";
-import { MEDIOS_COBRO } from "@nailnet/domain/ventas";
 import { obtenerVenta } from "@nailnet/database/ventas";
 import { Formulario } from "@/components/formulario";
 import { db } from "@/lib/db";
@@ -47,7 +46,7 @@ export default async function Venta({ params }: { params: Promise<{ ventaId: str
     <div className="tabla">
       {v.cobros.map(c => <article key={c.id} className={c.revertido ? "fila inactiva" : "fila"}>
         <div className="fila-cabecera">
-          <span>{c.tipo === "REVERSO" ? "Reverso · " : ""}{MEDIOS_COBRO_ETIQUETA[c.medio]}{c.referencia ? ` · ${c.referencia}` : ""}</span>
+          <span>{c.tipo === "REVERSO" ? "Reverso · " : ""}{c.medioNombre ?? MEDIOS_COBRO_ETIQUETA[c.medio]}{c.referencia ? ` · ${c.referencia}` : ""}</span>
           <span className={c.tipo === "REVERSO" ? "tag importe-negativo" : c.revertido ? "tag gasto-anulado" : "tag"}>{pesos(c.monto)}</span>
         </div>
         <p className="ayuda">{c.por} · {instante(c.en, tz)}{c.motivo ? ` · ${c.motivo}` : ""}</p>
@@ -61,7 +60,7 @@ export default async function Venta({ params }: { params: Promise<{ ventaId: str
         <input type="hidden" name="ventaId" value={v.id} />
         <input type="hidden" name="clave" value={randomUUID()} />
         <div className="grilla">
-          <label>Medio<select name="medio" defaultValue="EFECTIVO">{MEDIOS_COBRO.map(m => <option key={m} value={m}>{MEDIOS_COBRO_ETIQUETA[m]}</option>)}</select></label>
+          <label>Medio<select name="medio" defaultValue={(v.medios.find(m => m.tipo === "EFECTIVO") ?? v.medios[0])?.id}>{v.medios.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}</select></label>
           <label>Monto ($)<input name="monto" required inputMode="decimal" defaultValue={v.saldo.replace(".", ",")} pattern="\d{1,10}([.,]\d{1,2})?" /></label>
           <label>Referencia (opcional)<input name="referencia" maxLength={120} placeholder="N.º de operación, cupón…" /></label>
         </div>

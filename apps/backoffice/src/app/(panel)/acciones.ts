@@ -10,6 +10,7 @@ import type { Llavero } from "@nailnet/domain/secretos";
 import { recuperacionPorEmail } from "@/lib/emails";
 import { actualizarConfiguracionOrganizacion, actualizarConfiguracionSede, configurarSenaRecepcion, eliminarCredencial, exigirGestionCredenciales, guardarCredencial } from "@nailnet/database/configuracion";
 import { ambientePagos } from "@nailnet/database/pagos";
+import { crearMedioPago, guardarMediosPago } from "@nailnet/database/medios-pago";
 import { CifradoNoConfigurado } from "@nailnet/domain/secretos";
 import { PARAMETROS, type Parametro } from "@nailnet/domain/configuracion";
 import type { DatosCliente, TipoConsentimiento } from "@nailnet/domain/clientes";
@@ -404,4 +405,19 @@ export async function accionReprogramar(_: Estado, form: FormData) {
   }, "Turno reprogramado");
   if (!ok) return r;
   redirect(`/agenda?${new URLSearchParams({ fecha, ok: "reprogramado" })}`);
+}
+
+// Medios de pago de la sede (D22, doc 32): todos los medios en un solo formulario, más el redondeo.
+export async function accionGuardarMediosPago(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  const cantidad = Math.min(Number(texto(form, "cantidad")) || 0, 50);
+  const medios = Array.from({ length: cantidad }, (_, i) => ({
+    id: texto(form, `medio_${i}`), nombre: texto(form, `nombre_${i}`), ajuste: texto(form, `ajuste_${i}`),
+    habilitado: marcado(form, `habilitado_${i}`), orden: entero(form, `orden_${i}`),
+  }));
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => guardarMediosPago(db(), actor, org, sedeId, { medios, redondeo: { paso: texto(form, "paso"), sentido: texto(form, "sentido") } }), "Medios de pago guardados");
+}
+export async function accionCrearMedioPago(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, async (actor, org) => { await crearMedioPago(db(), actor, org, sedeId, { nombre: texto(form, "nombre"), tipo: texto(form, "tipo"), ajuste: texto(form, "ajuste") }); }, "Medio de pago agregado");
 }

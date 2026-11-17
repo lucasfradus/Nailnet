@@ -130,6 +130,7 @@ Ejemplo de la arquitectura, probado tal cual: servicio de $30.000, seña de $9.0
 ## Cobros
 
 - **Medios:** efectivo, transferencia, tarjeta de débito, tarjeta de crédito, Mercado Pago (QR o link en el mostrador, cargado a mano) y otro. Los mismos valores que en gastos.
+  - Desde el 2026-11-16 (D22) cada sede tiene sus propios medios, con nombre y porcentaje sobre la lista; esos valores pasaron a ser el *tipo* de cada medio. Ver 32-precios-medio-pago.md.
 - **Mixtos:** varios cobros por venta, cada uno con su medio y una referencia opcional (número de operación, cupón). Hasta 3 en el alta. Lo que falte se cobra después desde el detalle de la venta.
 - **Nunca de más:** anticipo + cobros no pueden superar el total. Hoy no se registra vuelto: en efectivo se carga el importe exacto. Lo controlan el dominio, el repositorio bajo lock y un trigger.
 - **Idempotencia:** el formulario lleva una clave (`randomUUID` generado al mostrarlo).

@@ -23,6 +23,7 @@
     "./stock": "./src/stock.ts",
     "./gastos": "./src/gastos.ts",
     "./ventas": "./src/ventas.ts",
+    "./medios-pago": "./src/medios-pago.ts",
     "./caja": "./src/caja.ts",
     "./incidencias": "./src/incidencias.ts",
     "./reportes": "./src/reportes.ts",

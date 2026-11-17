@@ -145,16 +145,26 @@ Con la etapa 1 sola no cambiaba ningún precio: los ajustes se aplican al cobrar
 
 Verificado en el navegador contra la base local: turno de $18.000 cobrado en efectivo en dos toques ($16.200), y venta de 2 productos de $4.500 con precio de efectivo dividida en $5.000 en efectivo y $3.000 con débito.
 
+### Cambio del precio de una venta pendiente
+
+Confirmado por el usuario el 2026-11-17: **anular y rehacer**. Ventas e ítems son de solo inserción, así que no se recalculan en el lugar.
+
+- En el detalle de una venta **pendiente y sin cobros**, «Cambiar el precio» ofrece la lista y cada medio con ajuste, con el total que quedaría. Solo aparecen los que cambian el total.
+- Al elegir uno, en **una sola transacción** se anula la venta (los productos vuelven al stock) y se registra otra igual con el precio nuevo: mismos servicios, profesionales, productos y descuento manual, y la seña del turno se vuelve a aplicar. Los precios editados a mano se conservan; el resto se recalcula.
+- La venta anulada queda con el motivo «Cambio del precio aplicado» y la auditoría `venta.cambiarPrecio` une las dos. La nueva lleva la fecha del día en que se cambió.
+- Con algún cobro ya no se cambia: se ajusta con el descuento al cobrar o anulando.
+- Permisos: hacen falta `venta:registrar` y `venta:anular` (recepción tiene los dos).
+
 ### Pendiente
 
-- **Cambiar el precio aplicado de una venta pendiente sin cobros** (confirmado por el usuario). Las ventas y sus ítems son de solo inserción: hace falta definir si se anula y se vuelve a registrar, o si se permite recalcular mientras no tenga cobros. Hoy, si cambia el medio, se ajusta con el descuento manual o anulando la venta.
+- ~~Cambiar el precio aplicado de una venta pendiente sin cobros.~~ Hecho el 2026-11-17: ver «Cambio del precio de una venta pendiente».
 - **Portal con los dos precios** (etapa 3).
 
 ## Confirmado por el usuario (2026-11-16)
 
 - **Redondeo:** por defecto a $100 hacia abajo.
 - **Pago mixto:** al dividir, el precio por defecto es el de lista. Recepción puede cambiarlo con un toque.
-- **Venta pendiente:** mientras no tenga cobros, se puede cambiar el precio aplicado y la venta se recalcula. Con cobros, la diferencia se ajusta a mano.
+- **Venta pendiente:** mientras no tenga cobros, se puede cambiar el precio aplicado. Con cobros, la diferencia se ajusta a mano. Cómo: anular y rehacer (confirmado el 2026-11-17).
 - **Permisos:** configuran los medios el master, el franquiciado y el administrador de sede.
 - **Gastos:** siguen con su lista fija (`MedioPagoGasto`). Un porcentaje no tiene sentido en un gasto.
 

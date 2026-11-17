@@ -17,7 +17,7 @@ import { SIN_CAJA, asentarMovimiento, cajaAbiertaBloqueada, centavos, exigirSede
 import { conReintento } from "./reservas.ts";
 import { egresarPorVenta, reponerPorAnulacionVenta, type ItemCantidad } from "./stock.ts";
 import { mediosHabilitados, redondeoSede } from "./medios-pago.ts";
-import { ajusteDecimal, precioConAjuste, type Redondeo } from "@nailnet/domain/medios-pago";
+import { ajusteDecimal, precioConAjuste, totalesConMedio, type LineaPrecio, type Redondeo } from "@nailnet/domain/medios-pago";
 
 type Tx = Prisma.TransactionClient;
 const esUnico = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
@@ -185,7 +185,23 @@ async function ventaPorClave(db: Database | Tx, actorId: string, organizacionId:
  * → venta de $30.000, anticipo $9.000, se cobran $21.000.
  */
 export async function registrarVenta(db: Database, actorId: string, organizacionId: string, datos: DatosVenta): Promise<VentaRegistrada> {
-  exigirIds(datos.sedeId, datos.reservaId, ...datos.productos.map(p => p.productoId), ...(datos.servicios ?? []).flatMap(s => [s.servicioId, s.profesionalId, s.reservaItemId]));
+  validarDatosVenta(datos);
+  const repetida = await ventaPorClave(db, actorId, organizacionId, datos.claveIdempotencia);
+  if (repetida) return repetida;
+  try {
+    return await conReintento(() => db.$transaction(tx => registrarVentaEn(tx, actorId, organizacionId, datos), { maxWait: 10_000, timeout: 20_000 }));
+  } catch (e) {
+    if (!esUnico(e)) throw e;
+    // Doble envío simultáneo: la otra transacción ya creó la venta con esta clave.
+    const ganadora = await ventaPorClave(db, actorId, organizacionId, datos.claveIdempotencia);
+    if (ganadora) return ganadora;
+    throw new DatosInvalidos("El turno ya tiene una venta registrada");
+  }
+}
+
+/** Validaciones que no necesitan la base: IDs, clave, descuento y cantidades. */
+function validarDatosVenta(datos: DatosVenta) {
+  exigirIds(datos.sedeId, datos.reservaId, datos.medioPrecio, ...datos.productos.map(p => p.productoId), ...(datos.servicios ?? []).flatMap(s => [s.servicioId, s.profesionalId, s.reservaItemId]));
   if (!claveValida(datos.claveIdempotencia)) throw new DatosInvalidos("El formulario venció: recargá la página e intentá de nuevo");
   const descuento = descuentoDe(datos.descuento);
   if (descuento === null) throw new DatosInvalidos("Descuento inválido: pesos con hasta 2 decimales");
@@ -196,94 +212,87 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
     return { productoId: p.productoId, cantidad: cantidad! };
   });
   if (new Set(productos.map(p => p.productoId)).size !== productos.length) throw new DatosInvalidos("Un producto aparece dos veces: sumá las cantidades en una sola fila");
-  const repetida = await ventaPorClave(db, actorId, organizacionId, datos.claveIdempotencia);
-  if (repetida) return repetida;
+  return { descuento, productos };
+}
 
-  try {
-    return await conReintento(() => db.$transaction(async tx => {
-      await exigirSedeVenta(tx, actorId, organizacionId, datos.sedeId, "venta:registrar");
-      // D22: el precio del medio elegido (o la lista). Primero el ajuste por ítem, después el descuento y la seña.
-      const medios = await mediosHabilitados(tx, organizacionId, datos.sedeId);
-      let precioMedio: { medio: (typeof medios)[number]; redondeo: Redondeo } | null = null;
-      if (datos.medioPrecio) {
-        const medio = medios.find(m => m.id === datos.medioPrecio);
-        if (!medio) throw new DatosInvalidos("El medio de pago elegido no está habilitado en la sede: recargá la página");
-        precioMedio = { medio, redondeo: await redondeoSede(tx, organizacionId, datos.sedeId) };
-      }
-      const conMedio = (lista: bigint) => precioMedio ? precioConAjuste(lista, precioMedio.medio.ajuste, precioMedio.redondeo) : lista;
-      const sede = await tx.sede.findFirst({ where: { id: datos.sedeId, organizacionId, activo: true }, select: { timezone: true } });
-      if (!sede) throw new AccesoDenegado();
-
-      const lineas: Linea[] = [];
-      let anticipo: Awaited<ReturnType<typeof anticipoDe>> = null;
-      if (datos.reservaId) {
-        const reserva = await tx.reserva.findFirst({
-          where: { id: datos.reservaId, organizacionId },
-          select: { sedeId: true, estado: true, items: { orderBy: { posicion: "asc" }, select: { id: true, servicioId: true, profesionalId: true, precio: true } } },
-        });
-        // Una reserva de otra sede es, para esta venta, inexistente.
-        if (!reserva || reserva.sedeId !== datos.sedeId) throw new AccesoDenegado();
-        if (reserva.estado !== "ATENDIDA") throw new DatosInvalidos("Solo se cobra un turno atendido: marcalo como atendido en la agenda");
-        if (await tx.venta.count({ where: { organizacionId, reservaId: datos.reservaId, estado: { not: "ANULADA" } } })) throw new DatosInvalidos("El turno ya tiene una venta registrada");
-        const comanda = datos.servicios ?? reserva.items.map(i => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, reservaItemId: i.id, precio: null }));
-        lineas.push(...await lineasDeComanda(tx, organizacionId, datos.sedeId, reserva.items, comanda, conMedio));
-        anticipo = await anticipoDe(tx, organizacionId, datos.sedeId, datos.reservaId);
-      } else if (datos.servicios?.length) throw new DatosInvalidos("Los servicios se cobran desde un turno: usá «Atender ahora» para un cliente sin turno");
-      if (productos.length) {
-        const encontrados = await tx.producto.findMany({
-          where: { organizacionId, id: { in: productos.map(p => p.productoId) } },
-          select: { id: true, nombre: true, activo: true, vendible: true, sedes: { where: { sedeId: datos.sedeId }, select: { precio: true } } },
-        });
-        if (encontrados.length !== productos.length) throw new AccesoDenegado();
-        const porId = new Map(encontrados.map(p => [p.id, p]));
-        for (const p of productos) {
-          const prod = porId.get(p.productoId)!;
-          if (!prod.vendible) throw new DatosInvalidos(`«${prod.nombre}» es de consumo interno: no se vende`);
-          if (!prod.activo) throw new DatosInvalidos(`«${prod.nombre}» está inactivo`);
-          const precio = prod.sedes[0]?.precio;
-          if (!precio) throw new DatosInvalidos(`«${prod.nombre}» no tiene precio de venta en la sede`);
-          lineas.push({ tipo: "PRODUCTO", productoId: prod.id, cantidad: p.cantidad, precioLista: centavos(precio), precioMedio: conMedio(centavos(precio)), precioUnitario: conMedio(centavos(precio)), descripcion: prod.nombre });
-        }
-      }
-      if (!lineas.length) throw new DatosInvalidos("Agregá al menos un producto o cobrá un turno atendido");
-      const totales = calcularVenta(lineas, descuento, anticipo?.monto ?? 0n);
-      if ("error" in totales) throw new DatosInvalidos(totales.error);
-      const cobros = validarCobros(datos.cobros, totales.aCobrar, await mediosHabilitados(tx, organizacionId, datos.sedeId));
-      if ("error" in cobros) throw new DatosInvalidos(cobros.error);
-
-      const creada = await tx.venta.create({
-        data: {
-          organizacionId, sedeId: datos.sedeId, reservaId: datos.reservaId ?? null, fecha: fechaDb(aLocal(new Date(), sede.timezone).fecha),
-          subtotal: importe(totales.subtotal), descuento: importe(totales.descuento), total: importe(totales.total),
-          anticipo: importe(totales.anticipo), pagoAnticipoId: anticipo?.pagoId ?? null, estado: "PENDIENTE",
-          claveIdempotencia: datos.claveIdempotencia, registradoPorId: actorId,
-          ...(precioMedio ? { medioPrecioId: precioMedio.medio.id, ajustePct: ajusteDecimal(precioMedio.medio.ajuste), redondeoPaso: precioMedio.redondeo.paso, redondeoSentido: precioMedio.redondeo.sentido } : {}),
-        },
-        select: { id: true },
-      });
-      await tx.ventaItem.createMany({ data: lineas.map((l, posicion) => ({
-        organizacionId, ventaId: creada.id, posicion, tipo: l.tipo, reservaItemId: l.reservaItemId ?? null, servicioId: l.servicioId ?? null, profesionalId: l.profesionalId ?? null,
-        productoId: l.productoId ?? null, descripcion: l.descripcion.slice(0, 300), cantidad: decimal(l.cantidad),
-        precioLista: l.precioLista === null ? null : importe(l.precioLista), precioMedio: l.precioMedio === null ? null : importe(l.precioMedio), precioUnitario: importe(l.precioUnitario), subtotal: importe(subtotalCentavos(l.cantidad, l.precioUnitario)),
-      })) });
-      // Orden de locks: venta → saldos de stock → caja.
-      if (productos.length) await egresarPorVenta(tx, actorId, organizacionId, { sedeId: datos.sedeId, ventaId: creada.id, items: productos.map(p => ({ productoId: p.productoId, cantidad: cantidadTexto(p.cantidad) })) });
-      const venta: VentaBloqueada = { id: creada.id, sedeId: datos.sedeId, estado: "PENDIENTE", total: totales.total, anticipo: totales.anticipo, cobrado: 0n };
-      await asentarCobros(tx, organizacionId, actorId, venta, cobros.cobros);
-      const estado = await completarSiCorresponde(tx, venta);
-      await auditar(tx, organizacionId, actorId, "venta.registrar", "Venta", creada.id, {
-        sedeId: datos.sedeId, reservaId: datos.reservaId ?? null, total: importe(totales.total), anticipo: importe(totales.anticipo),
-        cobros: cobros.cobros.map(c => ({ medio: c.medio, medioPagoId: c.medioPagoId, monto: importe(c.monto) })), estado,
-      });
-      return { id: creada.id, estado, saldo: importe(saldoVenta(venta.total, venta.anticipo, venta.cobrado)), repetida: false };
-    }, { maxWait: 10_000, timeout: 20_000 }));
-  } catch (e) {
-    if (!esUnico(e)) throw e;
-    // Doble envío simultáneo: la otra transacción ya creó la venta con esta clave.
-    const ganadora = await ventaPorClave(db, actorId, organizacionId, datos.claveIdempotencia);
-    if (ganadora) return ganadora;
-    throw new DatosInvalidos("El turno ya tiene una venta registrada");
+/** Alta de la venta dentro de una transacción de quien llama (la usan registrarVenta y cambiarPrecioVenta). */
+async function registrarVentaEn(tx: Tx, actorId: string, organizacionId: string, datos: DatosVenta): Promise<VentaRegistrada> {
+  const { descuento, productos } = validarDatosVenta(datos);
+  await exigirSedeVenta(tx, actorId, organizacionId, datos.sedeId, "venta:registrar");
+  // D22: el precio del medio elegido (o la lista). Primero el ajuste por ítem, después el descuento y la seña.
+  const medios = await mediosHabilitados(tx, organizacionId, datos.sedeId);
+  let precioMedio: { medio: (typeof medios)[number]; redondeo: Redondeo } | null = null;
+  if (datos.medioPrecio) {
+    const medio = medios.find(m => m.id === datos.medioPrecio);
+    if (!medio) throw new DatosInvalidos("El medio de pago elegido no está habilitado en la sede: recargá la página");
+    precioMedio = { medio, redondeo: await redondeoSede(tx, organizacionId, datos.sedeId) };
   }
+  const conMedio = (lista: bigint) => precioMedio ? precioConAjuste(lista, precioMedio.medio.ajuste, precioMedio.redondeo) : lista;
+  const sede = await tx.sede.findFirst({ where: { id: datos.sedeId, organizacionId, activo: true }, select: { timezone: true } });
+  if (!sede) throw new AccesoDenegado();
+
+  const lineas: Linea[] = [];
+  let anticipo: Awaited<ReturnType<typeof anticipoDe>> = null;
+  if (datos.reservaId) {
+    const reserva = await tx.reserva.findFirst({
+      where: { id: datos.reservaId, organizacionId },
+      select: { sedeId: true, estado: true, items: { orderBy: { posicion: "asc" }, select: { id: true, servicioId: true, profesionalId: true, precio: true } } },
+    });
+    // Una reserva de otra sede es, para esta venta, inexistente.
+    if (!reserva || reserva.sedeId !== datos.sedeId) throw new AccesoDenegado();
+    if (reserva.estado !== "ATENDIDA") throw new DatosInvalidos("Solo se cobra un turno atendido: marcalo como atendido en la agenda");
+    if (await tx.venta.count({ where: { organizacionId, reservaId: datos.reservaId, estado: { not: "ANULADA" } } })) throw new DatosInvalidos("El turno ya tiene una venta registrada");
+    const comanda = datos.servicios ?? reserva.items.map(i => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, reservaItemId: i.id, precio: null }));
+    lineas.push(...await lineasDeComanda(tx, organizacionId, datos.sedeId, reserva.items, comanda, conMedio));
+    anticipo = await anticipoDe(tx, organizacionId, datos.sedeId, datos.reservaId);
+  } else if (datos.servicios?.length) throw new DatosInvalidos("Los servicios se cobran desde un turno: usá «Atender ahora» para un cliente sin turno");
+  if (productos.length) {
+    const encontrados = await tx.producto.findMany({
+      where: { organizacionId, id: { in: productos.map(p => p.productoId) } },
+      select: { id: true, nombre: true, activo: true, vendible: true, sedes: { where: { sedeId: datos.sedeId }, select: { precio: true } } },
+    });
+    if (encontrados.length !== productos.length) throw new AccesoDenegado();
+    const porId = new Map(encontrados.map(p => [p.id, p]));
+    for (const p of productos) {
+      const prod = porId.get(p.productoId)!;
+      if (!prod.vendible) throw new DatosInvalidos(`«${prod.nombre}» es de consumo interno: no se vende`);
+      if (!prod.activo) throw new DatosInvalidos(`«${prod.nombre}» está inactivo`);
+      const precio = prod.sedes[0]?.precio;
+      if (!precio) throw new DatosInvalidos(`«${prod.nombre}» no tiene precio de venta en la sede`);
+      lineas.push({ tipo: "PRODUCTO", productoId: prod.id, cantidad: p.cantidad, precioLista: centavos(precio), precioMedio: conMedio(centavos(precio)), precioUnitario: conMedio(centavos(precio)), descripcion: prod.nombre });
+    }
+  }
+  if (!lineas.length) throw new DatosInvalidos("Agregá al menos un producto o cobrá un turno atendido");
+  const totales = calcularVenta(lineas, descuento, anticipo?.monto ?? 0n);
+  if ("error" in totales) throw new DatosInvalidos(totales.error);
+  const cobros = validarCobros(datos.cobros, totales.aCobrar, await mediosHabilitados(tx, organizacionId, datos.sedeId));
+  if ("error" in cobros) throw new DatosInvalidos(cobros.error);
+
+  const creada = await tx.venta.create({
+    data: {
+      organizacionId, sedeId: datos.sedeId, reservaId: datos.reservaId ?? null, fecha: fechaDb(aLocal(new Date(), sede.timezone).fecha),
+      subtotal: importe(totales.subtotal), descuento: importe(totales.descuento), total: importe(totales.total),
+      anticipo: importe(totales.anticipo), pagoAnticipoId: anticipo?.pagoId ?? null, estado: "PENDIENTE",
+      claveIdempotencia: datos.claveIdempotencia, registradoPorId: actorId,
+      ...(precioMedio ? { medioPrecioId: precioMedio.medio.id, ajustePct: ajusteDecimal(precioMedio.medio.ajuste), redondeoPaso: precioMedio.redondeo.paso, redondeoSentido: precioMedio.redondeo.sentido } : {}),
+    },
+    select: { id: true },
+  });
+  await tx.ventaItem.createMany({ data: lineas.map((l, posicion) => ({
+    organizacionId, ventaId: creada.id, posicion, tipo: l.tipo, reservaItemId: l.reservaItemId ?? null, servicioId: l.servicioId ?? null, profesionalId: l.profesionalId ?? null,
+    productoId: l.productoId ?? null, descripcion: l.descripcion.slice(0, 300), cantidad: decimal(l.cantidad),
+    precioLista: l.precioLista === null ? null : importe(l.precioLista), precioMedio: l.precioMedio === null ? null : importe(l.precioMedio), precioUnitario: importe(l.precioUnitario), subtotal: importe(subtotalCentavos(l.cantidad, l.precioUnitario)),
+  })) });
+  // Orden de locks: venta → saldos de stock → caja.
+  if (productos.length) await egresarPorVenta(tx, actorId, organizacionId, { sedeId: datos.sedeId, ventaId: creada.id, items: productos.map(p => ({ productoId: p.productoId, cantidad: cantidadTexto(p.cantidad) })) });
+  const venta: VentaBloqueada = { id: creada.id, sedeId: datos.sedeId, estado: "PENDIENTE", total: totales.total, anticipo: totales.anticipo, cobrado: 0n };
+  await asentarCobros(tx, organizacionId, actorId, venta, cobros.cobros);
+  const estado = await completarSiCorresponde(tx, venta);
+  await auditar(tx, organizacionId, actorId, "venta.registrar", "Venta", creada.id, {
+    sedeId: datos.sedeId, reservaId: datos.reservaId ?? null, total: importe(totales.total), anticipo: importe(totales.anticipo),
+    cobros: cobros.cobros.map(c => ({ medio: c.medio, medioPagoId: c.medioPagoId, monto: importe(c.monto) })), estado,
+  });
+  return { id: creada.id, estado, saldo: importe(saldoVenta(venta.total, venta.anticipo, venta.cobrado)), repetida: false };
 }
 
 // ─── Cobros posteriores ───────────────────────────────────────────────────────
@@ -345,26 +354,77 @@ export async function anularVenta(db: Database, actorId: string, organizacionId:
   exigirIds(ventaId);
   const m = validarMotivo(datos.motivo);
   if ("error" in m) throw new DatosInvalidos(m.error);
+  return conReintento(() => db.$transaction(tx => anularVentaEn(tx, actorId, organizacionId, ventaId, m.motivo, datos.reponerStock), { maxWait: 10_000, timeout: 20_000 }));
+}
+
+/** Anulación dentro de una transacción de quien llama (la usan anularVenta y cambiarPrecioVenta). */
+async function anularVentaEn(tx: Tx, actorId: string, organizacionId: string, ventaId: string, motivo: string, reponerStock: boolean) {
+  const m = { motivo };
+  const datos = { reponerStock };
+  const venta = await bloquearVenta(tx, organizacionId, ventaId);
+  if (!venta) throw new AccesoDenegado();
+  await exigirSedeVenta(tx, actorId, organizacionId, venta.sedeId, "venta:anular");
+  if (venta.estado === "ANULADA") throw new DatosInvalidos("La venta ya fue anulada");
+  // Orden de locks: venta → saldos de stock → caja.
+  const repuestos = datos.reponerStock ? await reponerPorAnulacionVenta(tx, actorId, organizacionId, { sedeId: venta.sedeId, ventaId, motivo: `Anulación de venta: ${m.motivo}`.slice(0, 300) }) : 0;
+  const cobros = await tx.cobroVenta.findMany({ where: { organizacionId, ventaId, tipo: "COBRO", reverso: null }, orderBy: { createdAt: "asc" }, select: { id: true, medio: true, medioPagoId: true, medioNombre: true, monto: true, movimientoCaja: { select: { id: true } } } });
+  const caja = cobros.length ? await cajaAbiertaBloqueada(tx, organizacionId, venta.sedeId) : null;
+  if (!caja && cobros.some(c => c.medio === "EFECTIVO")) throw new DatosInvalidos(`${SIN_CAJA}: la anulación devuelve el efectivo cobrado`);
+  for (const c of cobros) {
+    const reverso = await tx.cobroVenta.create({
+      data: { organizacionId, sedeId: venta.sedeId, ventaId, tipo: "REVERSO", medio: c.medio, medioPagoId: c.medioPagoId, medioNombre: c.medioNombre, monto: c.monto.neg(), cajaId: caja?.id ?? null, revierteId: c.id, motivo: m.motivo, registradoPorId: actorId },
+      select: { id: true },
+    });
+    if (c.medio === "EFECTIVO") await asentarMovimiento(tx, organizacionId, venta.sedeId, actorId, caja!, { tipo: "REVERSO", monto: -centavos(c.monto), motivo: m.motivo, cobroId: reverso.id, revierteId: c.movimientoCaja!.id });
+  }
+  await tx.venta.update({ where: { id: ventaId }, data: { estado: "ANULADA", anuladaEn: new Date(), anuladaPorId: actorId, motivoAnulacion: m.motivo } });
+  await auditar(tx, organizacionId, actorId, "venta.anular", "Venta", ventaId, { motivo: m.motivo, cobrosRevertidos: cobros.length, productosRepuestos: repuestos });
+  return { cobrosRevertidos: cobros.length, productosRepuestos: repuestos };
+}
+
+// ─── Cambio del precio aplicado (D22, doc 32) ─────────────────────────────────
+
+/**
+ * Cambia el precio aplicado de una venta pendiente sin cobros (confirmado por el usuario el
+ * 2026-11-16 y 17: «anular y rehacer»). Como ventas e ítems son de solo inserción, en una sola
+ * transacción se anula la venta (los productos vuelven al stock) y se registra otra igual con el precio
+ * del medio nuevo: mismos servicios, profesionales, productos y descuento manual, y la seña del turno
+ * se vuelve a aplicar. Un precio que se había editado a mano se conserva (es la excepción); el resto se
+ * recalcula. Con algún cobro ya no se cambia: se ajusta con un cobro o anulando.
+ */
+export async function cambiarPrecioVenta(db: Database, actorId: string, organizacionId: string, ventaId: string, datos: { medioPrecio: string | null; claveIdempotencia: string }) {
+  exigirIds(ventaId, datos.medioPrecio);
+  if (!claveValida(datos.claveIdempotencia)) throw new DatosInvalidos("El formulario venció: recargá la página e intentá de nuevo");
+  const repetida = await ventaPorClave(db, actorId, organizacionId, datos.claveIdempotencia);
+  if (repetida) return repetida;
   return conReintento(() => db.$transaction(async tx => {
     const venta = await bloquearVenta(tx, organizacionId, ventaId);
     if (!venta) throw new AccesoDenegado();
+    await exigirSedeVenta(tx, actorId, organizacionId, venta.sedeId, "venta:registrar");
     await exigirSedeVenta(tx, actorId, organizacionId, venta.sedeId, "venta:anular");
-    if (venta.estado === "ANULADA") throw new DatosInvalidos("La venta ya fue anulada");
-    // Orden de locks: venta → saldos de stock → caja.
-    const repuestos = datos.reponerStock ? await reponerPorAnulacionVenta(tx, actorId, organizacionId, { sedeId: venta.sedeId, ventaId, motivo: `Anulación de venta: ${m.motivo}`.slice(0, 300) }) : 0;
-    const cobros = await tx.cobroVenta.findMany({ where: { organizacionId, ventaId, tipo: "COBRO", reverso: null }, orderBy: { createdAt: "asc" }, select: { id: true, medio: true, medioPagoId: true, medioNombre: true, monto: true, movimientoCaja: { select: { id: true } } } });
-    const caja = cobros.length ? await cajaAbiertaBloqueada(tx, organizacionId, venta.sedeId) : null;
-    if (!caja && cobros.some(c => c.medio === "EFECTIVO")) throw new DatosInvalidos(`${SIN_CAJA}: la anulación devuelve el efectivo cobrado`);
-    for (const c of cobros) {
-      const reverso = await tx.cobroVenta.create({
-        data: { organizacionId, sedeId: venta.sedeId, ventaId, tipo: "REVERSO", medio: c.medio, medioPagoId: c.medioPagoId, medioNombre: c.medioNombre, monto: c.monto.neg(), cajaId: caja?.id ?? null, revierteId: c.id, motivo: m.motivo, registradoPorId: actorId },
-        select: { id: true },
-      });
-      if (c.medio === "EFECTIVO") await asentarMovimiento(tx, organizacionId, venta.sedeId, actorId, caja!, { tipo: "REVERSO", monto: -centavos(c.monto), motivo: m.motivo, cobroId: reverso.id, revierteId: c.movimientoCaja!.id });
-    }
-    await tx.venta.update({ where: { id: ventaId }, data: { estado: "ANULADA", anuladaEn: new Date(), anuladaPorId: actorId, motivoAnulacion: m.motivo } });
-    await auditar(tx, organizacionId, actorId, "venta.anular", "Venta", ventaId, { motivo: m.motivo, cobrosRevertidos: cobros.length, productosRepuestos: repuestos });
-    return { cobrosRevertidos: cobros.length, productosRepuestos: repuestos };
+    if (venta.estado !== "PENDIENTE") throw new DatosInvalidos("Solo se cambia el precio de una venta pendiente");
+    if (await tx.cobroVenta.count({ where: { organizacionId, ventaId } })) throw new DatosInvalidos("La venta ya tiene cobros: el precio ya no se cambia. Ajustá con el descuento al cobrar o anulala");
+    const original = await tx.venta.findUniqueOrThrow({
+      where: { id: ventaId },
+      select: { reservaId: true, descuento: true, medioPrecioId: true, items: { orderBy: { posicion: "asc" }, select: { tipo: true, servicioId: true, profesionalId: true, reservaItemId: true, productoId: true, cantidad: true, precioLista: true, precioMedio: true, precioUnitario: true } } },
+    });
+    if ((original.medioPrecioId ?? null) === (datos.medioPrecio ?? null)) throw new DatosInvalidos("La venta ya tiene ese precio");
+    const editado = (i: (typeof original.items)[number]) => {
+      const propuesto = i.precioMedio ?? i.precioLista;
+      return propuesto === null || !i.precioUnitario.equals(propuesto);
+    };
+    const motivo = "Cambio del precio aplicado (se registró una venta nueva con el otro precio)";
+    await anularVentaEn(tx, actorId, organizacionId, ventaId, motivo, true);
+    const nueva = await registrarVentaEn(tx, actorId, organizacionId, {
+      sedeId: venta.sedeId, reservaId: original.reservaId, medioPrecio: datos.medioPrecio, descuento: original.descuento.toFixed(2),
+      servicios: original.reservaId ? original.items.filter(i => i.tipo === "SERVICIO").map(i => ({
+        servicioId: i.servicioId!, profesionalId: i.profesionalId!, reservaItemId: i.reservaItemId, precio: editado(i) ? i.precioUnitario.toFixed(2) : null,
+      })) : undefined,
+      productos: original.items.filter(i => i.tipo === "PRODUCTO").map(i => ({ productoId: i.productoId!, cantidad: i.cantidad.toFixed(3) })),
+      cobros: [], claveIdempotencia: datos.claveIdempotencia,
+    });
+    await auditar(tx, organizacionId, actorId, "venta.cambiarPrecio", "Venta", nueva.id, { reemplaza: ventaId, medioAnterior: original.medioPrecioId, medioNuevo: datos.medioPrecio });
+    return nueva;
   }, { maxWait: 10_000, timeout: 20_000 }));
 }
 
@@ -453,6 +513,24 @@ function presentar(v: VentaConDetalle, nombre: Map<string, string>) {
     anulacion: v.estado === "ANULADA" ? { motivo: v.motivoAnulacion!, por: nombre.get(v.anuladaPorId!) ?? "—", en: v.anuladaEn! } : null,
   };
 }
+
+/** Precios a los que se puede pasar una venta pendiente sin cobros: la lista y cada medio activo. */
+async function opcionesPrecio(db: Database, organizacionId: string, v: VentaConDetalle, permitido: boolean) {
+  if (!permitido || v.estado !== "PENDIENTE" || v.cobros.length) return [];
+  const [medios, redondeo] = await Promise.all([mediosHabilitados(db, organizacionId, v.sedeId), redondeoSede(db, organizacionId, v.sedeId)]);
+  const lineas: LineaPrecio[] = v.items.map(i => {
+    const propuesto = i.precioMedio ?? i.precioLista;
+    const editado = propuesto === null || !i.precioUnitario.equals(propuesto);
+    return { cantidad: aMilesimas(i.cantidad.toFixed(3))!, lista: i.precioLista === null ? null : centavos(i.precioLista), editado: editado ? centavos(i.precioUnitario) : null };
+  });
+  const opcion = (id: string | null, nombre: string, ajuste: bigint) => {
+    const t = totalesConMedio(lineas, ajuste, redondeo, centavos(v.descuento), centavos(v.anticipo));
+    return { medioId: id, nombre, ajuste: ajusteDecimal(ajuste), actual: (v.medioPrecioId ?? null) === id, total: "error" in t ? null : importe(t.total), error: "error" in t ? t.error : null };
+  };
+  // Solo los que cambian el total: pasar de Débito (0 %) a la lista no cambia nada.
+  return [opcion(null, "Lista", 0n), ...medios.filter(m => m.ajuste !== 0n).map(m => opcion(m.id, m.nombre, m.ajuste))].filter(o => !o.actual && o.total !== v.total.toFixed(2));
+}
+
 async function nombres(db: Database, ids: (string | null | undefined)[]) {
   const usuarios = await db.usuario.findMany({ where: { id: { in: [...new Set(ids.filter((x): x is string => !!x))] } }, select: { id: true, nombre: true } });
   return new Map(usuarios.map(u => [u.id, u.nombre]));
@@ -505,6 +583,9 @@ export async function obtenerVenta(db: Database, actorId: string, organizacionId
     tieneProductos: v.items.some(i => i.tipo === "PRODUCTO"),
     medios: v.estado === "PENDIENTE" ? await mediosHabilitados(db, organizacionId, v.sedeId) : [],
     puede: { cobrar: puede("venta:registrar") && v.estado === "PENDIENTE", anular: puede("venta:anular") && v.estado !== "ANULADA" },
+    // D22: con la venta pendiente y sin cobros, el precio se puede cambiar (anular y rehacer). Cada opción
+    // trae el total que quedaría, calculado con las mismas funciones que usa el alta.
+    opcionesPrecio: await opcionesPrecio(db, organizacionId, v, puede("venta:registrar") && puede("venta:anular")),
     cajaAbierta: await hayCajaAbierta(db, actorId, organizacionId, v.sedeId).catch(e => { if (e instanceof AccesoDenegado) return false; throw e; }),
   };
 }

@@ -37,9 +37,10 @@ export function Foto({ ruta, nombre, className }: { ruta: string | null; nombre:
 const marcada = (si: boolean) => (si ? "true" : undefined);
 
 /** Con una sola sede la elige App: mientras tanto no se muestra la pregunta, para que no aparezca y desaparezca. */
-export function PasoSede({ carga, elegida, onElegir }: { carga: Carga<SedePublica[]>; elegida?: string; onElegir: (sede: SedePublica) => void }) {
+export function PasoSede({ carga, elegida, aviso, onElegir }: { carga: Carga<SedePublica[]>; elegida?: string; aviso?: string | null; onElegir: (sede: SedePublica) => void }) {
   if ((carga.cargando && !carga.datos) || carga.datos?.length === 1) return <p className="cargando" role="status">Cargando…</p>;
   return <Paso titulo="¿En qué sede?">
+    {aviso && <p className="aviso" role="status">{aviso}</p>}
     <Cargado carga={carga} vacio="Por ahora no hay sedes con reservas online.">
       {lista => <ul className="opciones">{lista.map(s => <li key={s.id}><button type="button" className="opcion" aria-current={marcada(s.id === elegida)} onClick={() => onElegir(s)}><strong>{s.nombre}</strong><span className="flecha" aria-hidden="true">→</span></button></li>)}</ul>}
     </Cargado>
@@ -88,8 +89,32 @@ export function PasoProfesional({ sede, servicio, elegido, onElegir }: {
   </Paso>;
 }
 
-export function PasoHorario({ sede, servicio, profesional, fecha, elegido, aviso, onFecha, onElegir }: {
-  sede: SedePublica; servicio: ServicioPublico; profesional: ProfesionalPublico | null; fecha: string; elegido?: TurnoPublico; aviso: string | null;
+/**
+ * Busca, día por día dentro de la tira, el próximo con turnos después de `desde`. Un pedido por día y se corta
+ * en el primero que tenga: lo habitual es encontrarlo en uno o dos. `undefined` mientras busca; `null` si no hay.
+ */
+function useProximoConTurnos(buscar: boolean, dias: string[], desde: string, consultar: (fecha: string, signal: AbortSignal) => Promise<TurnoPublico[]>) {
+  const [resultado, setResultado] = useState<{ desde: string; fecha: string | null } | null>(null);
+  useEffect(() => {
+    if (!buscar) return;
+    const control = new AbortController();
+    (async () => {
+      for (const d of dias.slice(dias.indexOf(desde) + 1)) {
+        if ((await consultar(d, control.signal)).length) return d;
+      }
+      return null;
+    })().then(fecha => setResultado({ desde, fecha }), () => { if (!control.signal.aborted) setResultado({ desde, fecha: null }); });
+    return () => control.abort();
+    // `dias` y `consultar` se derivan de `desde` y del recorrido; cambian en cada render.
+  }, [buscar, desde]);
+  return buscar && resultado?.desde === desde ? resultado.fecha : undefined;
+}
+
+export function PasoHorario({ sede, servicio, profesional, fecha, fechaElegida, elegido, aviso, onFecha, onElegir }: {
+  sede: SedePublica; servicio: ServicioPublico; profesional: ProfesionalPublico | null; fecha: string;
+  /** false si `fecha` es la de hoy por defecto: si no tiene turnos, se salta solo al próximo día que tenga. */
+  fechaElegida: boolean;
+  elegido?: TurnoPublico; aviso: string | null;
   onFecha: (fecha: string) => void; onElegir: (turno: TurnoPublico) => void;
 }) {
   const hoy = fechaEn(sede.timezone);
@@ -100,17 +125,36 @@ export function PasoHorario({ sede, servicio, profesional, fecha, elegido, aviso
     const t = tira.current, dia = t?.querySelector<HTMLElement>("[aria-pressed=true]");
     if (t && dia) t.scrollLeft = dia.offsetLeft - (t.clientWidth - dia.offsetWidth) / 2;
   }, [fecha]);
+  const desplazar = (sentido: 1 | -1) => tira.current?.scrollBy({ left: sentido * tira.current.clientWidth * 0.8 });
   const carga = useCarga(s => api.disponibilidad(sede.id, fecha, servicio.id, profesional?.id ?? null, s), [sede.id, servicio.id, profesional?.id, fecha]);
+
+  const vacio = !carga.cargando && !carga.error && carga.datos?.length === 0;
+  const [pedido, setPedido] = useState<string | null>(null);
+  const buscando = vacio && (!fechaElegida || pedido === fecha);
+  const proximo = useProximoConTurnos(buscando, dias, fecha, (d, s) => api.disponibilidad(sede.id, d, servicio.id, profesional?.id ?? null, s));
+  // La búsqueda automática (sin día elegido) salta directo; la pedida también.
+  useEffect(() => { if (proximo) onFecha(proximo); }, [proximo]);
+
   return <Paso titulo="Elegí día y horario">
     {aviso && <p className="error" role="alert">{aviso}</p>}
-    <div className="dias" role="group" aria-label="Día" ref={tira}>
-      {dias.map(d => { const p = partesDia(d); return <button type="button" key={d} className="dia" aria-pressed={d === fecha} onClick={() => onFecha(d)}><small>{p.semana}</small><strong>{p.numero}</strong><small>{p.mes}</small></button>; })}
+    <div className="tira">
+      <button type="button" className="desplazar" aria-label="Días anteriores" onClick={() => desplazar(-1)}>‹</button>
+      <div className="dias" role="group" aria-label="Día" ref={tira}>
+        {dias.map(d => { const p = partesDia(d); return <button type="button" key={d} className="dia" aria-pressed={d === fecha} onClick={() => onFecha(d)}><small>{p.semana}</small><strong>{p.numero}</strong><small>{p.mes}</small></button>; })}
+      </div>
+      <button type="button" className="desplazar" aria-label="Días siguientes" onClick={() => desplazar(1)}>›</button>
     </div>
-    <Cargado carga={carga} vacio="No quedan horarios este día. Probá con otro.">
-      {turnos => <ul className="horarios" aria-label={`Horarios del ${partesDia(fecha).semana} ${partesDia(fecha).numero}`}>
-        {turnos.map(t => <li key={t.inicio}><button type="button" className="horario" aria-current={marcada(t.inicio === elegido?.inicio)} onClick={() => onElegir(t)}>{hora(t.inicio, sede.timezone)}</button></li>)}
-      </ul>}
-    </Cargado>
+    {vacio
+      ? buscando && proximo !== null ? <p className="cargando" role="status">Buscando el próximo día con turnos…</p>
+        : <div className="vacio">
+          <p>{buscando ? "No encontramos turnos libres en los próximos días. Probá con otro profesional o consultá en la sede." : "No quedan horarios este día."}</p>
+          {!buscando && fecha !== dias.at(-1) && <button type="button" className="secundario" onClick={() => setPedido(fecha)}>Ver el próximo día con turnos</button>}
+        </div>
+      : <Cargado carga={carga} vacio="">
+        {turnos => <ul className="horarios" aria-label={`Horarios del ${partesDia(fecha).semana} ${partesDia(fecha).numero}`}>
+          {turnos.map(t => <li key={t.inicio}><button type="button" className="horario" aria-current={marcada(t.inicio === elegido?.inicio)} onClick={() => onElegir(t)}>{hora(t.inicio, sede.timezone)}</button></li>)}
+        </ul>}
+      </Cargado>}
   </Paso>;
 }
 

@@ -82,6 +82,11 @@ export async function accionActualizarSede(_: Estado, form: FormData) {
   const sedeId = texto(form, "sedeId");
   return ejecutar(`/sedes/${sedeId}`, (actor, org) => actualizarSede(db(), actor, org, sedeId, { nombre: texto(form, "nombre") }), "Nombre actualizado");
 }
+/** Dirección de la sede en el portal de reservas (`/lomada`). */
+export async function accionSlugSede(_: Estado, form: FormData) {
+  const sedeId = texto(form, "sedeId");
+  return ejecutar(`/sedes/${sedeId}`, (actor, org) => actualizarSede(db(), actor, org, sedeId, { slug: texto(form, "slug") }), "Dirección actualizada");
+}
 export async function accionEstadoSede(_: Estado, form: FormData) {
   const activo = texto(form, "activo") === "true";
   return ejecutar(`/sedes/${texto(form, "sedeId")}`,(actor, org) => cambiarEstadoSede(db(), actor, org, texto(form, "sedeId"), activo), activo ? "Sede reactivada" : "Sede desactivada");

@@ -42,7 +42,7 @@ test("fundación PostgreSQL: integridad y autorización por ID", async (t) => {
       await assert.rejects(listarSedes(db, a.franquiciado.id, a.org.id), AccesoDenegado);
     });
     await t.test("FK compuestas rechazan vínculos entre organizaciones", async () => {
-      await assert.rejects(db.sede.create({ data: { organizacionId: a.org.id, franquiciadoId: b.franA.id, nombre: "Inválida" } }));
+      await assert.rejects(db.sede.create({ data: { organizacionId: a.org.id, franquiciadoId: b.franA.id, nombre: "Inválida", slug: "invalida" } }));
       await assert.rejects(db.asignacionRol.create({ data: { organizacionId: a.org.id, usuarioId: a.master.id, rol: "ADMIN_SEDE", alcance: "SEDE", sedeId: b.centro.id } }));
       await assert.rejects(db.configuracionFiscalSede.create({ data: { organizacionId: a.org.id, sedeId: a.sur.id, emisorFiscalId: b.emisor.id, ambiente: "PRUEBA", puntoVenta: 3 } }));
     });

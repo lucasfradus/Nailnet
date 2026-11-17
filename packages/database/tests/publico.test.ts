@@ -44,7 +44,7 @@ test("contrato público del portal (R05)", async (t) => {
     const crear = (sol = solicitud(), k = clave(), ip: string | null = "198.51.100.7") => crearReservaPublica(db, { solicitud: sol, claveIdempotencia: k, ip }, ahora);
 
     await t.test("catálogo público: sedes por slug, solo servicios online y profesionales aptos", async () => {
-      assert.deepEqual((await sedesPublicas(db, slug)).map(s => s.nombre), ["Centro", "Norte", "Sur"]);
+      assert.deepEqual((await sedesPublicas(db, slug)).map(s => [s.nombre, s.slug]), [["Centro", "centro"], ["Norte", "norte"], ["Sur", "sur"]]);
       await assert.rejects(sedesPublicas(db, "no-existe"), AccesoDenegado);
       await assert.rejects(sedesPublicas(db, "Con Mayúsculas"), AccesoDenegado);
       await publicarConsentimiento(db, M, O, { tipo: "TERMINOS", clave: "terminos", titulo: "Términos", texto: "Acepto los términos y condiciones del servicio de turnos, versión 2." });

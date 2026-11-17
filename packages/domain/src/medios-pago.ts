@@ -161,3 +161,22 @@ export function totalesConMedio(lineas: readonly LineaPrecio[], ajuste: bigint, 
   const p = preciosConMedio(lineas, ajuste, redondeo);
   return "error" in p ? p : calcularVenta(p.lineas, descuento, anticipo);
 }
+
+// ─── Portal (etapa 3) ─────────────────────────────────────────────────────────
+
+/**
+ * Precios con descuento que muestra el portal además de la lista (doc 32, etapa 3): uno por precio
+ * distinto, con los medios que lo dan, en el orden de la sede. Los recargos no se muestran para no
+ * confundir, y un precio igual a la lista tampoco. Ejemplo: lista $15.500 con efectivo y transferencia
+ * en −10 % → [{ precio: $13.900, medios: ["Efectivo", "Transferencia"] }].
+ */
+export function preciosPortal(lista: bigint, medios: readonly { nombre: string; ajuste: bigint }[], redondeo: Redondeo): { precio: bigint; medios: string[] }[] {
+  const grupos = new Map<bigint, string[]>();
+  for (const m of medios) {
+    if (m.ajuste >= 0n) continue;
+    const precio = precioConAjuste(lista, m.ajuste, redondeo);
+    if (precio === lista) continue;
+    grupos.set(precio, [...(grupos.get(precio) ?? []), m.nombre]);
+  }
+  return [...grupos].map(([precio, nombres]) => ({ precio, medios: nombres }));
+}

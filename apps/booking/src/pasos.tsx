@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { validarReservaPublica, type ProfesionalPublico, type ReservaPublicaRespuesta, type SedePublica, type ServicioPublico, type TurnoPublico } from "@nailnet/contracts/publico";
 import { api, ErrorApi, urlImagen, useCarga, type Carga } from "./api";
-import { dinero, duracion, fechaEn, fechaLarga, hora, partesDia, sumarDias } from "./formato";
+import { conjuncion, dinero, duracion, fechaEn, fechaLarga, hora, partesDia, sumarDias } from "./formato";
 import type { NombrePaso } from "./navegacion";
 
 /** Días que ofrece el selector. El horizonte real lo aplica el backend por sede: un día fuera de él viene sin turnos. */
@@ -59,6 +59,7 @@ export function PasoServicio({ sede, elegido, onElegir }: { sede: SedePublica; e
               <strong>{s.nombre}</strong>
               {s.descripcion && <span className="servicio-descripcion">{s.descripcion}</span>}
               <span className="servicio-datos"><span>{duracion(s.duracionMinutos)}</span><span className="precio">{dinero(s.precio)}</span></span>
+              {(s.preciosMedio ?? []).map(p => <span key={p.precio} className="precio-medio">{dinero(p.precio)} con {conjuncion(p.medios)}</span>)}
               <small>Seña {dinero(s.sena)}</small>
             </span>
           </button>
@@ -189,7 +190,7 @@ export function Resumen({ sede, servicio, profesional, turno, cambiarSede, onCam
     {servicio && <Foto ruta={servicio.imagenUrl} nombre={servicio.nombre} className="resumen-foto" />}
     <dl>
       {dato("sede", "Sede", sede.nombre, cambiarSede)}
-      {servicio && dato("servicio", "Servicio", `${servicio.nombre} · ${dinero(servicio.precio)}`)}
+      {servicio && dato("servicio", "Servicio", `${servicio.nombre} · ${dinero(servicio.precio)}${(servicio.preciosMedio ?? []).map(p => ` (${dinero(p.precio)} con ${conjuncion(p.medios)})`).join("")}`)}
       {profesional !== undefined && dato("profesional", "Profesional", <>{profesional && <Foto ruta={profesional.fotoUrl} nombre={profesional.nombre} className="avatar mini" />}{profesional?.nombre ?? "Cualquiera"}</>)}
       {turno && dato("horario", "Turno", `${fechaLarga(turno.inicio, sede.timezone)}, ${hora(turno.inicio, sede.timezone)} h`)}
     </dl>

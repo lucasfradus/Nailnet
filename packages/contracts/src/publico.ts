@@ -4,7 +4,11 @@
  * son rutas relativas al origen de la API (`/api/public/v1/imagenes/{id}`), o null si no hay imagen.
  */
 export type SedePublica = { id: string; nombre: string; timezone: string };
-export type ServicioPublico = { id: string; nombre: string; categoria: string; descripcion: string | null; imagenUrl: string | null; duracionMinutos: number; precio: string; sena: string };
+/**
+ * `precio` es el de lista. `preciosMedio`: los precios con descuento por medio de pago (D22, doc 32), uno
+ * por precio distinto, con los medios que lo dan. Vacío si la sede no tiene descuentos.
+ */
+export type ServicioPublico = { id: string; nombre: string; categoria: string; descripcion: string | null; imagenUrl: string | null; duracionMinutos: number; precio: string; sena: string; preciosMedio: { precio: string; medios: string[] }[] };
 /** Términos vigentes que el invitado acepta al reservar (uno por clave, última versión). */
 export type TerminoPublico = { clave: string; version: number; titulo: string; texto: string };
 export type ProfesionalPublico = { id: string; nombre: string; fotoUrl: string | null };

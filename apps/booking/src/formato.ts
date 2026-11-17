@@ -28,3 +28,6 @@ export function partesDia(fecha: string) {
   const f = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("es-AR", { timeZone: "UTC", ...o }).format(mediodia(fecha)).replace(".", "");
   return { semana: f({ weekday: "short" }), numero: f({ day: "numeric" }), mes: f({ month: "short" }) };
 }
+
+/** «Efectivo», «Efectivo o Transferencia», «Efectivo, Transferencia o Cuenta DNI». */
+export const conjuncion = (nombres: readonly string[]) => nombres.length <= 1 ? nombres.join("") : `${nombres.slice(0, -1).join(", ")} o ${nombres.at(-1)}`;

@@ -22,7 +22,8 @@
     "./medios-pago": "./src/medios-pago.ts",
     "./caja": "./src/caja.ts",
     "./incidencias": "./src/incidencias.ts",
-    "./reportes": "./src/reportes.ts"
+    "./reportes": "./src/reportes.ts",
+    "./sedes": "./src/sedes.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

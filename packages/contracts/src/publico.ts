@@ -3,7 +3,8 @@
  * backend. Importes como cadenas decimales «12345.67»; instantes en ISO 8601 UTC. Las URLs de imágenes
  * son rutas relativas al origen de la API (`/api/public/v1/imagenes/{id}`), o null si no hay imagen.
  */
-export type SedePublica = { id: string; nombre: string; timezone: string };
+/** `slug`: dirección de la sede en el portal (`/lomada`). */
+export type SedePublica = { id: string; slug: string; nombre: string; timezone: string };
 export type ServicioPublico = { id: string; nombre: string; categoria: string; descripcion: string | null; imagenUrl: string | null; duracionMinutos: number; precio: string; sena: string };
 /** Términos vigentes que el invitado acepta al reservar (uno por clave, última versión). */
 export type TerminoPublico = { clave: string; version: number; titulo: string; texto: string };

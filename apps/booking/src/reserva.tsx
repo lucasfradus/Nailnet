@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
 import type { EstadoPagoPublico, EstadoReservaPublico } from "@nailnet/contracts/publico";
 import { api, useCarga } from "./api";
+import { descargarIcs, enlaceGoogle, type EventoTurno } from "./calendario";
 import { dinero, fechaLarga, hora } from "./formato";
 import { Foto, Paso } from "./pasos";
 
-/** Lo que el portal guarda de una reserva: el token (se muestra una sola vez) y la zona de la sede para mostrar horas. */
-export type ReservaGuardada = { token: string; timezone: string };
+/**
+ * Lo que el portal guarda de una reserva: el token (se muestra una sola vez) y la zona de la sede para mostrar horas.
+ * `oculta`: la clienta empezó otra reserva sin descartar esta; el encabezado ofrece volver a verla.
+ */
+export type ReservaGuardada = { token: string; timezone: string; oculta?: boolean };
+
+/** Estados en los que el turno sigue en pie: vale la pena poder volver a verlo mientras se reserva otro. */
+const VIGENTES = new Set<EstadoReservaPublico>(["PENDIENTE_PAGO", "PAGO_EN_REVISION", "CONFIRMADA"]);
 
 // sessionStorage y no localStorage: el token es una credencial y no debe sobrevivir a la pestaña.
 // El acceso posterior llega con el enlace por email (P03).
@@ -70,7 +77,12 @@ function useCuentaRegresiva(hasta: string | null) {
  * Estado real de la reserva, siempre consultado al backend: el portal nunca confirma por su cuenta.
  * Al vencer la retención vuelve a consultar (el backend informa EXPIRADA aunque el worker no haya pasado).
  */
-export function EstadoReserva({ reserva, onNueva, onOtroHorario }: { reserva: ReservaGuardada; onNueva: () => void; onOtroHorario: (() => void) | null }) {
+export function EstadoReserva({ reserva, onNueva, onOtroHorario }: {
+  reserva: ReservaGuardada;
+  /** `descartar`: la reserva ya no sirve (vencida, cancelada, no encontrada) y no se ofrece volver a ella. */
+  onNueva: (descartar: boolean) => void;
+  onOtroHorario: (() => void) | null;
+}) {
   const carga = useCarga(s => api.reservaActual(reserva.token, s), [reserva.token]);
   const estado = carga.datos;
   const pendiente = estado?.estado === "PENDIENTE_PAGO" ? estado.expiraEn : null;
@@ -103,13 +115,20 @@ export function EstadoReserva({ reserva, onNueva, onOtroHorario }: { reserva: Re
     const noEsta = carga.error?.codigo === "NO_ENCONTRADO";
     return <Paso titulo={noEsta ? "No encontramos la reserva" : "No pudimos consultar la reserva"}>
       <p className="ayuda">{noEsta ? "El acceso venció o fue reemplazado por uno más nuevo." : carga.error?.message}</p>
-      <div className="acciones">{!noEsta && <button type="button" className="principal" onClick={carga.recargar}>Reintentar</button>}<button type="button" className="secundario" onClick={onNueva}>Hacer otra reserva</button></div>
+      <div className="acciones">{!noEsta && <button type="button" className="principal" onClick={carga.recargar}>Reintentar</button>}<button type="button" className="secundario" onClick={() => onNueva(noEsta)}>Hacer otra reserva</button></div>
     </Paso>;
   }
   const texto = estado.pago === "A_DEVOLVER" && estado.estado !== "CONFIRMADA" ? A_DEVOLVER : TEXTOS[estado.estado];
   const avisoPago = estado.estado === "PENDIENTE_PAGO" && estado.pago ? AVISO_PAGO[estado.pago] : undefined;
   const puedePagar = estado.estado === "PENDIENTE_PAGO" && restante !== null && restante > 0 && estado.pago !== "EN_PROCESO";
   const tz = reserva.timezone;
+  // El calendario se ofrece cuando el turno está tomado (o la seña en camino), no mientras se retiene.
+  const primero = estado.items[0], ultimo = estado.items.at(-1);
+  const evento: EventoTurno | null = primero && ultimo && (estado.estado === "CONFIRMADA" || estado.estado === "PAGO_EN_REVISION") ? {
+    titulo: `${estado.items.map(i => i.servicio).join(" + ")} · Sicurella`,
+    inicio: primero.inicio, fin: ultimo.fin, lugar: `Sicurella ${estado.sede}`,
+    detalle: estado.items.map(i => `${i.servicio} con ${i.profesional}, ${hora(i.inicio, tz)} h`).join("\n"),
+  } : null;
   return <Paso titulo={texto.titulo}>
     <p className={`estado estado-${estado.estado.toLowerCase()}`} role="status">{texto.detalle}</p>
     {esperando && <p className="cargando" role="status">Verificando el pago con Mercado Pago…</p>}
@@ -134,8 +153,13 @@ export function EstadoReserva({ reserva, onNueva, onOtroHorario }: { reserva: Re
       {puedePagar && <button type="button" className="principal" onClick={pagar} disabled={pagando.enCurso}>{pagando.enCurso ? "Abriendo Mercado Pago…" : `Pagar seña de ${dinero(estado.sena)}`}</button>}
       {estado.estado === "EXPIRADA" && estado.pago !== "A_DEVOLVER" && onOtroHorario &&<button type="button" className="principal" onClick={onOtroHorario}>Elegir otro horario</button>}
       {estado.estado === "PENDIENTE_PAGO" && <button type="button" className="secundario" onClick={carga.recargar} disabled={carga.cargando}>Actualizar estado</button>}
-      <button type="button" className="secundario" onClick={onNueva}>Hacer otra reserva</button>
+      <button type="button" className="secundario" onClick={() => onNueva(!VIGENTES.has(estado.estado))}>Hacer otra reserva</button>
     </div>
+    {evento && <div className="calendario" role="group" aria-label="Agregar al calendario">
+      <span>Agregalo a tu calendario:</span>
+      <a className="secundario" href={enlaceGoogle(evento)} target="_blank" rel="noreferrer">Google Calendar</a>
+      <button type="button" className="secundario" onClick={() => descargarIcs(evento, `${primero!.inicio}-${estado.sede}@reservas.sicurella`.replace(/\s+/g, "-"))}>Apple / Outlook (.ics)</button>
+    </div>}
   </Paso>;
 }
 

@@ -168,6 +168,8 @@ model Sede {
   organizacionId          String                    @db.Uuid
   franquiciadoId          String                    @db.Uuid
   nombre                  String
+  /// Dirección en el portal de reservas (`/lomada`). Única en la organización; no cambia al renombrar.
+  slug                    String
   timezone                String                    @default("America/Argentina/Buenos_Aires")
   activo                  Boolean                   @default(true)
   createdAt               DateTime                  @default(now())
@@ -201,6 +203,7 @@ model Sede {
   esperas                 EsperaRecepcion[]
 
   @@unique([organizacionId, id])
+  @@unique([organizacionId, slug])
   @@index([organizacionId, franquiciadoId])
 }
 

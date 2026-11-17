@@ -119,6 +119,20 @@ legend{font-size:12px;font-weight:600;color:var(--color-secondary-foreground);pa
 .con-unidad.sufijo::before{left:auto;right:10px}.con-unidad.sufijo input{padding-left:10px;padding-right:26px}.con-unidad:has(input:disabled)::before{opacity:.4}input:disabled{background:var(--gris-50);color:var(--color-muted-foreground);cursor:not-allowed}
 details summary{cursor:pointer;font-size:13px;font-weight:500;color:var(--color-primary);margin:6px 0}
 .semana{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}.semana label{display:grid;gap:4px;font-size:13px}
+/* Editor de jornada: un renglón por día, tramos con pausas */
+.editor-semana{display:grid;border:1px solid var(--gris-200);border-radius:var(--radius-md);max-width:820px}
+.dia-semana{display:grid;grid-template-columns:130px minmax(0,1fr);gap:10px;align-items:center;padding:8px 12px;min-height:50px}
+.dia-semana+.dia-semana{border-top:1px solid var(--gris-200)}.dia-semana.libre{background:var(--gris-50)}
+.formulario .dia-nombre{font-weight:500!important;color:var(--color-foreground)}
+.tramos{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center}
+.lista-tramos{display:grid;gap:4px}.tramo-con-pausa{display:grid;gap:4px;justify-items:start}
+.acciones-tramos{display:flex;flex-wrap:wrap;gap:2px}
+.tramo{display:inline-flex;gap:6px;align-items:center}.tramo input[type=time]{width:auto;padding:5px 8px}
+.tramo .a{font-size:13px;color:var(--color-muted-foreground)}
+.pausa{font-size:12px;color:var(--texto-aviso);background:var(--fondo-aviso);border-radius:var(--radius-sm);padding:1px 6px}
+button.enlace{background:none;border:0;box-shadow:none;color:var(--color-primary);padding:4px 6px;font-size:13px}button.enlace:hover{background:var(--gris-100);border:0}
+.alerta-texto{font-size:12px;color:var(--texto-error)}
+@media (max-width:640px){.dia-semana{grid-template-columns:1fr}}
 
 /* Nuevo turno: pasos a la izquierda, resumen fijo a la derecha */
 .reserva{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}

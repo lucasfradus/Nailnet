@@ -55,7 +55,7 @@ export default async function Profesional({ params }: { params: Promise<{ profes
         <Formulario accion={accionHorarioProfesional} boton="Guardar jornada">
           <input type="hidden" name="profesionalId" value={p.id} /><input type="hidden" name="sedeId" value={s.sedeId} />
           <CamposSemana semana={s.semana} />
-          <p className="ayuda">Formato 09:00-13:00, 14:00-20:00. Los cortes entre rangos son pausas.</p>
+          <p className="ayuda">Marcá los días que trabaja: al marcar uno se copia el horario del día anterior. Usá «+ Pausa» para el almuerzo o un horario partido.</p>
         </Formulario>
       </details>}
       {s.editable && <Formulario accion={accionVincularSedeProfesional} boton={s.activo ? "Desvincular de la sede" : "Volver a vincular"} className="en-linea" secundario>

@@ -11,12 +11,18 @@ type Tx = Prisma.TransactionClient;
 export type NuevaAsignacion = Pick<Asignacion, "rol" | "alcance" | "franquiciadoId" | "sedeId">;
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-function validarUsuario(email: string, nombre: string) {
+export function validarEmail(email: string) {
   const e = normalizarEmail(email);
-  const n = nombre.normalize("NFC").trim().replace(/\s+/g, " ");
   if (e.length > 254 || !EMAIL.test(e)) throw new DatosInvalidos("Email inválido");
+  return e;
+}
+export function validarNombre(nombre: string) {
+  const n = nombre.normalize("NFC").trim().replace(/\s+/g, " ");
   if (!n || n.length > 120) throw new DatosInvalidos("Nombre inválido: entre 1 y 120 caracteres");
-  return { email: e, nombre: n };
+  return n;
+}
+function validarUsuario(email: string, nombre: string) {
+  return { email: validarEmail(email), nombre: validarNombre(nombre) };
 }
 function limpiar(a: NuevaAsignacion): Asignacion {
   const asignacion = { rol: a.rol, alcance: a.alcance, franquiciadoId: a.franquiciadoId || null, sedeId: a.sedeId || null };
@@ -34,17 +40,21 @@ function asignacionVisible(actor: readonly Asignacion[], o: Asignacion, franquic
 }
 
 /** Usuarios visibles para el actor, opcionalmente filtrados por una sede de su alcance. */
-export async function listarUsuarios(db: Database, actorId: string, organizacionId: string, filtro: { sedeId?: string } = {}) {
-  exigirIds(filtro.sedeId);
+export async function listarUsuarios(db: Database, actorId: string, organizacionId: string, filtro: { sedeId?: string; usuarioId?: string } = {}) {
+  exigirIds(filtro.sedeId, filtro.usuarioId);
   const actor = await asignacionesActor(db, actorId, organizacionId);
   if (!actor.some(a => tienePermiso(a, "usuario:leer"))) throw new AccesoDenegado();
   const franquiciadoDe = await mapaSedes(db, organizacionId);
   if (filtro.sedeId && !actor.some(a => tienePermiso(a, "usuario:leer") && cubreSede(a, filtro.sedeId!, franquiciadoDe))) throw new AccesoDenegado();
   const membresias = await db.membresiaOrganizacion.findMany({
-    where: { organizacionId },
+    where: { organizacionId, ...filtro.usuarioId ? { usuarioId: filtro.usuarioId } : {} },
     select: {
       activo: true,
-      usuario: { select: { id: true, email: true, nombre: true, activo: true, passwordHash: true } },
+      usuario: { select: {
+        id: true, email: true, nombre: true, activo: true, passwordHash: true,
+        // Último ingreso: la sesión más reciente, vigente o no.
+        sesiones: { select: { createdAt: true }, orderBy: { createdAt: "desc" }, take: 1 },
+      } },
       asignaciones: { select: { id: true, rol: true, alcance: true, sedeId: true, franquiciadoId: true, sede: { select: { nombre: true } }, franquiciado: { select: { nombre: true } } } },
     },
     orderBy: { usuario: { nombre: "asc" } },
@@ -60,6 +70,7 @@ export async function listarUsuarios(db: Database, actorId: string, organizacion
       nombre: m.usuario.nombre,
       activo: m.activo && m.usuario.activo,
       tienePassword: !!m.usuario.passwordHash,
+      ultimoIngreso: m.usuario.sesiones[0]?.createdAt ?? null,
       administrable: m.usuario.id !== actorId && administraUsuario(actor, m.asignaciones, franquiciadoDe),
       asignaciones: m.asignaciones.filter(a => asignacionVisible(actor, a, franquiciadoDe)).map(a => ({
         id: a.id, rol: a.rol, alcance: a.alcance, sedeId: a.sedeId, franquiciadoId: a.franquiciadoId,
@@ -208,5 +219,66 @@ export async function solicitarRestablecimiento(db: Database, actorId: string, o
     if (envio) await encolarEmailRecuperacion(tx, { usuarioId, tokenId: id, enlace: envio.enlace(token), llavero: envio.llavero });
     await auditar(tx, organizacionId, actorId, "usuario.restablecer", "Usuario", usuarioId);
     return { email, expiraEn, token: envio ? null : token };
+  });
+}
+
+/** Ficha de un usuario visible para el actor, con el mismo recorte de roles que el listado. Null si no lo ve. */
+export async function obtenerUsuario(db: Database, actorId: string, organizacionId: string, usuarioId: string) {
+  exigirIds(usuarioId);
+  const [usuario] = await listarUsuarios(db, actorId, organizacionId, { usuarioId });
+  return usuario ?? null;
+}
+
+/**
+ * Corrección administrativa de nombre y email. El email es la identidad de acceso: al cambiarlo se cierran
+ * las sesiones del usuario y se anulan sus enlaces pendientes (un enlace emitido al email viejo deja de
+ * servir). Como el usuario es uno solo para todas las organizaciones, no se cambia el email de quien
+ * también pertenece a otra: eso le corresponde a él desde «Mi cuenta». Los cambios propios van por ahí.
+ */
+export async function editarUsuario(db: Database, actorId: string, organizacionId: string, usuarioId: string, datos: { nombre: string; email: string }) {
+  exigirIds(usuarioId);
+  const nombre = validarNombre(datos.nombre);
+  const email = validarEmail(datos.email);
+  if (usuarioId === actorId) throw new DatosInvalidos("Tus propios datos se cambian desde Mi cuenta");
+  return db.$transaction(async tx => {
+    const { actor, franquiciadoDe } = await contexto(tx, actorId, organizacionId);
+    const membresia = await tx.membresiaOrganizacion.findUnique({ where: { organizacionId_usuarioId: { organizacionId, usuarioId } }, include: { asignaciones: true, usuario: { select: { email: true, nombre: true } } } });
+    if (!membresia || !administraUsuario(actor, membresia.asignaciones, franquiciadoDe)) throw new AccesoDenegado();
+    const cambiaEmail = email !== membresia.usuario.email;
+    const cambiaNombre = nombre !== membresia.usuario.nombre;
+    if (!cambiaEmail && !cambiaNombre) return { cambiaEmail, cambiaNombre };
+    if (cambiaEmail) {
+      if (await tx.membresiaOrganizacion.count({ where: { usuarioId, organizacionId: { not: organizacionId } } })) throw new DatosInvalidos("El usuario también pertenece a otra organización: el email solo puede cambiarlo él, desde Mi cuenta");
+      if (await tx.usuario.count({ where: { email, id: { not: usuarioId } } })) throw new DatosInvalidos("Ese email ya lo usa otro usuario");
+    }
+    const ahora = new Date();
+    await tx.usuario.update({ where: { id: usuarioId }, data: { nombre, email } });
+    if (cambiaEmail) {
+      await tx.sesion.updateMany({ where: { usuarioId, revocadaEn: null }, data: { revocadaEn: ahora } });
+      await tx.tokenRecuperacion.updateMany({ where: { usuarioId, usadoEn: null }, data: { usadoEn: ahora } });
+    }
+    // Sin los valores: la auditoría no guarda datos personales, solo qué cambió.
+    await auditar(tx, organizacionId, actorId, "usuario.editar", "Usuario", usuarioId, { nombre: cambiaNombre, email: cambiaEmail });
+    return { cambiaEmail, cambiaNombre };
+  });
+}
+
+/**
+ * Reemplaza un rol por otro en una sola operación (por ejemplo, de recepción a administración de la sede),
+ * para no dejar al usuario sin rol entre «quitar» y «agregar». El actor debe poder otorgar ambos.
+ */
+export async function cambiarRol(db: Database, actorId: string, organizacionId: string, asignacionId: string, datos: NuevaAsignacion) {
+  exigirIds(asignacionId);
+  const nueva = limpiar(datos);
+  await db.$transaction(async tx => {
+    const { actor, franquiciadoDe } = await contexto(tx, actorId, organizacionId);
+    const actual = await tx.asignacionRol.findFirst({ where: { id: asignacionId, organizacionId } });
+    if (!actual || !puedeOtorgar(actor, actual, franquiciadoDe) || !puedeOtorgar(actor, nueva, franquiciadoDe)) throw new AccesoDenegado();
+    if (actual.usuarioId === actorId) throw new DatosInvalidos("No podés cambiar tus propios roles");
+    if (actual.rol === nueva.rol && actual.alcance === nueva.alcance && actual.sedeId === nueva.sedeId && actual.franquiciadoId === nueva.franquiciadoId) return;
+    if (actual.rol === "MASTER_FRANQUICIADOR") await exigirOtroMaster(tx, organizacionId, actual.usuarioId);
+    if (await tx.asignacionRol.count({ where: { organizacionId, usuarioId: actual.usuarioId, ...nueva } })) throw new DatosInvalidos("El usuario ya tiene ese rol");
+    const actualizada = await tx.asignacionRol.update({ where: { id: actual.id }, data: nueva, select: { id: true } });
+    await auditar(tx, organizacionId, actorId, "rol.cambiar", "AsignacionRol", actualizada.id, { usuarioId: actual.usuarioId, de: { rol: actual.rol, sedeId: actual.sedeId, franquiciadoId: actual.franquiciadoId }, a: nueva });
   });
 }

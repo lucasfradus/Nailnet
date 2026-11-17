@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Lateral, type GrupoMenu } from "@/components/lateral";
 import { SelectorContexto } from "@/components/selector-contexto";
 import { contextoPanel } from "@/lib/contexto";
@@ -39,7 +40,7 @@ export default async function Panel({ children }: { children: React.ReactNode })
     <Lateral grupos={grupos}>
       <form action={salir} className="usuario">
         <span className="avatar" aria-hidden="true">{iniciales(sesion.usuario.nombre)}</span>
-        <span className="usuario-datos"><strong>{sesion.usuario.nombre}</strong><span>{rol}</span></span>
+        <Link href="/cuenta" className="usuario-datos" title="Mi cuenta"><strong>{sesion.usuario.nombre}</strong><span>{rol}</span></Link>
         <button className="secundario">Salir</button>
       </form>
     </Lateral>

@@ -8,6 +8,7 @@
     "./access": "./src/access.ts",
     "./auth": "./src/auth.ts",
     "./usuarios": "./src/usuarios.ts",
+    "./cuenta": "./src/cuenta.ts",
     "./configuracion": "./src/configuracion.ts",
     "./clientes": "./src/clientes.ts",
     "./catalogo": "./src/catalogo.ts",

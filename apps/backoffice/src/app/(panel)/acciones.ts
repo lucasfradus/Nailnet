@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { AccesoDenegado, type Asignacion } from "@nailnet/domain";
 import { DatosInvalidos, actualizarSede, cambiarEstadoSede, crearFranquiciado, crearSede, listarSedes, zonaHorariaValida } from "@nailnet/database/access";
-import { cambiarEstadoUsuario, crearUsuario, emitirInvitacion, otorgarRol, revocarRol, solicitarRestablecimiento } from "@nailnet/database/usuarios";
+import { cambiarEstadoUsuario, cambiarRol, crearUsuario, editarUsuario, emitirInvitacion, otorgarRol, revocarRol, solicitarRestablecimiento } from "@nailnet/database/usuarios";
 import { llaveroEntorno } from "@nailnet/database/configuracion";
 import type { Llavero } from "@nailnet/domain/secretos";
 import { recuperacionPorEmail } from "@/lib/emails";
@@ -43,6 +43,11 @@ async function ejecutar(ruta: string, fn: (actorId: string, organizacionId: stri
     if (e instanceof DatosInvalidos) return { error: e.message };
     throw e;
   }
+}
+
+// Las acciones de usuarios se usan en la lista y en la ficha (/usuarios/[id]): se refrescan ambas.
+function ejecutarUsuarios(fn: (actorId: string, organizacionId: string) => Promise<string | void>, exito: string) {
+  return ejecutar("/usuarios", async (actor, org) => { const mensaje = await fn(actor, org); revalidatePath("/usuarios", "layout"); return mensaje; }, exito);
 }
 
 /** Codifica una asignación ofrecida en un <select>; el servidor la valida completa al recibirla. */
@@ -91,23 +96,23 @@ export async function accionCrearFranquiciado(_: Estado, form: FormData) {
 }
 
 export async function accionCrearUsuario(_: Estado, form: FormData) {
-  return ejecutar("/usuarios", async (actor, org) => {
+  return ejecutarUsuarios(async (actor, org) => {
     const r = await crearUsuario(db(), actor, org, { email: texto(form, "email"), nombre: texto(form, "nombre"), asignacion: leerAsignacion(texto(form, "asignacion")) });
-    return r.nuevo ? "Usuario creado. Generá su enlace de activación desde la lista." : "El usuario ya existía en otra organización; se le dio acceso con su cuenta actual.";
+    return r.nuevo ? "Usuario creado. Generá su enlace de activación desde su ficha." : "El usuario ya existía en otra organización; se le dio acceso con su cuenta actual.";
   }, "Usuario creado");
 }
 export async function accionOtorgarRol(_: Estado, form: FormData) {
-  return ejecutar("/usuarios", (actor, org) => otorgarRol(db(), actor, org, texto(form, "usuarioId"), leerAsignacion(texto(form, "asignacion"))), "Rol agregado");
+  return ejecutarUsuarios((actor, org) => otorgarRol(db(), actor, org, texto(form, "usuarioId"), leerAsignacion(texto(form, "asignacion"))), "Rol agregado");
 }
 export async function accionRevocarRol(_: Estado, form: FormData) {
-  return ejecutar("/usuarios", (actor, org) => revocarRol(db(), actor, org, texto(form, "asignacionId")), "Rol quitado");
+  return ejecutarUsuarios((actor, org) => revocarRol(db(), actor, org, texto(form, "asignacionId")), "Rol quitado");
 }
 export async function accionEstadoUsuario(_: Estado, form: FormData) {
   const activo = texto(form, "activo") === "true";
-  return ejecutar("/usuarios", (actor, org) => cambiarEstadoUsuario(db(), actor, org, texto(form, "usuarioId"), activo), activo ? "Usuario reactivado" : "Usuario desactivado");
+  return ejecutarUsuarios((actor, org) => cambiarEstadoUsuario(db(), actor, org, texto(form, "usuarioId"), activo), activo ? "Usuario reactivado" : "Usuario desactivado");
 }
 export async function accionInvitar(_: Estado, form: FormData) {
-  return ejecutar("/usuarios", async (actor, org) => {
+  return ejecutarUsuarios(async (actor, org) => {
     const { token, expiraEn } = await emitirInvitacion(db(), actor, org, texto(form, "usuarioId"));
     const base = urlBackoffice();
     // Se muestra una sola vez a quien lo generó; no se guarda ni se registra.
@@ -117,7 +122,7 @@ export async function accionInvitar(_: Estado, form: FormData) {
 export async function accionRestablecer(_: Estado, form: FormData) {
   // Sin envío de emails no hay a dónde mandar el enlace (y mostrárselo al admin le permitiría tomar la cuenta).
   if (!recuperacionPorEmail()) return { error: "El envío de emails no está habilitado; el usuario no recibiría el enlace" };
-  return ejecutar("/usuarios", async (actor, org) => {
+  return ejecutarUsuarios(async (actor, org) => {
     const base = urlBackoffice();
     const enlace = (token: string) => `${base}/restablecer#${token}`;
     // Igual que «Recuperar acceso»: sin llavero (desarrollo fuera de Docker) el enlace va a la consola del servidor.
@@ -127,6 +132,16 @@ export async function accionRestablecer(_: Estado, form: FormData) {
     if (r.token) console.info(`[desarrollo, sin NAILNET_CLAVES_CIFRADO] Enlace de restablecimiento para ${r.email}: ${enlace(r.token)}`);
     return `Le enviamos a ${r.email} un enlace para elegir una nueva contraseña (vence en 30 minutos). Su contraseña actual sigue valiendo hasta que la cambie.`;
   }, "");
+}
+export async function accionEditarUsuario(_: Estado, form: FormData) {
+  return ejecutarUsuarios(async (actor, org) => {
+    const r = await editarUsuario(db(), actor, org, texto(form, "usuarioId"), { nombre: texto(form, "nombre"), email: texto(form, "email") });
+    if (!r.cambiaEmail && !r.cambiaNombre) return "No había cambios para guardar";
+    return r.cambiaEmail ? "Datos guardados. Como cambió el email, se cerraron sus sesiones: tiene que volver a ingresar con el nuevo." : "Nombre actualizado";
+  }, "");
+}
+export async function accionCambiarRol(_: Estado, form: FormData) {
+  return ejecutarUsuarios(async (actor, org) => { await cambiarRol(db(), actor, org, texto(form, "asignacionId"), leerAsignacion(texto(form, "asignacion"))); }, "Rol cambiado");
 }
 
 // Configuración (A03). Vacío = heredar de la organización.

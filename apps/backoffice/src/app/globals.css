@@ -466,3 +466,19 @@ input.corto{flex:0 1 150px!important}
 .lt-leyenda i.lt-demora{border-left:1px solid var(--texto-error);border-radius:3px}
 .tabla .fila{scroll-margin-top:calc(var(--alto-barra) + 16px)}.tabla .fila:target{box-shadow:0 0 0 2px var(--color-primary)}
 .lt-leyenda i.lt-fuera{border:1px solid var(--color-border)}
+
+/* Cobro rápido (D22, doc 32, etapa 2) */
+button.enlace{background:none;border:0;box-shadow:none;padding:4px 0;color:var(--color-primary);font-weight:500;justify-self:start;cursor:pointer}button.enlace:hover{text-decoration:underline;background:none}
+.cobro-rapido .fila-comanda{align-items:start}
+.precio-comanda{display:grid;gap:2px}.precio-comanda small{font-size:12px;color:var(--color-muted-foreground);font-weight:400}
+.cobro-medios{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+@media(max-width:420px){.cobro-medio{padding:10px 12px}.cobro-medio.elegido{padding:9px 11px}.cobro-medio-total{font-size:19px}}
+.cobro-medio{display:grid;gap:4px;text-align:left;padding:12px 14px;height:auto;background:var(--color-background);color:inherit;border:1px solid var(--color-border);border-radius:var(--radius-md);box-shadow:var(--shadow-card);cursor:pointer}
+.cobro-medio:hover{border-color:var(--color-primary);background:var(--gris-50)}
+.cobro-medio.elegido{border:2px solid var(--color-primary);padding:11px 13px;background:var(--color-primary-soft)}
+.cobro-medio-nombre{font-size:13px;font-weight:500;color:var(--color-secondary-foreground)}.cobro-medio-nombre small{font-weight:400;color:var(--color-muted-foreground);margin-left:4px}
+.cobro-medio-total{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+.dividir{display:grid;gap:10px;max-width:560px}
+.cobro-resumen{display:grid;gap:8px;margin-top:16px;max-width:560px}
+.cobro-resumen dl{margin:0;display:grid;gap:4px}.cobro-resumen dl>div{display:flex;justify-content:space-between;font-size:14px;color:var(--color-muted-foreground)}
+.cobro-resumen dl>div.total{font-size:17px;font-weight:600;color:inherit;border-top:1px solid var(--gris-200);padding-top:6px}.cobro-resumen dd{margin:0;font-variant-numeric:tabular-nums}

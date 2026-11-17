@@ -29,8 +29,8 @@ export async function redondeoSede(db: Cliente, organizacionId: string, sedeId: 
 
 /** Medios habilitados de la sede, en orden, para validar cobros. Sin actor: quien llama ya autorizó. */
 export async function mediosHabilitados(db: Cliente, organizacionId: string, sedeId: string): Promise<MedioDisponible[]> {
-  const filas = await db.medioPagoSede.findMany({ where: { organizacionId, sedeId, habilitado: true }, orderBy: [{ orden: "asc" }, { createdAt: "asc" }], select: { id: true, tipo: true, nombre: true } });
-  return filas.map(f => ({ id: f.id, tipo: f.tipo as MedioCobro, nombre: f.nombre }));
+  const filas = await db.medioPagoSede.findMany({ where: { organizacionId, sedeId, habilitado: true }, orderBy: [{ orden: "asc" }, { createdAt: "asc" }], select: { id: true, tipo: true, nombre: true, ajustePct: true } });
+  return filas.map(f => ({ id: f.id, tipo: f.tipo as MedioCobro, nombre: f.nombre, ajuste: aAjuste(f.ajustePct.toFixed(2))! }));
 }
 
 /** Medios de la sede (todos, en orden) con su ajuste, el redondeo y si el actor puede editarlos. */

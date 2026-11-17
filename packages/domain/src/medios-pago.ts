@@ -1,7 +1,7 @@
 // D22 · Precios por medio de pago (doc 32). Reglas puras: el ajuste de cada medio sobre el precio de
 // lista, el redondeo de la sede y la validación de los medios. Importes en centavos y porcentajes en
 // centésimas de punto (bigint, nunca Number): −10% = −1000n.
-import { MEDIOS_COBRO, type MedioCobro } from "./ventas.ts";
+import { MEDIOS_COBRO, calcularVenta, type LineaVenta, type MedioCobro, type TotalesVenta } from "./ventas.ts";
 import { normalizarTexto } from "./gastos.ts";
 
 export const TIPO_MEDIO_ETIQUETA: Record<MedioCobro, string> = {
@@ -130,4 +130,34 @@ export function nombreRepetido(nombres: readonly string[]): string | null {
     vistos.add(k);
   }
   return null;
+}
+
+// ─── Venta con el precio de un medio (etapa 2) ────────────────────────────────
+
+/**
+ * Línea de la comanda antes de elegir el medio: cantidad en milésimas, precio de lista (null si el
+ * servicio no tiene) y, si recepción lo editó, el precio cobrado (la excepción, que no se ajusta).
+ */
+export type LineaPrecio = { cantidad: bigint; lista: bigint | null; editado: bigint | null };
+
+/** Precio de cada línea con el medio: el editado si lo hay; si no, la lista con el ajuste y el redondeo. */
+export function preciosConMedio(lineas: readonly LineaPrecio[], ajuste: bigint, redondeo: Redondeo): { error: string } | { lineas: LineaVenta[]; medio: (bigint | null)[] } {
+  const medio = lineas.map(l => l.lista === null ? null : precioConAjuste(l.lista, ajuste, redondeo));
+  const resultado: LineaVenta[] = [];
+  for (const [i, l] of lineas.entries()) {
+    const precio = l.editado ?? medio[i];
+    if (precio === null || precio === undefined) return { error: "Un servicio no tiene precio de lista en la sede: indicá el precio cobrado" };
+    resultado.push({ cantidad: l.cantidad, precioUnitario: precio });
+  }
+  return { lineas: resultado, medio };
+}
+
+/**
+ * Totales de la venta si se paga con un medio (doc 32): primero el ajuste del medio en cada ítem,
+ * después el descuento manual y al final la seña, que se calculó sobre la lista. Lo usan la pantalla
+ * (los totales de «¿Cómo paga?») y el repositorio, así los números coinciden.
+ */
+export function totalesConMedio(lineas: readonly LineaPrecio[], ajuste: bigint, redondeo: Redondeo, descuento: bigint, anticipo: bigint): { error: string } | TotalesVenta {
+  const p = preciosConMedio(lineas, ajuste, redondeo);
+  return "error" in p ? p : calcularVenta(p.lineas, descuento, anticipo);
 }

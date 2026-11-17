@@ -1,6 +1,6 @@
 # Precios por medio de pago · propuesta · 2026-11-16
 
-Propuesta (D22). Sale de una charla con el usuario el 2026-11-16. Extiende ventas y caja (27-ventas-caja.md) y el catálogo (13-catalogo.md). **La etapa 1 (medios de pago de la sede) quedó implementada el 2026-11-16.** Ver «Etapa 1: cómo quedó».
+Propuesta (D22). Sale de una charla con el usuario el 2026-11-16. Extiende ventas y caja (27-ventas-caja.md) y el catálogo (13-catalogo.md). **Las etapas 1 (medios de pago de la sede) y 2 (cobro rápido) quedaron implementadas el 2026-11-16 y 17.** Ver «Etapa 1: cómo quedó» y «Etapa 2: cómo quedó».
 
 ## El problema
 
@@ -91,7 +91,7 @@ La pantalla de hoy (Ventas › Cobrar turno) es un formulario: no muestra el tot
 
 **Arriba, la comanda:** los servicios y productos, como hoy. Cada uno muestra su precio de lista.
 
-**Abajo, «¿Cómo paga?»:** un botón grande por cada medio habilitado de la sede, con **el total a cobrar con ese medio** ya calculado (con ajuste, redondeo, descuento manual y seña restada). Los medios con el mismo total se muestran juntos («Efectivo · Transferencia $9.250»).
+**Abajo, «¿Cómo paga?»:** un botón grande por cada medio habilitado de la sede, con **el total a cobrar con ese medio** ya calculado (con ajuste, redondeo, descuento manual y seña restada). Hay un botón por medio aunque dos den el mismo total: efectivo y transferencia cuestan lo mismo, pero solo el efectivo entra en la caja, así que el cobro tiene que saber cuál fue.
 
 - **Un medio (el caso normal):** recepción toca el medio y confirma. El cobro se carga por el total exacto. Sin escribir montos.
 - **Varios medios («Dividir pago»):** recepción elige primero qué precio se aplica (por defecto el de lista, que es el más alto) y después reparte el total entre los medios. Al escribir el monto del primero, el segundo se completa con lo que falta. Así el mostrador decide cada caso, como pidió el usuario.
@@ -131,7 +131,24 @@ Configurar los medios y el redondeo de la sede lo hacen el master, el franquicia
 | Cobro | Los selectores de medio (Cobrar y detalle de la venta) muestran los medios activos de la sede, en su orden. El cobro guarda el medio y su nombre; la venta muestra ese nombre |
 | Compatibilidad | Un cobro todavía puede indicar un tipo (`EFECTIVO`) en lugar del medio: se usa el primer medio activo de ese tipo. Los cobros anteriores se muestran por su tipo |
 
-Todavía no cambia ningún precio: los ajustes recién se aplican al cobrar con la etapa 2.
+Con la etapa 1 sola no cambiaba ningún precio: los ajustes se aplican al cobrar desde la etapa 2.
+
+## Etapa 2: cómo quedó
+
+| Pieza | Detalle |
+|---|---|
+| Base | Migración `202611160020_precio_aplicado_venta`: la venta guarda `medioPrecioId`, `ajustePct`, `redondeoPaso` y `redondeoSentido`; cada ítem, `precioMedio`. Un trigger impide editarlos y otro exige que el medio esté habilitado y que el ajuste sea el suyo |
+| Dominio | `preciosConMedio` y `totalesConMedio`: ajuste por ítem, después el descuento manual y al final la seña. Los usan la pantalla y el repositorio, así lo que se ve es lo que se registra |
+| Repositorio | `registrarVenta` recibe `medioPrecio` (vacío = lista). El precio editado en la comanda es la excepción y no se ajusta. Los productos también toman el precio del medio |
+| Pantalla | Ventas › Cobrar: la comanda y los productos se editan con los totales en vivo. «¿Cómo paga?» muestra un botón por medio con el total a cobrar; tocar uno y «Cobrar» registra la venta y el cobro por el total exacto. «Dividir pago» elige el precio (por defecto, la lista) y reparte entre dos medios: el segundo completa lo que falta. «Registrar sin cobrar» guarda la venta con el precio elegido |
+| Detalle de la venta | Muestra qué precio se aplicó («Precio de Efectivo (−10 %)») y, por ítem, la lista y el precio editado si lo hubo |
+
+Verificado en el navegador contra la base local: turno de $18.000 cobrado en efectivo en dos toques ($16.200), y venta de 2 productos de $4.500 con precio de efectivo dividida en $5.000 en efectivo y $3.000 con débito.
+
+### Pendiente
+
+- **Cambiar el precio aplicado de una venta pendiente sin cobros** (confirmado por el usuario). Las ventas y sus ítems son de solo inserción: hace falta definir si se anula y se vuelve a registrar, o si se permite recalcular mientras no tenga cobros. Hoy, si cambia el medio, se ajusta con el descuento manual o anulando la venta.
+- **Portal con los dos precios** (etapa 3).
 
 ## Confirmado por el usuario (2026-11-16)
 

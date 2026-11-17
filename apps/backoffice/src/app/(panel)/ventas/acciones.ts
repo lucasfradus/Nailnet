@@ -66,7 +66,10 @@ export async function accionRegistrarVenta(_: Estado, form: FormData): Promise<E
   if (reservaId && servicios(form).some(s => !s.profesionalId)) return { error: "Elegí la profesional de cada servicio" };
   const r = await ejecutar((actor, org) => registrarVenta(db(), actor, org, {
     sedeId: texto(form, "sedeId"), reservaId, servicios: reservaId ? servicios(form) : undefined, productos: productos(form),
-    descuento: texto(form, "descuento"), cobros: cobros(form), claveIdempotencia: texto(form, "clave"),
+    descuento: texto(form, "descuento"), claveIdempotencia: texto(form, "clave"),
+    // D22: precio del medio elegido (vacío = lista). «Registrar sin cobrar» guarda el precio y no cobra.
+    medioPrecio: texto(form, "medioPrecio") || null,
+    cobros: texto(form, "enviar") === "pendiente" ? [] : cobros(form),
   }));
   if ("error" in r) return r;
   redirect(`/ventas/${r.ok.id}`);

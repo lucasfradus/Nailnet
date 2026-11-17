@@ -1,3 +1,4 @@
+import { aAjuste, textoAjuste } from "@nailnet/domain/medios-pago";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -30,13 +31,13 @@ export default async function Venta({ params }: { params: Promise<{ ventaId: str
 
     <div className="tabla">
       {v.items.map((i, n) => <article key={n} className="fila fila-cabecera">
-        <span>{i.descripcion}{i.tipo === "PRODUCTO" && i.unidad ? ` × ${cantidad(i.cantidad, i.unidad)} a ${pesos(i.precioUnitario)}` : ""}{i.tipo === "SERVICIO" && i.precioLista && i.precioLista !== i.precioUnitario ? ` (lista ${pesos(i.precioLista)})` : ""}</span>
+        <span>{i.descripcion}{i.tipo === "PRODUCTO" && i.unidad ? ` × ${cantidad(i.cantidad, i.unidad)} a ${pesos(i.precioUnitario)}` : ""}{i.precioLista && i.precioLista !== i.precioUnitario ? ` (lista ${pesos(i.precioLista)}${i.precioMedio && i.precioMedio !== i.precioUnitario ? `, con ${v.precioAplicado?.nombre ?? "el medio"} ${pesos(i.precioMedio)}: precio editado` : ""})` : ""}</span>
         <span className="tag">{pesos(i.subtotal)}</span>
       </article>)}
     </div>
 
     <div className="resumen gastos-totales">
-      <article className="fila"><p>Total</p><strong>{pesos(v.total)}</strong><small>Subtotal {pesos(v.subtotal)}{v.descuento !== "0.00" ? ` − descuento ${pesos(v.descuento)}` : ""}</small></article>
+      <article className="fila"><p>Total</p><strong>{pesos(v.total)}</strong><small>{v.precioAplicado ? `Precio de ${v.precioAplicado.nombre}${Number(v.precioAplicado.ajuste) ? ` (${textoAjuste(aAjuste(v.precioAplicado.ajuste)!)})` : ""}` : "Precio de lista"} · subtotal {pesos(v.subtotal)}{v.descuento !== "0.00" ? ` − descuento ${pesos(v.descuento)}` : ""}</small></article>
       {v.anticipo !== "0.00" && <article className="fila"><p>Seña aplicada</p><strong>{pesos(v.anticipo)}</strong><small>Cobrada por Mercado Pago al reservar: no es un ingreso de caja</small></article>}
       <article className="fila"><p>Cobrado en recepción</p><strong>{pesos(v.cobrado)}</strong><small>Neto de reversos</small></article>
       <article className="fila"><p>Saldo</p><strong>{pesos(v.saldo)}</strong><small>{v.estado === "COMPLETADA" ? "Cobrada por completo" : v.estado === "ANULADA" ? "Venta anulada" : "Falta cobrar"}</small></article>

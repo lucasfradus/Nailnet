@@ -111,6 +111,47 @@ test("medios de pago de la sede (D22, doc 32, etapa 1)", async (t) => {
       assert.deepEqual(anulada.cobros.filter(c => c.tipo === "REVERSO").map(c => c.medioNombre), ["Cuenta DNI", "Efectivo", "Débito"]);
     });
 
+    await t.test("etapa 2: la venta aplica y congela el precio del medio elegido", async () => {
+      const esmalte = (await db.producto.findFirstOrThrow({ where: { organizacionId: O, nombre: "Esmalte" } })).id;
+      const medios = await mediosHabilitados(db, O, centro);
+      const efectivo = medios.find(m => m.tipo === "EFECTIVO")!, debito = medios.find(m => m.tipo === "TARJETA_DEBITO")!;
+      assert.equal(efectivo.ajuste, -1000n);
+
+      // Efectivo −10%, redondeo $100 hacia abajo: lista $1.000 → $900 por unidad.
+      const conEfectivo = await registrarVenta(db, R, O, { sedeId: centro, productos: [{ productoId: esmalte, cantidad: "2" }], medioPrecio: efectivo.id, cobros: [{ medio: efectivo.id, monto: "1800" }], claveIdempotencia: randomUUID() });
+      const v = await obtenerVenta(db, R, O, conEfectivo.id);
+      assert.equal(v.estado, "COMPLETADA");
+      assert.equal(v.total, "1800.00");
+      assert.deepEqual(v.precioAplicado, { nombre: "Efectivo", ajuste: "-10.00" });
+      assert.deepEqual([v.items[0]!.precioLista, v.items[0]!.precioMedio, v.items[0]!.precioUnitario], ["1000.00", "900.00", "900.00"]);
+      const fila = await db.venta.findUniqueOrThrow({ where: { id: conEfectivo.id } });
+      assert.deepEqual([fila.redondeoPaso, fila.redondeoSentido], [100, "ABAJO"], "redondeo congelado");
+
+      // Precio de efectivo y pago dividido con débito: el mostrador decide.
+      const mixta = await registrarVenta(db, R, O, { sedeId: centro, productos: [{ productoId: esmalte, cantidad: "1" }], medioPrecio: efectivo.id, cobros: [{ medio: efectivo.id, monto: "400" }, { medio: debito.id, monto: "500" }], claveIdempotencia: randomUUID() });
+      assert.equal((await obtenerVenta(db, R, O, mixta.id)).estado, "COMPLETADA");
+
+      // Sin medio de precio: lista, aunque se cobre en efectivo.
+      const conLista = await registrarVenta(db, R, O, { sedeId: centro, productos: [{ productoId: esmalte, cantidad: "1" }], cobros: [{ medio: efectivo.id, monto: "1000" }], claveIdempotencia: randomUUID() });
+      const l = await obtenerVenta(db, R, O, conLista.id);
+      assert.deepEqual([l.total, l.precioAplicado, l.items[0]!.precioMedio], ["1000.00", null, "1000.00"]);
+
+      // Un medio con 0% también queda registrado como el precio aplicado.
+      const conDebito = await registrarVenta(db, R, O, { sedeId: centro, productos: [{ productoId: esmalte, cantidad: "1" }], medioPrecio: debito.id, cobros: [], claveIdempotencia: randomUUID() });
+      const d = await obtenerVenta(db, R, O, conDebito.id);
+      assert.deepEqual([d.total, d.estado, d.precioAplicado?.nombre], ["1000.00", "PENDIENTE", "Débito"]);
+
+      // Un medio inactivo, o de otra sede, no sirve de precio.
+      const [deNorte] = await mediosHabilitados(db, O, norte);
+      await assert.rejects(registrarVenta(db, R, O, { sedeId: centro, productos: [{ productoId: esmalte, cantidad: "1" }], medioPrecio: dni, cobros: [], claveIdempotencia: randomUUID() }), DatosInvalidos);
+      await assert.rejects(registrarVenta(db, R, O, { sedeId: centro, productos: [{ productoId: esmalte, cantidad: "1" }], medioPrecio: deNorte!.id, cobros: [], claveIdempotencia: randomUUID() }), DatosInvalidos);
+
+      // El precio aplicado no se edita, y la base exige que el ajuste coincida con el del medio.
+      await assert.rejects(db.venta.update({ where: { id: conEfectivo.id }, data: { ajustePct: "0" } }), /no se edita/);
+      await assert.rejects(db.venta.update({ where: { id: conDebito.id }, data: { medioPrecioId: null } }), /no se edita/);
+      await assert.rejects(db.venta.create({ data: { organizacionId: O, sedeId: centro, fecha: new Date("2026-11-16"), subtotal: "1", total: "1", estado: "PENDIENTE", claveIdempotencia: randomUUID(), registradoPorId: R, medioPrecioId: efectivo.id, ajustePct: "-5", redondeoPaso: 100, redondeoSentido: "ABAJO" } }), /no coincide/);
+    });
+
     await t.test("base: el tipo no cambia, un medio no se borra y el cobro respeta el tipo de su medio", async () => {
       const [m] = await db.medioPagoSede.findMany({ where: { organizacionId: O, sedeId: norte, tipo: "EFECTIVO" } });
       await assert.rejects(db.medioPagoSede.update({ where: { id: m!.id }, data: { tipo: "OTRO" } }), /no cambian/);

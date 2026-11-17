@@ -16,7 +16,8 @@ import { DatosInvalidos, auditar, exigirIds } from "./access.ts";
 import { SIN_CAJA, asentarMovimiento, cajaAbiertaBloqueada, centavos, exigirSedeVenta, hayCajaAbierta } from "./caja.ts";
 import { conReintento } from "./reservas.ts";
 import { egresarPorVenta, reponerPorAnulacionVenta, type ItemCantidad } from "./stock.ts";
-import { mediosHabilitados } from "./medios-pago.ts";
+import { mediosHabilitados, redondeoSede } from "./medios-pago.ts";
+import { ajusteDecimal, precioConAjuste, type Redondeo } from "@nailnet/domain/medios-pago";
 
 type Tx = Prisma.TransactionClient;
 const esUnico = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
@@ -114,13 +115,15 @@ export type DatosVenta = {
   descuento?: string | null;
   /** Cobros a registrar junto con la venta (pueden ser varios medios). Lo que falte se cobra después. */
   cobros: CobroEntrada[];
+  /** D22: medio de pago de la sede cuyo precio se aplica (null = lista). Puede no ser el de los cobros. */
+  medioPrecio?: string | null;
   /** Clave del formulario: un doble envío devuelve la misma venta. */
   claveIdempotencia: string;
 };
 export type VentaRegistrada = { id: string; estado: string; saldo: string; repetida: boolean };
 
 type Linea = LineaVenta & {
-  tipo: "SERVICIO" | "PRODUCTO"; descripcion: string; precioLista: bigint | null;
+  tipo: "SERVICIO" | "PRODUCTO"; descripcion: string; precioLista: bigint | null; precioMedio: bigint | null;
   reservaItemId?: string | null; servicioId?: string; profesionalId?: string; productoId?: string;
 };
 
@@ -130,7 +133,7 @@ type Linea = LineaVenta & {
  * del turno con el mismo servicio; si no, el de lista de la sede. El cobrado es editable. Agregar un
  * servicio no reserva agenda: ya se hizo.
  */
-async function lineasDeComanda(tx: Tx, organizacionId: string, sedeId: string, itemsTurno: { id: string; servicioId: string; precio: Prisma.Decimal }[], comanda: ServicioComanda[]): Promise<Linea[]> {
+async function lineasDeComanda(tx: Tx, organizacionId: string, sedeId: string, itemsTurno: { id: string; servicioId: string; precio: Prisma.Decimal }[], comanda: ServicioComanda[], conMedio: (lista: bigint) => bigint): Promise<Linea[]> {
   if (comanda.length > MAX_SERVICIOS_COMANDA) throw new DatosInvalidos(`Hasta ${MAX_SERVICIOS_COMANDA} servicios por comanda`);
   if (!comanda.length) return [];
   const servicios = await tx.servicio.findMany({
@@ -158,9 +161,11 @@ async function lineasDeComanda(tx: Tx, organizacionId: string, sedeId: string, i
     if (item) usados.add(item.id);
     else if (!s.activo || !enSede?.habilitado) throw new DatosInvalidos(`«${s.nombre}» no está habilitado en la sede`);
     const lista = item ? centavos(item.precio) : enSede?.precio ? centavos(enSede.precio) : null;
-    const precio = precioCobrado(c.precio, lista);
+    // D22: la lista con el ajuste del medio; un precio editado es la excepción y no se ajusta.
+    const medio = lista === null ? null : conMedio(lista);
+    const precio = precioCobrado(c.precio, medio);
     if ("error" in precio) throw new DatosInvalidos(`«${s.nombre}»: ${precio.error}`);
-    return { tipo: "SERVICIO" as const, reservaItemId: item?.id ?? null, servicioId: s.id, profesionalId: p.id, cantidad: 1000n, precioLista: lista, precioUnitario: precio.precio, descripcion: `${s.nombre} · ${nombreCompleto(p)}` };
+    return { tipo: "SERVICIO" as const, reservaItemId: item?.id ?? null, servicioId: s.id, profesionalId: p.id, cantidad: 1000n, precioLista: lista, precioMedio: medio, precioUnitario: precio.precio, descripcion: `${s.nombre} · ${nombreCompleto(p)}` };
   });
 }
 
@@ -197,6 +202,15 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
   try {
     return await conReintento(() => db.$transaction(async tx => {
       await exigirSedeVenta(tx, actorId, organizacionId, datos.sedeId, "venta:registrar");
+      // D22: el precio del medio elegido (o la lista). Primero el ajuste por ítem, después el descuento y la seña.
+      const medios = await mediosHabilitados(tx, organizacionId, datos.sedeId);
+      let precioMedio: { medio: (typeof medios)[number]; redondeo: Redondeo } | null = null;
+      if (datos.medioPrecio) {
+        const medio = medios.find(m => m.id === datos.medioPrecio);
+        if (!medio) throw new DatosInvalidos("El medio de pago elegido no está habilitado en la sede: recargá la página");
+        precioMedio = { medio, redondeo: await redondeoSede(tx, organizacionId, datos.sedeId) };
+      }
+      const conMedio = (lista: bigint) => precioMedio ? precioConAjuste(lista, precioMedio.medio.ajuste, precioMedio.redondeo) : lista;
       const sede = await tx.sede.findFirst({ where: { id: datos.sedeId, organizacionId, activo: true }, select: { timezone: true } });
       if (!sede) throw new AccesoDenegado();
 
@@ -212,7 +226,7 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
         if (reserva.estado !== "ATENDIDA") throw new DatosInvalidos("Solo se cobra un turno atendido: marcalo como atendido en la agenda");
         if (await tx.venta.count({ where: { organizacionId, reservaId: datos.reservaId, estado: { not: "ANULADA" } } })) throw new DatosInvalidos("El turno ya tiene una venta registrada");
         const comanda = datos.servicios ?? reserva.items.map(i => ({ servicioId: i.servicioId, profesionalId: i.profesionalId, reservaItemId: i.id, precio: null }));
-        lineas.push(...await lineasDeComanda(tx, organizacionId, datos.sedeId, reserva.items, comanda));
+        lineas.push(...await lineasDeComanda(tx, organizacionId, datos.sedeId, reserva.items, comanda, conMedio));
         anticipo = await anticipoDe(tx, organizacionId, datos.sedeId, datos.reservaId);
       } else if (datos.servicios?.length) throw new DatosInvalidos("Los servicios se cobran desde un turno: usá «Atender ahora» para un cliente sin turno");
       if (productos.length) {
@@ -228,7 +242,7 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
           if (!prod.activo) throw new DatosInvalidos(`«${prod.nombre}» está inactivo`);
           const precio = prod.sedes[0]?.precio;
           if (!precio) throw new DatosInvalidos(`«${prod.nombre}» no tiene precio de venta en la sede`);
-          lineas.push({ tipo: "PRODUCTO", productoId: prod.id, cantidad: p.cantidad, precioLista: centavos(precio), precioUnitario: centavos(precio), descripcion: prod.nombre });
+          lineas.push({ tipo: "PRODUCTO", productoId: prod.id, cantidad: p.cantidad, precioLista: centavos(precio), precioMedio: conMedio(centavos(precio)), precioUnitario: conMedio(centavos(precio)), descripcion: prod.nombre });
         }
       }
       if (!lineas.length) throw new DatosInvalidos("Agregá al menos un producto o cobrá un turno atendido");
@@ -243,13 +257,14 @@ export async function registrarVenta(db: Database, actorId: string, organizacion
           subtotal: importe(totales.subtotal), descuento: importe(totales.descuento), total: importe(totales.total),
           anticipo: importe(totales.anticipo), pagoAnticipoId: anticipo?.pagoId ?? null, estado: "PENDIENTE",
           claveIdempotencia: datos.claveIdempotencia, registradoPorId: actorId,
+          ...(precioMedio ? { medioPrecioId: precioMedio.medio.id, ajustePct: ajusteDecimal(precioMedio.medio.ajuste), redondeoPaso: precioMedio.redondeo.paso, redondeoSentido: precioMedio.redondeo.sentido } : {}),
         },
         select: { id: true },
       });
       await tx.ventaItem.createMany({ data: lineas.map((l, posicion) => ({
         organizacionId, ventaId: creada.id, posicion, tipo: l.tipo, reservaItemId: l.reservaItemId ?? null, servicioId: l.servicioId ?? null, profesionalId: l.profesionalId ?? null,
         productoId: l.productoId ?? null, descripcion: l.descripcion.slice(0, 300), cantidad: decimal(l.cantidad),
-        precioLista: l.precioLista === null ? null : importe(l.precioLista), precioUnitario: importe(l.precioUnitario), subtotal: importe(subtotalCentavos(l.cantidad, l.precioUnitario)),
+        precioLista: l.precioLista === null ? null : importe(l.precioLista), precioMedio: l.precioMedio === null ? null : importe(l.precioMedio), precioUnitario: importe(l.precioUnitario), subtotal: importe(subtotalCentavos(l.cantidad, l.precioUnitario)),
       })) });
       // Orden de locks: venta → saldos de stock → caja.
       if (productos.length) await egresarPorVenta(tx, actorId, organizacionId, { sedeId: datos.sedeId, ventaId: creada.id, items: productos.map(p => ({ productoId: p.productoId, cantidad: cantidadTexto(p.cantidad) })) });
@@ -406,6 +421,7 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
     puedeAnular: puede("venta:anular"),
     // Medios de pago habilitados de la sede, en orden (D22).
     medios: await mediosHabilitados(db, organizacionId, sedeId),
+    redondeo: await redondeoSede(db, organizacionId, sedeId),
     cajaAbierta: await hayCajaAbierta(db, actorId, organizacionId, sedeId).catch(e => { if (e instanceof AccesoDenegado) return false; throw e; }),
     turno,
     servicios: servicios.map(s => ({ id: s.id, nombre: s.nombre, precioLista: s.sedes[0]?.precio?.toFixed(2) ?? null })),
@@ -415,7 +431,8 @@ export async function prepararVenta(db: Database, actorId: string, organizacionI
 }
 
 const incluirVenta = {
-  items: { orderBy: { posicion: "asc" as const }, select: { tipo: true, descripcion: true, cantidad: true, precioLista: true, precioUnitario: true, profesionalId: true, subtotal: true, productoId: true, producto: { select: { unidad: true } } } },
+  medioPrecio: { select: { nombre: true } },
+  items: { orderBy: { posicion: "asc" as const }, select: { tipo: true, descripcion: true, cantidad: true, precioLista: true, precioMedio: true, precioUnitario: true, profesionalId: true, subtotal: true, productoId: true, producto: { select: { unidad: true } } } },
   cobros: { orderBy: { createdAt: "asc" as const }, select: { id: true, tipo: true, medio: true, medioNombre: true, monto: true, referencia: true, motivo: true, revierteId: true, registradoPorId: true, createdAt: true } },
   reserva: { select: { id: true, clienteProvisional: true, cliente: { select: { id: true, nombre: true, apellido: true } } } },
 } satisfies Prisma.VentaInclude;
@@ -427,9 +444,11 @@ function presentar(v: VentaConDetalle, nombre: Map<string, string>) {
   return {
     id: v.id, sedeId: v.sedeId, fecha: fechaTexto(v.fecha), estado: v.estado, creadaEn: v.createdAt, registradoPor: nombre.get(v.registradoPorId) ?? "—",
     reservaId: v.reservaId, cliente: v.reserva?.cliente ?? null, clienteProvisional: v.reserva?.clienteProvisional ?? null,
+    // D22: precio aplicado (null = lista o venta anterior a D22).
+    precioAplicado: v.medioPrecio ? { nombre: v.medioPrecio.nombre, ajuste: v.ajustePct.toFixed(2) } : null,
     subtotal: v.subtotal.toFixed(2), descuento: v.descuento.toFixed(2), total: v.total.toFixed(2), anticipo: v.anticipo.toFixed(2),
     cobrado: importe(cobrado), saldo: importe(v.estado === "ANULADA" ? 0n : saldoVenta(centavos(v.total), centavos(v.anticipo), cobrado)),
-    items: v.items.map(i => ({ tipo: i.tipo, descripcion: i.descripcion, cantidad: cantidadTexto(desdeDecimal(i.cantidad.toFixed(3))), unidad: i.producto?.unidad ?? null, precioLista: i.precioLista?.toFixed(2) ?? null, precioUnitario: i.precioUnitario.toFixed(2), profesionalId: i.profesionalId, subtotal: i.subtotal.toFixed(2) })),
+    items: v.items.map(i => ({ tipo: i.tipo, descripcion: i.descripcion, cantidad: cantidadTexto(desdeDecimal(i.cantidad.toFixed(3))), unidad: i.producto?.unidad ?? null, precioLista: i.precioLista?.toFixed(2) ?? null, precioMedio: i.precioMedio?.toFixed(2) ?? null, precioUnitario: i.precioUnitario.toFixed(2), profesionalId: i.profesionalId, subtotal: i.subtotal.toFixed(2) })),
     cobros: v.cobros.map(c => ({ id: c.id, tipo: c.tipo, medio: MEDIO(c.medio), medioNombre: c.medioNombre, monto: c.monto.toFixed(2), referencia: c.referencia, motivo: c.motivo, por: nombre.get(c.registradoPorId) ?? "—", en: c.createdAt, revertido: revertidos.has(c.id) })),
     anulacion: v.estado === "ANULADA" ? { motivo: v.motivoAnulacion!, por: nombre.get(v.anuladaPorId!) ?? "—", en: v.anuladaEn! } : null,
   };

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aAjuste, ajusteDecimal, ajusteEditable, nombreRepetido, precioConAjuste, preciosConMedio, redondeoDe, textoAjuste, textoRedondeo, totalesConMedio, validarMedio, validarRedondeo, REDONDEO_POR_DEFECTO } from "../src/medios-pago.ts";
+import { aAjuste, ajusteDecimal, ajusteEditable, nombreRepetido, precioConAjuste, preciosConMedio, preciosPortal, redondeoDe, textoAjuste, textoRedondeo, totalesConMedio, validarMedio, validarRedondeo, REDONDEO_POR_DEFECTO } from "../src/medios-pago.ts";
 import { validarCobro, validarCobros, type MedioDisponible } from "../src/ventas.ts";
 
 const $ = (pesos: number) => BigInt(pesos) * 100n;
@@ -106,4 +106,18 @@ test("venta con medio: ajuste por ítem, después descuento y al final la seña 
   assert.equal((totalesConMedio([{ cantidad: 2500n, lista: $(1_000), editado: null }], -1000n, REDONDEO_POR_DEFECTO, 0n, 0n) as { total: bigint }).total, $(2_250));
   assert.ok("error" in totalesConMedio([{ cantidad: 1000n, lista: null, editado: null }], 0n, REDONDEO_POR_DEFECTO, 0n, 0n), "sin lista hay que indicar el precio");
   assert.ok("error" in totalesConMedio([servicio(10_000)], -5000n, REDONDEO_POR_DEFECTO, 0n, $(6_000)), "la seña no puede superar el total con descuento");
+});
+
+test("portal: precios con descuento agrupados, sin recargos ni iguales a la lista", () => {
+  const medios = [
+    { nombre: "Efectivo", ajuste: -1000n }, { nombre: "Transferencia", ajuste: -1000n }, { nombre: "Débito", ajuste: 0n },
+    { nombre: "Crédito 3 cuotas", ajuste: 1500n }, { nombre: "Cuenta DNI", ajuste: -500n }, { nombre: "Promo", ajuste: -1n },
+  ];
+  assert.deepEqual(preciosPortal($(15_500), medios, REDONDEO_POR_DEFECTO), [
+    { precio: $(13_900), medios: ["Efectivo", "Transferencia"] },
+    { precio: $(14_700), medios: ["Cuenta DNI"] },
+    { precio: $(15_400), medios: ["Promo"] },
+  ]);
+  assert.deepEqual(preciosPortal($(15_500), [{ nombre: "Promo", ajuste: -1n }], { paso: 100, sentido: "CERCANO" }), [], "15.498,45 redondeado da la lista: no se muestra");
+  assert.deepEqual(preciosPortal($(15_500), [{ nombre: "Débito", ajuste: 0n }], REDONDEO_POR_DEFECTO), []);
 });

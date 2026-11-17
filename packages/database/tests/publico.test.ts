@@ -9,6 +9,7 @@ import { crearCliente, publicarConsentimiento } from "../src/clientes.ts";
 import { actualizarConfiguracionOrganizacion } from "../src/configuracion.ts";
 import { crearProfesional, guardarHabilidades, guardarHorarioProfesional, guardarHorarioSede, semanaDesdeTextos } from "../src/profesionales.ts";
 import { ConflictoIdempotencia, LimiteExcedido, POLITICA_PUBLICA, consultarReservaPublica, crearReservaPublica, disponibilidadPublica, profesionalesPublicos, sedesPublicas, serviciosPublicos, terminosPublicos } from "../src/publico.ts";
+import { guardarMediosPago, listarMediosPago } from "../src/medios-pago.ts";
 import { crearFixture } from "../prisma/fixture.ts";
 import type { ReservaPublicaRespuesta } from "@nailnet/contracts/publico";
 
@@ -52,6 +53,12 @@ test("contrato público del portal (R05)", async (t) => {
       assert.deepEqual((await terminosPublicos(db, slug)).map(t => [t.clave, t.version, t.texto.endsWith("versión 2.")]), [["terminos", 2, true]], "solo la última versión de TERMINOS");
       await assert.rejects(terminosPublicos(db, "no-existe"), AccesoDenegado);
       assert.deepEqual((await serviciosPublicos(db, a.centro.id)).map(s => [s.nombre, s.sena]), [["Semi", "9000.00"]], "sin seña definida no se publica (D3)");
+      // D22, etapa 3: sin descuentos solo la lista; con efectivo y transferencia en −10 %, un precio más.
+      assert.deepEqual((await serviciosPublicos(db, a.centro.id))[0]!.preciosMedio, []);
+      const medios = (await listarMediosPago(db, M, O, a.centro.id)).medios;
+      await guardarMediosPago(db, M, O, a.centro.id, { redondeo: { paso: "100", sentido: "ABAJO" }, medios: medios.map((m, i) => ({ id: m.id, nombre: m.nombre, habilitado: m.habilitado, orden: i, ajuste: m.tipo === "EFECTIVO" || m.tipo === "TRANSFERENCIA" ? "-10" : "0" })) });
+      const [semiPublico] = await serviciosPublicos(db, a.centro.id);
+      assert.deepEqual(semiPublico!.preciosMedio, [{ precio: (Number(semiPublico!.precio) * 0.9 - (Number(semiPublico!.precio) * 0.9) % 100).toFixed(2), medios: ["Efectivo", "Transferencia"] }]);
       assert.deepEqual((await profesionalesPublicos(db, a.centro.id, semi)).map(p => p.nombre), ["Ana P."], "Bea no tiene la skill");
       const turnos = await disponibilidadPublica(db, a.centro.id, FECHA, [{ servicioId: semi }], ahora);
       assert.ok(turnos.length > 0);

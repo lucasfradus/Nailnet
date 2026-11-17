@@ -1,6 +1,6 @@
 # Precios por medio de pago · propuesta · 2026-11-16
 
-Propuesta (D22). Sale de una charla con el usuario el 2026-11-16. Extiende ventas y caja (27-ventas-caja.md) y el catálogo (13-catalogo.md). **Las etapas 1 (medios de pago de la sede) y 2 (cobro rápido) quedaron implementadas el 2026-11-16 y 17.** Ver «Etapa 1: cómo quedó» y «Etapa 2: cómo quedó».
+Propuesta (D22). Sale de una charla con el usuario el 2026-11-16. Extiende ventas y caja (27-ventas-caja.md) y el catálogo (13-catalogo.md). **Las etapas 1 (medios de pago de la sede), 2 (cobro rápido) y 3 (portal) quedaron implementadas entre el 2026-11-16 y el 17.** Ver «Etapa 1: cómo quedó», «Etapa 2: cómo quedó» y «Portal».
 
 ## El problema
 
@@ -107,6 +107,8 @@ El portal de reservas muestra los dos precios de cada servicio, por ejemplo «$1
 - Si un medio tiene recargo, el portal no lo muestra, para no confundir.
 - La seña se sigue calculando sobre la lista.
 
+**Cómo quedó (etapa 3, 2026-11-17).** `serviciosPublicos` devuelve `preciosMedio` en cada servicio: un precio por cada valor distinto con descuento, con los medios que lo dan, en el orden de la sede (`preciosPortal` en el dominio, con el mismo redondeo que cobra recepción). En el portal, debajo del precio de lista de cada tarjeta, va por ejemplo «$16.200 con Efectivo, Transferencia o Cuenta DNI», y lo mismo en el resumen de la reserva. Un precio que redondeado da la lista no se muestra.
+
 ## Permisos
 
 Configurar los medios y el redondeo de la sede lo hacen el master, el franquiciado y el administrador de sede (`sede:administrar`, el mismo permiso con que ya administran la sede; confirmado). Recepción no lo hace: solo elige el medio al cobrar.
@@ -158,7 +160,7 @@ Confirmado por el usuario el 2026-11-17: **anular y rehacer**. Ventas e ítems s
 ### Pendiente
 
 - ~~Cambiar el precio aplicado de una venta pendiente sin cobros.~~ Hecho el 2026-11-17: ver «Cambio del precio de una venta pendiente».
-- **Portal con los dos precios** (etapa 3).
+- ~~Portal con los dos precios (etapa 3).~~ Hecho el 2026-11-17: ver «Portal».
 
 ## Confirmado por el usuario (2026-11-16)
 

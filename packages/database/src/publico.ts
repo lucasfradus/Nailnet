@@ -8,6 +8,8 @@ import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, exigirIds } from "./access.ts";
 import { ConfiguracionIncompleta, consultarDisponibilidad } from "./disponibilidad.ts";
+import { mediosHabilitados, redondeoSede } from "./medios-pago.ts";
+import { preciosPortal } from "@nailnet/domain/medios-pago";
 import { TurnoNoDisponible, tomarTurno, type Tx } from "./reservas.ts";
 
 /** Valores técnicos anti-abuso (propuesta; ajustables cuando haya tráfico real). */
@@ -58,11 +60,14 @@ export async function terminosPublicos(db: Database, slug: string): Promise<Term
 export async function serviciosPublicos(db: Database, sedeId: string): Promise<ServicioPublico[]> {
   const sede = await sedePublica(db, sedeId);
   const servicios = await db.servicio.findMany({ where: { organizacionId: sede.organizacionId, activo: true, sedes: { some: { sedeId, habilitado: true } } }, include: { categoria: true, sedes: { where: { sedeId } } }, orderBy: [{ categoria: { orden: "asc" } }, { nombre: "asc" }] });
+  // D22: precios con descuento por medio de pago (los mismos que cobra recepción).
+  const [medios, redondeo] = await Promise.all([mediosHabilitados(db, sede.organizacionId, sedeId), redondeoSede(db, sede.organizacionId, sedeId)]);
   return servicios.flatMap(s => {
     const ss = s.sedes[0]!;
     const e = servicioEfectivo({ duracionMinutos: s.duracionMinutos, bufferAntesMinutos: s.bufferAntesMinutos, bufferDespuesMinutos: s.bufferDespuesMinutos, sena: senaDe(s.senaTipo, s.senaValor), activo: s.activo },
       { habilitado: ss.habilitado, precio: ss.precio?.toFixed(2) ?? null, duracionMinutos: ss.duracionMinutos, sena: senaDe(ss.senaTipo, ss.senaValor), reservableOnline: ss.reservableOnline });
-    return e.reservableOnline ? [{ id: s.id, nombre: s.nombre, categoria: s.categoria.nombre, descripcion: s.descripcion, imagenUrl: rutaImagen(s.imagenId), duracionMinutos: e.duracionMinutos, precio: e.precio!, sena: e.sena! }] : [];
+    return e.reservableOnline ? [{ id: s.id, nombre: s.nombre, categoria: s.categoria.nombre, descripcion: s.descripcion, imagenUrl: rutaImagen(s.imagenId), duracionMinutos: e.duracionMinutos, precio: e.precio!, sena: e.sena!,
+      preciosMedio: preciosPortal(aCentavos(e.precio!)!, medios, redondeo).map(p => ({ precio: importe(p.precio), medios: p.medios })) }] : [];
   });
 }
 

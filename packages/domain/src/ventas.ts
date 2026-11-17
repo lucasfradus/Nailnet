@@ -53,27 +53,45 @@ export function estadoSegunCobros(total: bigint, anticipo: bigint, cobradoNeto: 
   return anticipo + cobradoNeto >= total ? "COMPLETADA" : "PENDIENTE";
 }
 
+/**
+ * `medio` es el id de un medio de pago de la sede (D22, doc 32) o, por compatibilidad, un tipo
+ * (`EFECTIVO`): en ese caso se usa el primer medio habilitado de ese tipo.
+ */
 export type CobroEntrada = { medio: string; monto: string; referencia?: string | null };
-export type CobroValidado = { medio: MedioCobro; monto: bigint; referencia: string | null };
+export type CobroValidado = { medio: MedioCobro; medioPagoId: string | null; medioNombre: string | null; monto: bigint; referencia: string | null };
+/** Medio de pago habilitado en la sede, en el orden en que se muestra. */
+export type MedioDisponible = { id: string; tipo: MedioCobro; nombre: string };
 
-export function validarCobro(c: CobroEntrada): { error: string } | { cobro: CobroValidado } {
-  if (!(MEDIOS_COBRO as readonly string[]).includes(c.medio)) return { error: "Medio de cobro inválido" };
+/**
+ * Valida un cobro. Con `medios` (los habilitados de la sede, en orden) el medio tiene que ser uno de
+ * ellos; sin `medios`, solo un tipo, y el cobro queda sin medio de la sede.
+ */
+export function validarCobro(c: CobroEntrada, medios?: readonly MedioDisponible[]): { error: string } | { cobro: CobroValidado } {
+  let medio: MedioCobro, medioPagoId: string | null = null, medioNombre: string | null = null;
+  if (medios) {
+    const m = medios.find(x => x.id === c.medio) ?? medios.find(x => x.tipo === c.medio);
+    if (!m) return { error: "Medio de cobro inválido o deshabilitado en la sede" };
+    medio = m.tipo; medioPagoId = m.id; medioNombre = m.nombre;
+  } else {
+    if (!(MEDIOS_COBRO as readonly string[]).includes(c.medio)) return { error: "Medio de cobro inválido" };
+    medio = c.medio as MedioCobro;
+  }
   const monto = aCentavos(c.monto ?? "");
   if (monto === null || monto <= 0n) return { error: "Monto del cobro inválido: mayor a cero, con hasta 2 decimales" };
   const referencia = normalizarTexto(c.referencia);
   if (referencia.length > 120) return { error: "La referencia del cobro tiene hasta 120 caracteres" };
-  return { cobro: { medio: c.medio as MedioCobro, monto, referencia: referencia || null } };
+  return { cobro: { medio, medioPagoId, medioNombre, monto, referencia: referencia || null } };
 }
 
 /**
  * Valida varios cobros contra lo que falta cobrar. Cobrar de más se rechaza: no hay vuelto registrado
  * en el sistema (el vuelto en efectivo se resuelve en el mostrador cobrando el importe exacto).
  */
-export function validarCobros(cobros: readonly CobroEntrada[], saldo: bigint): { error: string } | { cobros: CobroValidado[]; total: bigint } {
+export function validarCobros(cobros: readonly CobroEntrada[], saldo: bigint, medios?: readonly MedioDisponible[]): { error: string } | { cobros: CobroValidado[]; total: bigint } {
   if (cobros.length > MAX_COBROS_POR_ALTA) return { error: `Hasta ${MAX_COBROS_POR_ALTA} cobros a la vez` };
   const validos: CobroValidado[] = [];
   for (const c of cobros) {
-    const v = validarCobro(c);
+    const v = validarCobro(c, medios);
     if ("error" in v) return v;
     validos.push(v.cobro);
   }

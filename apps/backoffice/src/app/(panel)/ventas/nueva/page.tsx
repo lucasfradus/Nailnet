@@ -3,7 +3,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { randomUUID } from "node:crypto";
 import { AccesoDenegado } from "@nailnet/domain";
-import { MEDIOS_COBRO } from "@nailnet/domain/ventas";
 import { listarClientes } from "@nailnet/database/clientes";
 import { prepararVenta } from "@nailnet/database/ventas";
 import { Formulario } from "@/components/formulario";
@@ -12,7 +11,7 @@ import { requerirOrganizacion } from "@/lib/contexto";
 import { accionAtendida } from "../../acciones";
 import { cantidad } from "../../stock/formato";
 import { accionAsignarFicha, accionCrearFichaTurno, accionRegistrarVenta } from "../acciones";
-import { FILAS_COBRO, FILAS_PRODUCTO, FILAS_SERVICIO, MEDIOS_COBRO_ETIQUETA, PestanasVentas, pesos } from "../comun";
+import { FILAS_COBRO, FILAS_PRODUCTO, FILAS_SERVICIO, PestanasVentas, pesos } from "../comun";
 
 export const metadata: Metadata = { title: "Cobrar · Sicurella" };
 
@@ -124,8 +123,8 @@ export default async function NuevaVenta({ searchParams }: { searchParams: Promi
 
         <fieldset className="servicios"><legend>Cobros</legend>
           {Array.from({ length: FILAS_COBRO }, (_, i) => <div key={i} className="grilla">
-            <select name={`medio_${i}`} aria-label={`Medio del cobro ${i + 1}`} defaultValue={i === 0 ? "EFECTIVO" : "TARJETA_DEBITO"}>
-              {MEDIOS_COBRO.map(m => <option key={m} value={m}>{MEDIOS_COBRO_ETIQUETA[m]}</option>)}
+            <select name={`medio_${i}`} aria-label={`Medio del cobro ${i + 1}`} defaultValue={(datos.medios.find(m => m.tipo === (i === 0 ? "EFECTIVO" : "TARJETA_DEBITO")) ?? datos.medios[0])?.id}>
+              {datos.medios.map(m => <option key={m.id} value={m.id}>{m.nombre}</option>)}
             </select>
             <input name={`monto_${i}`} inputMode="decimal" placeholder="Monto $" aria-label={`Monto del cobro ${i + 1}`} pattern="\d{1,10}([.,]\d{1,2})?" />
             <input name={`referencia_${i}`} maxLength={120} placeholder="Referencia (opcional)" aria-label={`Referencia del cobro ${i + 1}`} />

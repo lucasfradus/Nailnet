@@ -1,7 +1,8 @@
 import { AccesoDenegado, cubreSede, puedeCrearSede, tienePermiso, type Asignacion, type FranquiciadoDeSede, type Permiso } from "@nailnet/domain";
 import { redactar } from "@nailnet/domain/secretos";
 import type { Database } from "./client.ts";
-import type { Prisma } from "../generated/client/client.ts";
+import { Prisma } from "../generated/client/client.ts";
+import { problemaSlug, slugLibre } from "@nailnet/domain/sedes";
 
 type Cliente = Database | Prisma.TransactionClient;
 
@@ -78,7 +79,7 @@ async function filtroAutorizado(db: Database, usuarioId: string, organizacionId:
   return { organizacionId, ...estado, OR: alcances };
 }
 
-const datosSede = { id: true, nombre: true, timezone: true, franquiciadoId: true, activo: true, franquiciado: { select: { nombre: true, activo: true } } } as const;
+const datosSede = { id: true, nombre: true, slug: true, timezone: true, franquiciadoId: true, activo: true, franquiciado: { select: { nombre: true, activo: true } } } as const;
 
 /**
  * Sedes visibles para el actor. sedeId filtra dentro del alcance y rechaza (no amplía) si no es visible.
@@ -108,7 +109,11 @@ function normalizarNombre(nombre: string, campo = "Nombre") {
   return normalizado;
 }
 
-export async function actualizarSede(db: Database, usuarioId: string, organizacionId: string, sedeId: string, cambios: { nombre?: string; timezone?: string }) {
+/**
+ * El slug (dirección en el portal) se cambia solo a pedido: renombrar la sede no lo toca, para no romper
+ * los links ya compartidos.
+ */
+export async function actualizarSede(db: Database, usuarioId: string, organizacionId: string, sedeId: string, cambios: { nombre?: string; timezone?: string; slug?: string }) {
   exigirIds(sedeId);
   const data: Prisma.SedeUpdateManyMutationInput = {};
   if (cambios.nombre !== undefined) data.nombre = normalizarNombre(cambios.nombre);
@@ -116,12 +121,23 @@ export async function actualizarSede(db: Database, usuarioId: string, organizaci
     if (!zonaHorariaValida(cambios.timezone)) throw new DatosInvalidos("Zona horaria inválida");
     data.timezone = cambios.timezone;
   }
+  if (cambios.slug !== undefined) {
+    const slug = cambios.slug.trim().toLowerCase();
+    const problema = problemaSlug(slug);
+    if (problema) throw new DatosInvalidos(problema);
+    data.slug = slug;
+  }
   const autorizado = await filtroAutorizado(db, usuarioId, organizacionId, "sede:administrar");
-  await db.$transaction(async tx => {
-    const result = await tx.sede.updateMany({ where: { AND: [autorizado, { id: sedeId }] }, data });
-    if (result.count !== 1) throw new AccesoDenegado();
-    await auditar(tx, organizacionId, usuarioId, "sede.actualizar", "Sede", sedeId, data as Prisma.InputJsonValue);
-  });
+  try {
+    await db.$transaction(async tx => {
+      const result = await tx.sede.updateMany({ where: { AND: [autorizado, { id: sedeId }] }, data });
+      if (result.count !== 1) throw new AccesoDenegado();
+      await auditar(tx, organizacionId, usuarioId, "sede.actualizar", "Sede", sedeId, data as Prisma.InputJsonValue);
+    });
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") throw new DatosInvalidos("Esa dirección ya la usa otra sede");
+    throw e;
+  }
 }
 export async function renombrarSede(db: Database, usuarioId: string, organizacionId: string, sedeId: string, nombre: string) {
   await actualizarSede(db, usuarioId, organizacionId, sedeId, { nombre });
@@ -137,8 +153,11 @@ export async function crearSede(db: Database, usuarioId: string, organizacionId:
     const actor = await asignacionesActor(tx, usuarioId, organizacionId);
     const franquiciado = await tx.franquiciado.findFirst({ where: { id: datos.franquiciadoId, organizacionId, activo: true }, select: { id: true } });
     if (!franquiciado || !puedeCrearSede(actor, franquiciado.id)) throw new AccesoDenegado();
-    const sede = await tx.sede.create({ data: { organizacionId, franquiciadoId: franquiciado.id, nombre, timezone }, select: { id: true } });
-    await auditar(tx, organizacionId, usuarioId, "sede.crear", "Sede", sede.id, { nombre, franquiciadoId: franquiciado.id, timezone });
+    // La organización está bloqueada: nadie más crea sedes mientras se elige el slug libre.
+    const ocupados = new Set((await tx.sede.findMany({ where: { organizacionId }, select: { slug: true } })).map(s => s.slug));
+    const slug = slugLibre(nombre, ocupados);
+    const sede = await tx.sede.create({ data: { organizacionId, franquiciadoId: franquiciado.id, nombre, slug, timezone }, select: { id: true, slug: true } });
+    await auditar(tx, organizacionId, usuarioId, "sede.crear", "Sede", sede.id, { nombre, slug, franquiciadoId: franquiciado.id, timezone });
     return sede;
   });
 }

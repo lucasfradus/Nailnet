@@ -12,7 +12,7 @@ async function insertarFixture(db: Prisma.TransactionClient, organizacionId: str
   const franB = await db.franquiciado.create({ data: { organizacionId: org.id, nombre: "Franquiciado Demo B" } });
   const sedes = [];
   for (const [nombre, franquiciadoId] of [["Centro", franA.id], ["Norte", franA.id], ["Sur", franB.id]]) {
-    sedes.push(await db.sede.create({ data: { organizacionId: org.id, franquiciadoId: franquiciadoId!, nombre: nombre! } }));
+    sedes.push(await db.sede.create({ data: { organizacionId: org.id, franquiciadoId: franquiciadoId!, nombre: nombre!, slug: nombre!.toLowerCase() } }));
   }
   const usuarios = [];
   for (const nombre of ["master", "franquiciado", "admin", "recepcion", "profesional", "sin-rol"]) {

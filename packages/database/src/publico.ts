@@ -45,7 +45,7 @@ async function organizacionPublica(db: Database, slug: string) {
 
 export async function sedesPublicas(db: Database, slug: string) {
   const org = await organizacionPublica(db, slug);
-  return db.sede.findMany({ where: { organizacionId: org.id, activo: true, franquiciado: { activo: true } }, select: { id: true, nombre: true, timezone: true }, orderBy: { nombre: "asc" } });
+  return db.sede.findMany({ where: { organizacionId: org.id, activo: true, franquiciado: { activo: true } }, select: { id: true, slug: true, nombre: true, timezone: true }, orderBy: { nombre: "asc" } });
 }
 
 /** Versión vigente de cada término publicado: lo que el invitado acepta al reservar (misma consulta que crearReservaPublica). */

@@ -1,7 +1,8 @@
 import type { ProfesionalPublico, SedePublica, ServicioPublico, TurnoPublico } from "@nailnet/contracts/publico";
 
 export type Seleccion = {
-  sede?: SedePublica; sedeUnica?: boolean; servicio?: ServicioPublico;
+  /** `sedeFija`: la sede no se elige (es la única, o llegó en el link: `/lomada`) y el recorrido arranca en el servicio. */
+  sede?: SedePublica; sedeFija?: boolean; servicio?: ServicioPublico;
   /** `null` es «cualquier profesional» (D16); `undefined`, todavía sin elegir. */
   profesional?: ProfesionalPublico | null;
   fecha?: string; turno?: TurnoPublico;
@@ -30,6 +31,16 @@ export function pasoVisible(paso: NombrePaso, sel: Seleccion, primero: NombrePas
  * paso en lugar de salir del sitio. La entrada guarda también la selección para sobrevivir a una recarga; los
  * datos de contacto no se guardan (el historial puede persistir en disco).
  */
+/**
+ * Sede pedida en la ruta (`/lomada` o `/lomada/`), en minúsculas. La ruta refleja siempre la sede elegida, así
+ * que un link copiado en cualquier paso abre esa sede.
+ */
+export function slugDeRuta(ruta: string): string | null {
+  try { return decodeURIComponent(ruta.split("/").find(Boolean) ?? "").trim().toLowerCase() || null; }
+  catch { return null; }
+}
+export const rutaDeSede = (sede: SedePublica | undefined) => (sede ? `/${encodeURIComponent(sede.slug)}` : "/");
+
 type Entrada = { paso: NombrePaso; sel: Seleccion };
 const CLAVE = "nailnet.paso";
 export const entradaHistorial = (paso: NombrePaso, sel: Seleccion) => ({ [CLAVE]: { paso, sel } satisfies Entrada });

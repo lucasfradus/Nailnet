@@ -33,6 +33,28 @@ test("administración de sedes y usuarios con alcance", async (t) => {
       await assert.rejects(actualizarSede(db, a.admin.id, a.org.id, a.centro.id, { nombre: "   " }), DatosInvalidos);
     });
 
+    await t.test("slug de sede: se genera libre, no cambia al renombrar y se edita con validación", async () => {
+      const slug = async (id: string) => (await db.sede.findUniqueOrThrow({ where: { id } })).slug;
+      const primera = await crearSede(db, a.master.id, a.org.id, { franquiciadoId: a.franA.id, nombre: "Lomada Núñez" });
+      const segunda = await crearSede(db, a.master.id, a.org.id, { franquiciadoId: a.franA.id, nombre: "Lomada  nuñez" });
+      assert.equal(primera.slug, "lomada-nunez");
+      assert.equal(segunda.slug, "lomada-nunez-2");
+      // Otra organización puede usar el mismo.
+      assert.equal((await crearSede(db, b.master.id, b.org.id, { franquiciadoId: b.franA.id, nombre: "Lomada Núñez" })).slug, "lomada-nunez");
+      // Rutas del portal reservadas.
+      assert.equal((await crearSede(db, a.master.id, a.org.id, { franquiciadoId: a.franA.id, nombre: "Mis turnos" })).slug, "mis-turnos-2");
+
+      await actualizarSede(db, a.master.id, a.org.id, primera.id, { nombre: "Lomada Centro" });
+      assert.equal(await slug(primera.id), "lomada-nunez");
+      await actualizarSede(db, a.master.id, a.org.id, primera.id, { slug: "  Lomada " });
+      assert.equal(await slug(primera.id), "lomada");
+      await assert.rejects(actualizarSede(db, a.master.id, a.org.id, segunda.id, { slug: "lomada" }), /ya la usa otra sede/);
+      await assert.rejects(actualizarSede(db, a.master.id, a.org.id, segunda.id, { slug: "con espacio" }), DatosInvalidos);
+      await assert.rejects(actualizarSede(db, a.master.id, a.org.id, segunda.id, { slug: "assets" }), DatosInvalidos);
+      await assert.rejects(actualizarSede(db, a.admin.id, a.org.id, segunda.id, { slug: "otra" }), AccesoDenegado);
+      assert.equal(await slug(segunda.id), "lomada-nunez-2");
+    });
+
     await t.test("sedes inactivas: fuera de la operación, visibles solo para quien puede reactivarlas", async () => {
       await assert.rejects(cambiarEstadoSede(db, a.admin.id, a.org.id, a.centro.id, false), AccesoDenegado);
       await cambiarEstadoSede(db, a.franquiciado.id, a.org.id, a.norte.id, false);

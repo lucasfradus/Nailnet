@@ -17,7 +17,8 @@ import { CamposSemana, textoSemana } from "@/components/semana";
 import { db } from "@/lib/db";
 import { requerirOrganizacion } from "@/lib/contexto";
 import { aplicacionMercadoPago } from "@/lib/mercadopago";
-import { accionActualizarSede, accionConectarMercadoPago, accionConfiguracionOrganizacion, accionConfiguracionSede, accionCrearExcepcion, accionCrearRecurso, accionEliminarCredencial, accionEliminarExcepcion, accionEstadoRecurso, accionEstadoSede, accionGuardarCredencial, accionHorarioSede, accionSenaRecepcion } from "../../acciones";
+import { urlPortal } from "@/lib/publico";
+import { accionActualizarSede, accionConectarMercadoPago, accionConfiguracionOrganizacion, accionConfiguracionSede, accionCrearExcepcion, accionCrearRecurso, accionEliminarCredencial, accionEliminarExcepcion, accionEstadoRecurso, accionEstadoSede, accionGuardarCredencial, accionHorarioSede, accionSenaRecepcion, accionSlugSede } from "../../acciones";
 
 export const metadata: Metadata = { title: "Configuración de sede · Sicurella" };
 const AMBIENTES = { PRUEBA: "Prueba", PRODUCCION: "Producción" } as const;
@@ -83,6 +84,8 @@ export default async function ConfiguracionSede({ params, searchParams }: { para
   const medios = seccion === "medios" ? await listarMediosPago(db(), actorId, organizacion.id, sedeId) : null;
   const sinDefinir = (Object.keys(PARAMETROS) as Parametro[]).filter(p => config.efectiva[p].origen === "SIN_DEFINIR");
   const conHorario = !!cal && Object.values(cal.semana).some(r => r?.length);
+  // Sin PORTAL_ORIGIN (producción mal configurada) se muestra solo la ruta.
+  const portal = (() => { try { return urlPortal(); } catch { return null; } })();
   const inactiva = <article><p className="ayuda">La sede está inactiva: reactivala desde el Resumen para editar esta sección.</p></article>;
 
   return <section className="panel">
@@ -122,6 +125,18 @@ export default async function ConfiguracionSede({ params, searchParams }: { para
               <input name="nombre" defaultValue={sede.nombre} required maxLength={120} aria-label="Nombre de la sede" />
             </Formulario>
             : sede.nombre}</dd></div>
+          <div><dt>Link de reservas</dt><dd>
+            {portal ? <a href={`${portal}/${sede.slug}`} target="_blank" rel="noreferrer">{`${portal.replace(/^https?:\/\//, "")}/${sede.slug}`}</a> : <code>/{sede.slug}</code>}
+            <small>Compartilo con las clientas de la sede: abre el portal con la sede ya elegida. Cambiar el nombre no lo cambia.</small>
+            {puede.editarSedes && sede.activo && <details><summary>Cambiar dirección</summary>
+              <Formulario accion={accionSlugSede} boton="Guardar dirección" className="en-linea sin-margen"
+                confirmar="Los links que ya compartiste con la dirección anterior van a dejar de abrir esta sede. ¿Cambiarla?">
+                <input type="hidden" name="sedeId" value={sede.id} />
+                <input name="slug" defaultValue={sede.slug} required maxLength={60} pattern="[a-z0-9]+(-[a-z0-9]+)*" aria-label="Dirección en el portal" />
+              </Formulario>
+              <p className="ayuda">Minúsculas sin acentos, números y guiones.</p>
+            </details>}
+          </dd></div>
           <div><dt>Franquiciado</dt><dd>{sede.franquiciado.nombre}</dd></div>
           <div><dt>Zona horaria</dt><dd>{sede.timezone.replace(/_/g, " ")}<small>Se elige al crear la sede y no se cambia: correría los horarios de los turnos ya tomados.</small></dd></div>
         </dl>

@@ -6,8 +6,11 @@
  * Las duraciones no están en el PDF: son estimadas y se ajustan desde Catálogo.
  */
 export type ItemLista = { nombre: string; minutos: number; lista: number; efectivo: number };
-/** `antes`: nombres de categorías anteriores que esta reemplaza (para vaciar solo lo cubierto y habilitar profesionales). */
-export type CategoriaLista = { nombre: string; universo: "MANOS_PIES" | "TRATAMIENTOS"; antes: string[]; servicios: ItemLista[] };
+/**
+ * `antes`: nombres de categorías anteriores que esta reemplaza (para vaciar solo lo cubierto y habilitar
+ * profesionales). `orden`: posición de la categoría (por defecto, la de la lista).
+ */
+export type CategoriaLista = { nombre: string; universo: "MANOS_PIES" | "TRATAMIENTOS"; antes: string[]; orden?: number; servicios: ItemLista[] };
 
 export const AJUSTE_EFECTIVO = "-20";
 

@@ -6,11 +6,14 @@ import { guardarCategoria, guardarServicio, guardarServicioSede } from "../src/c
 import { redondeoSede } from "../src/medios-pago.ts";
 import { guardarHabilidades } from "../src/profesionales.ts";
 import { AJUSTE_EFECTIVO, LISTA_PRECIOS } from "./lista-precios-sicurella.ts";
+import { LISTA_TRATAMIENTOS } from "./lista-tratamientos-sicurella.ts";
 
 /**
- * Reemplaza el catálogo de una organización por la lista de precios de Sicurella (lista-precios-sicurella.ts).
+ * Reemplaza el catálogo de una organización por una lista de precios de Sicurella: `--lista=nails` (por
+ * defecto: nails, cejas y depilación, lista-precios-sicurella.ts) o `--lista=tratamientos` (faciales y
+ * corporales, lista-tratamientos-sicurella.ts).
  *
- * 1. Vacía las categorías (todas, o con --solo-cubiertas solo las que la lista reemplaza: campo `antes`),
+ * 1. Vacía las categorías que la lista reemplaza (campo `antes`), o todas con --vaciar-todo,
  *    sus servicios, precios por sede y habilitaciones de profesionales, y los turnos que incluyen alguno de
  *    esos servicios (con sus eventos, tokens, checkouts y pagos) y las esperas que los pedían. No toca
  *    clientes, usuarios, sedes, profesionales, horarios, recursos ni skills. Si alguna venta usa esos
@@ -22,11 +25,16 @@ import { AJUSTE_EFECTIVO, LISTA_PRECIOS } from "./lista-precios-sicurella.ts";
  *    sale de ese ajuste llevan ese precio fijo para Efectivo y Transferencia (doc 32, «Precio fijo por servicio»).
  *
  * Sin --confirmar solo muestra qué haría. Nunca corre con NAILNET_AMBIENTE=produccion.
- *   npx tsx prisma/cargar-lista-precios.ts [--org=<uuid>] [--actor=<email>] [--solo-cubiertas] [--confirmar]
+ *   npx tsx prisma/cargar-lista-precios.ts [--lista=nails|tratamientos] [--org=<uuid>] [--actor=<email>] [--vaciar-todo] [--confirmar]
  */
 const arg = (n: string) => process.argv.find(a => a.startsWith(`--${n}=`))?.split("=")[1];
 const confirmar = process.argv.includes("--confirmar");
-const soloCubiertas = process.argv.includes("--solo-cubiertas");
+// Por defecto solo se vacía lo que la lista cubre; --vaciar-todo borra también las demás categorías.
+const soloCubiertas = !process.argv.includes("--vaciar-todo");
+const LISTAS = { nails: LISTA_PRECIOS, tratamientos: LISTA_TRATAMIENTOS };
+const nombreLista = arg("lista") ?? "nails";
+if (!(nombreLista in LISTAS)) throw new Error(`--lista: nails o tratamientos (no «${nombreLista}»)`);
+const LISTA = LISTAS[nombreLista as keyof typeof LISTAS];
 const O = arg("org") ?? "00000000-0000-4000-8000-000000000001";
 const actorEmail = arg("actor") ?? `master-${O}@example.invalid`;
 const SENA = { tipo: "PORCENTAJE" as const, valor: "30" };
@@ -37,11 +45,11 @@ if (process.env.NAILNET_AMBIENTE === "produccion") throw new Error("No corre en 
 // Servicios cuya columna «Efectivo» no sale del ajuste con el redondeo por defecto ($100 hacia abajo):
 // llevan precio fijo para Efectivo y Transferencia.
 const ajuste = aAjuste(AJUSTE_EFECTIVO)!;
-const conFijo = new Set(LISTA_PRECIOS.flatMap(c => c.servicios)
+const conFijo = new Set(LISTA.flatMap(c => c.servicios)
   .filter(s => precioConAjuste(BigInt(s.lista) * 100n, ajuste, { paso: 100, sentido: "ABAJO" }) !== BigInt(s.efectivo) * 100n)
   .map(s => s.nombre));
 // Índice de la categoría nueva que reemplaza a cada nombre anterior.
-const reemplazo = new Map(LISTA_PRECIOS.flatMap((c, i) => c.antes.map(a => [norm(a), i] as const)));
+const reemplazo = new Map(LISTA.flatMap((c, i) => c.antes.map(a => [norm(a), i] as const)));
 
 const db = createDatabase();
 try {
@@ -58,14 +66,14 @@ try {
   const E = (await db.esperaRecepcion.findMany({ where: { organizacionId: O, ...(soloCubiertas ? { OR: [{ servicioIds: { hasSome: S } }, { reservaId: { in: R } }] } : {}) }, select: { id: true } })).map(e => e.id);
   const mixtas = await db.reserva.count({ where: { id: { in: R }, items: { some: { servicioId: { notIn: S } } } } });
   const ventas = await db.venta.count({ where: { organizacionId: O, reservaId: { in: R } } }) + await db.ventaItem.count({ where: { organizacionId: O, servicioId: { in: S } } });
-  const nuevos = LISTA_PRECIOS.flatMap(c => c.servicios.map(s => s.nombre));
+  const nuevos = LISTA.flatMap(c => c.servicios.map(s => s.nombre));
   const choques = (await db.servicio.findMany({ where: { organizacionId: O, id: { notIn: S } }, select: { nombre: true } })).filter(s => nuevos.some(n => norm(n) === norm(s.nombre)));
   const quedan = (await db.categoriaServicio.findMany({ where: { organizacionId: O, id: { notIn: categorias.map(c => c.id) } }, select: { nombre: true } })).map(c => c.nombre);
 
-  console.info(`Organización: ${org.nombre} (${O}) · sedes activas: ${sedes.map(s => s.nombre).join(", ")}`);
+  console.info(`Lista: ${nombreLista} · organización: ${org.nombre} (${O}) · sedes activas: ${sedes.map(s => s.nombre).join(", ")}`);
   console.info(`Se borran: categorías ${categorias.map(c => c.nombre).join(", ") || "—"}; ${S.length} servicios, ${R.length} turnos (${mixtas} con servicios de otras categorías), ${E.length} esperas.`);
   if (quedan.length) console.info(`Quedan sin tocar: ${quedan.join(", ")}.`);
-  console.info(`Se cargan: ${LISTA_PRECIOS.length} categorías y ${nuevos.length} servicios; Efectivo y Transferencia ${AJUSTE_EFECTIVO}%, con precio fijo en ${conFijo.size}.`);
+  console.info(`Se cargan: ${LISTA.length} categorías y ${nuevos.length} servicios; Efectivo y Transferencia ${AJUSTE_EFECTIVO}%, con precio fijo en ${conFijo.size}.`);
   if (ventas) throw new Error(`Hay ${ventas} ventas o ítems de venta que usan esos turnos o servicios (solo inserción): no se vacía.`);
   if (choques.length) throw new Error(`Servicios que quedan con el mismo nombre que uno nuevo: ${choques.map(c => c.nombre).join(", ")}.`);
   if (!confirmar) { console.info("Simulación: no se cambió nada. Agregá --confirmar para ejecutar."); process.exit(0); }
@@ -106,8 +114,8 @@ try {
   // 2. Cargar.
   const mediosEfectivo = await db.medioPagoSede.findMany({ where: { organizacionId: O, sedeId: { in: sedes.map(s => s.id) }, tipo: { in: ["EFECTIVO", "TRANSFERENCIA"] } }, select: { id: true, sedeId: true } });
   const porCategoria: string[][] = [];
-  for (const [i, c] of LISTA_PRECIOS.entries()) {
-    const categoriaId = (await guardarCategoria(db, actor.id, O, { nombre: c.nombre, orden: i + 1, universo: c.universo }))!.id;
+  for (const [i, c] of LISTA.entries()) {
+    const categoriaId = (await guardarCategoria(db, actor.id, O, { nombre: c.nombre, orden: c.orden ?? i + 1, universo: c.universo }))!.id;
     porCategoria[i] = [];
     for (const s of c.servicios) {
       const servicioId = (await guardarServicio(db, actor.id, O, {

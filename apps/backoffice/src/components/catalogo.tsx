@@ -137,12 +137,17 @@ export function ServiciosSede({ sedeId, datos }: { sedeId: string; datos: Awaite
   return <div className="tabla">
     {datos.servicios.map(s => <article key={s.id} className={s.efectivo.habilitado ? "fila" : "fila inactiva"}>
       <div className="fila-cabecera"><h2>{s.nombre}</h2><span className="tag">{s.efectivo.reservableOnline ? "Online" : s.efectivo.habilitado ? "Solo recepción" : "No disponible"}</span></div>
-      <p>{s.categoria} · {s.efectivo.duracionMinutos} min · {pesos(s.efectivo.precio)} · seña {s.efectivo.sena === null ? "sin definir" : pesos(s.efectivo.sena)}
+      <p>{s.categoria} · {s.efectivo.duracionMinutos} min · {pesos(s.efectivo.precio)}{s.preciosMedio.filter(g => g.fijo).map(g => ` · ${g.nombres} ${pesos(g.fijo)}`).join("")} · seña {s.efectivo.sena === null ? "sin definir" : pesos(s.efectivo.sena)}
         {s.efectivo.motivosSinOnline.length > 0 && ` · ${s.efectivo.motivosSinOnline.join(", ")}`}</p>
       {datos.puedeEditar && s.activo && <details><summary>Condiciones en esta sede</summary>
         <Formulario accion={accionServicioSede} boton="Guardar" className="en-linea">
           <input type="hidden" name="sedeId" value={sedeId} /><input type="hidden" name="servicioId" value={s.id} />
           <label className="campo">Precio<span className="con-unidad" data-unidad="$"><input name="precio" defaultValue={s.enSede?.precio ?? ""} placeholder="30000" inputMode="decimal" /></span></label>
+          {s.preciosMedio.length > 0 && <fieldset><legend>Precio por medio de pago</legend>
+            {s.preciosMedio.map(g => <label key={g.medioIds.join()} className="campo">{g.nombres} <span className="opcional">({g.ajuste})</span><span className="con-unidad" data-unidad="$">
+              <input name={`precioMedio:${g.medioIds.join(",")}`} defaultValue={g.fijo ?? ""} placeholder={g.calculado === null ? "" : `${Number(g.calculado)} (con el ajuste)`} inputMode="decimal" /></span></label>)}
+            <p className="ayuda">Vacío: se cobra la lista con el ajuste del medio. Un precio fijo reemplaza al ajuste para este servicio y se cobra tal cual.</p>
+          </fieldset>}
           <label className="campo">Duración (min)<input name="duracionMinutos" type="number" min={5} max={480} step={5} defaultValue={s.enSede?.duracionMinutos ?? ""} placeholder={`${s.duracionBase} (del servicio)`} /></label>
           <CamposSena sena={s.enSede?.sena ?? null} heredar={`Del servicio (${textoSena(s.senaBase)})`} />
           <label className="check"><input type="checkbox" name="habilitado" defaultChecked={s.enSede?.habilitado} />Habilitado</label>

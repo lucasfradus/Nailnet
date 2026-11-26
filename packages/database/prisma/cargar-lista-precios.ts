@@ -18,7 +18,8 @@ import { AJUSTE_EFECTIVO, LISTA_PRECIOS } from "./lista-precios-sicurella.ts";
  * 2. Carga las categorías y servicios con su precio de lista, habilitados en todas las sedes activas.
  * 3. Habilita a cada profesional en las categorías nuevas que reemplazan a las que ya hacía, sin quitarle
  *    los servicios que conserva.
- * 4. Pone Efectivo y Transferencia en −20 % en cada sede (doc 32), que da exactamente la columna del PDF.
+ * 4. Pone Efectivo y Transferencia en −20 % en cada sede (doc 32). Los servicios cuyo precio en efectivo no
+ *    sale de ese ajuste llevan ese precio fijo para Efectivo y Transferencia (doc 32, «Precio fijo por servicio»).
  *
  * Sin --confirmar solo muestra qué haría. Nunca corre con NAILNET_AMBIENTE=produccion.
  *   npx tsx prisma/cargar-lista-precios.ts [--org=<uuid>] [--actor=<email>] [--solo-cubiertas] [--confirmar]
@@ -33,12 +34,12 @@ const norm = (s: string) => s.normalize("NFC").trim().replace(/\s+/g, " ").toLow
 
 if (process.env.NAILNET_AMBIENTE === "produccion") throw new Error("No corre en producción: borra turnos.");
 
-// La columna «Efectivo» del PDF tiene que salir del ajuste y el redondeo por defecto ($100 hacia abajo).
+// Servicios cuya columna «Efectivo» no sale del ajuste con el redondeo por defecto ($100 hacia abajo):
+// llevan precio fijo para Efectivo y Transferencia.
 const ajuste = aAjuste(AJUSTE_EFECTIVO)!;
-for (const c of LISTA_PRECIOS) for (const s of c.servicios) {
-  const calculado = precioConAjuste(BigInt(s.lista) * 100n, ajuste, { paso: 100, sentido: "ABAJO" });
-  if (calculado !== BigInt(s.efectivo) * 100n) throw new Error(`«${s.nombre}»: lista ${s.lista} con ${AJUSTE_EFECTIVO}% da ${calculado / 100n}, el PDF dice ${s.efectivo}`);
-}
+const conFijo = new Set(LISTA_PRECIOS.flatMap(c => c.servicios)
+  .filter(s => precioConAjuste(BigInt(s.lista) * 100n, ajuste, { paso: 100, sentido: "ABAJO" }) !== BigInt(s.efectivo) * 100n)
+  .map(s => s.nombre));
 // Índice de la categoría nueva que reemplaza a cada nombre anterior.
 const reemplazo = new Map(LISTA_PRECIOS.flatMap((c, i) => c.antes.map(a => [norm(a), i] as const)));
 
@@ -64,7 +65,7 @@ try {
   console.info(`Organización: ${org.nombre} (${O}) · sedes activas: ${sedes.map(s => s.nombre).join(", ")}`);
   console.info(`Se borran: categorías ${categorias.map(c => c.nombre).join(", ") || "—"}; ${S.length} servicios, ${R.length} turnos (${mixtas} con servicios de otras categorías), ${E.length} esperas.`);
   if (quedan.length) console.info(`Quedan sin tocar: ${quedan.join(", ")}.`);
-  console.info(`Se cargan: ${LISTA_PRECIOS.length} categorías y ${nuevos.length} servicios; Efectivo y Transferencia ${AJUSTE_EFECTIVO}%.`);
+  console.info(`Se cargan: ${LISTA_PRECIOS.length} categorías y ${nuevos.length} servicios; Efectivo y Transferencia ${AJUSTE_EFECTIVO}%, con precio fijo en ${conFijo.size}.`);
   if (ventas) throw new Error(`Hay ${ventas} ventas o ítems de venta que usan esos turnos o servicios (solo inserción): no se vacía.`);
   if (choques.length) throw new Error(`Servicios que quedan con el mismo nombre que uno nuevo: ${choques.map(c => c.nombre).join(", ")}.`);
   if (!confirmar) { console.info("Simulación: no se cambió nada. Agregá --confirmar para ejecutar."); process.exit(0); }
@@ -103,6 +104,7 @@ try {
   console.info("Catálogo vaciado.");
 
   // 2. Cargar.
+  const mediosEfectivo = await db.medioPagoSede.findMany({ where: { organizacionId: O, sedeId: { in: sedes.map(s => s.id) }, tipo: { in: ["EFECTIVO", "TRANSFERENCIA"] } }, select: { id: true, sedeId: true } });
   const porCategoria: string[][] = [];
   for (const [i, c] of LISTA_PRECIOS.entries()) {
     const categoriaId = (await guardarCategoria(db, actor.id, O, { nombre: c.nombre, orden: i + 1, universo: c.universo }))!.id;
@@ -112,7 +114,10 @@ try {
         categoriaId, nombre: s.nombre, descripcion: null, duracionMinutos: s.minutos, bufferAntesMinutos: 0, bufferDespuesMinutos: 0,
         sena: SENA, activo: true, skillIds: [], recursos: [], consentimientos: [],
       }))!.id;
-      for (const sede of sedes) await guardarServicioSede(db, actor.id, O, sede.id, servicioId, { habilitado: true, precio: String(s.lista), duracionMinutos: null, sena: null, reservableOnline: true });
+      for (const sede of sedes) {
+        const preciosMedio = conFijo.has(s.nombre) ? mediosEfectivo.filter(m => m.sedeId === sede.id).map(m => ({ medioPagoId: m.id, precio: String(s.efectivo) })) : undefined;
+        await guardarServicioSede(db, actor.id, O, sede.id, servicioId, { habilitado: true, precio: String(s.lista), duracionMinutos: null, sena: null, reservableOnline: true, preciosMedio });
+      }
       porCategoria[i]!.push(servicioId);
     }
   }

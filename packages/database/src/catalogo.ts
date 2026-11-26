@@ -1,9 +1,11 @@
 import { AccesoDenegado, cubreSede, tienePermiso, type Permiso } from "@nailnet/domain";
 import { aCentavos, esUniverso, importe, servicioEfectivo, validarBuffer, validarDuracion, validarSena, type Sena, type TipoSena, type Universo } from "@nailnet/domain/catalogo";
+import { aAjuste, gruposPrecioFijo, precioConAjuste, textoAjuste } from "@nailnet/domain/medios-pago";
 import type { Database } from "./client.ts";
 import { Prisma } from "../generated/client/client.ts";
 import { DatosInvalidos, asignacionesActor, auditar, bloquearOrganizacion, exigirIds, mapaSedes } from "./access.ts";
 import { borrarImagenHuerfana, insertarImagen, procesarImagen } from "./imagenes.ts";
+import { redondeoSede } from "./medios-pago.ts";
 
 type Tx = Prisma.TransactionClient;
 const TIPOS_SENA: readonly TipoSena[] = ["NINGUNA", "FIJA", "PORCENTAJE"];
@@ -200,34 +202,65 @@ export async function guardarImagenServicio(db: Database, actorId: string, organ
 
 // ─── Condiciones por sede ─────────────────────────────────────────────────────
 
-/** Catálogo de una sede con precio, duración y seña efectivos, y por qué no se ofrece online. */
+/**
+ * Catálogo de una sede con precio, duración y seña efectivos, y por qué no se ofrece online. `preciosMedio`:
+ * los medios con ajuste agrupados como en el cobro, con el precio que sale del ajuste y el fijo del servicio.
+ */
 export async function catalogoSede(db: Database, actorId: string, organizacionId: string, sedeId: string) {
   await exigirSede(db, actorId, organizacionId, sedeId, "sede:leer");
   const actor = await asignacionesActor(db, actorId, organizacionId);
   const franquiciadoDe = await mapaSedes(db, organizacionId);
-  const servicios = await db.servicio.findMany({
-    where: { organizacionId },
-    include: { categoria: { select: { nombre: true, orden: true, universo: true } }, sedes: { where: { sedeId } } },
-    orderBy: [{ categoria: { orden: "asc" } }, { nombre: "asc" }],
-  });
+  const [servicios, medios, redondeo] = await Promise.all([
+    db.servicio.findMany({
+      where: { organizacionId },
+      include: { categoria: { select: { nombre: true, orden: true, universo: true } }, sedes: { where: { sedeId }, include: { preciosMedio: { select: { medioPagoId: true, precio: true } } } } },
+      orderBy: [{ categoria: { orden: "asc" } }, { nombre: "asc" }],
+    }),
+    db.medioPagoSede.findMany({ where: { organizacionId, sedeId }, orderBy: [{ orden: "asc" }, { createdAt: "asc" }], select: { id: true, nombre: true, ajustePct: true, habilitado: true } }),
+    redondeoSede(db, organizacionId, sedeId),
+  ]);
+  const mediosPrecio = medios.map(m => ({ id: m.id, nombre: m.nombre, ajuste: aAjuste(m.ajustePct.toFixed(2))!, habilitado: m.habilitado }));
   return {
     puedeEditar: actor.some(a => tienePermiso(a, "catalogo:precios") && cubreSede(a, sedeId, franquiciadoDe)),
     servicios: servicios.map(s => {
       const ss = s.sedes[0];
       const enSede = ss ? { habilitado: ss.habilitado, precio: ss.precio?.toFixed(2) ?? null, duracionMinutos: ss.duracionMinutos, sena: senaDe(ss.senaTipo, ss.senaValor), reservableOnline: ss.reservableOnline } : null;
+      const lista = ss?.precio ? aCentavos(ss.precio.toFixed(2)) : null;
+      const fijos = new Map((ss?.preciosMedio ?? []).map(p => [p.medioPagoId, aCentavos(p.precio.toFixed(2))!]));
+      const preciosMedio = gruposPrecioFijo(mediosPrecio, fijos).map(g => ({
+        medioIds: g.medios.map(m => m.id),
+        nombres: g.medios.map(m => m.nombre).join(" · "),
+        ajuste: textoAjuste(g.ajuste),
+        calculado: lista === null ? null : importe(precioConAjuste(lista, g.ajuste, redondeo)),
+        fijo: g.fijo === null ? null : importe(g.fijo),
+      }));
       return {
         id: s.id, nombre: s.nombre, categoria: s.categoria.nombre, universo: s.categoria.universo, activo: s.activo, duracionBase: s.duracionMinutos, senaBase: senaDe(s.senaTipo, s.senaValor),
-        enSede, efectivo: servicioEfectivo({ duracionMinutos: s.duracionMinutos, bufferAntesMinutos: s.bufferAntesMinutos, bufferDespuesMinutos: s.bufferDespuesMinutos, sena: senaDe(s.senaTipo, s.senaValor), activo: s.activo }, enSede),
+        enSede, preciosMedio, efectivo: servicioEfectivo({ duracionMinutos: s.duracionMinutos, bufferAntesMinutos: s.bufferAntesMinutos, bufferDespuesMinutos: s.bufferDespuesMinutos, sena: senaDe(s.senaTipo, s.senaValor), activo: s.activo }, enSede),
       };
     }),
   };
 }
 
-/** duracionMinutos y sena en null = usar los del servicio. El precio es solo de la sede. */
-export async function guardarServicioSede(db: Database, actorId: string, organizacionId: string, sedeId: string, servicioId: string, datos: { habilitado: boolean; precio: string | null; duracionMinutos: number | null; sena: Sena; reservableOnline: boolean }) {
+/** Precio fijo de un servicio para un medio de la sede. `precio` null o vacío = sin fijo (rige el ajuste). */
+export type PrecioMedioEntrada = { medioPagoId: string; precio: string | null };
+
+/**
+ * duracionMinutos y sena en null = usar los del servicio. El precio es solo de la sede. `preciosMedio`: los
+ * medios que vienen se fijan o se liberan; los que no vienen quedan como estaban.
+ */
+export async function guardarServicioSede(db: Database, actorId: string, organizacionId: string, sedeId: string, servicioId: string, datos: { habilitado: boolean; precio: string | null; duracionMinutos: number | null; sena: Sena; reservableOnline: boolean; preciosMedio?: PrecioMedioEntrada[] }) {
   exigirIds(servicioId);
   const precio = datos.precio?.trim() ? aCentavos(datos.precio) : null;
   if (datos.precio?.trim() && precio === null) throw new DatosInvalidos("Precio inválido");
+  const fijos = (datos.preciosMedio ?? []).map(p => {
+    exigirIds(p.medioPagoId);
+    const v = p.precio?.trim() ? aCentavos(p.precio) : null;
+    if (p.precio?.trim() && (v === null || v <= 0n)) throw new DatosInvalidos("Precio por medio de pago inválido");
+    return { medioPagoId: p.medioPagoId, precio: v };
+  });
+  if (precio === null && fijos.some(f => f.precio !== null)) throw new DatosInvalidos("Para fijar un precio por medio de pago indicá el precio de lista");
+  if (new Set(fijos.map(f => f.medioPagoId)).size !== fijos.length) throw new DatosInvalidos("Medio de pago repetido");
   if (datos.habilitado && precio === null) throw new DatosInvalidos("Para habilitar el servicio indicá el precio");
   if (datos.duracionMinutos !== null) { const e = validarDuracion(datos.duracionMinutos); if (e) throw new DatosInvalidos(e); }
   const errorSena = validarSena(datos.sena, precio);
@@ -242,6 +275,19 @@ export async function guardarServicioSede(db: Database, actorId: string, organiz
     if (heredada && precio !== null) { const e = validarSena(heredada, precio); if (e) throw new DatosInvalidos(`${e} (seña del servicio)`); }
     const valores = { habilitado: datos.habilitado, precio: precio === null ? null : importe(precio), duracionMinutos: datos.duracionMinutos, ...senaAColumnas(datos.sena), reservableOnline: datos.reservableOnline };
     await tx.servicioSede.upsert({ where: { servicioId_sedeId: { servicioId, sedeId } }, create: { organizacionId, servicioId, sedeId, ...valores }, update: valores });
-    await auditar(tx, organizacionId, actorId, "catalogo.sede", "Servicio", servicioId, { sedeId, ...valores });
+    if (fijos.length) {
+      const deLaSede = await tx.medioPagoSede.count({ where: { organizacionId, sedeId, id: { in: fijos.map(f => f.medioPagoId) } } });
+      if (deLaSede !== fijos.length) throw new DatosInvalidos("Medio de pago de otra sede");
+      for (const f of fijos) {
+        if (f.precio === null) await tx.servicioSedePrecioMedio.deleteMany({ where: { organizacionId, servicioId, sedeId, medioPagoId: f.medioPagoId } });
+        else await tx.servicioSedePrecioMedio.upsert({
+          where: { servicioId_sedeId_medioPagoId: { servicioId, sedeId, medioPagoId: f.medioPagoId } },
+          create: { organizacionId, servicioId, sedeId, medioPagoId: f.medioPagoId, precio: importe(f.precio) },
+          update: { precio: importe(f.precio) },
+        });
+      }
+    }
+    const preciosMedio = fijos.length ? fijos.map(f => ({ medioPagoId: f.medioPagoId, precio: f.precio === null ? null : importe(f.precio) })) : undefined;
+    await auditar(tx, organizacionId, actorId, "catalogo.sede", "Servicio", servicioId, { sedeId, ...valores, ...preciosMedio && { preciosMedio } });
   });
 }

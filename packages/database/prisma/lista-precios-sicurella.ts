@@ -1,7 +1,8 @@
 /**
  * Lista de precios de Sicurella (PDFs «Lista nails» y «Lista pestañas, cejas y depilación», actualizados,
  * recibidos el 2026-11-25). `lista` es el precio de lista (tarjeta) y `efectivo` el que figura en el PDF:
- * en todas las filas es lista − 20 %, que el sistema calcula con el ajuste del medio de pago (doc 32).
+ * en todas las filas es lista − 20 %, que el sistema calcula con el ajuste del medio de pago (doc 32). Una
+ * fila cuyo efectivo no salga de ese ajuste se carga como precio fijo del servicio para Efectivo y Transferencia.
  * Las duraciones no están en el PDF: son estimadas y se ajustan desde Catálogo.
  */
 export type ItemLista = { nombre: string; minutos: number; lista: number; efectivo: number };

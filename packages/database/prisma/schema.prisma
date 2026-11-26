@@ -577,21 +577,40 @@ model ServicioConsentimiento {
 }
 
 model ServicioSede {
-  organizacionId   String    @db.Uuid
-  servicioId       String    @db.Uuid
-  sedeId           String    @db.Uuid
-  habilitado       Boolean   @default(false)
-  precio           Decimal?  @db.Decimal(12, 2)
+  organizacionId   String                    @db.Uuid
+  servicioId       String                    @db.Uuid
+  sedeId           String                    @db.Uuid
+  habilitado       Boolean                   @default(false)
+  precio           Decimal?                  @db.Decimal(12, 2)
   duracionMinutos  Int?
   senaTipo         TipoSena?
-  senaValor        Decimal?  @db.Decimal(12, 2)
-  reservableOnline Boolean   @default(true)
-  updatedAt        DateTime  @updatedAt
-  servicio         Servicio  @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
-  sede             Sede      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  senaValor        Decimal?                  @db.Decimal(12, 2)
+  reservableOnline Boolean                   @default(true)
+  updatedAt        DateTime                  @updatedAt
+  servicio         Servicio                  @relation(fields: [organizacionId, servicioId], references: [organizacionId, id], onDelete: Restrict)
+  sede             Sede                      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  preciosMedio     ServicioSedePrecioMedio[]
 
   @@id([servicioId, sedeId])
+  @@unique([organizacionId, servicioId, sedeId])
   @@index([organizacionId, sedeId])
+}
+
+// D22 (doc 32, «Precio fijo por servicio»). Precio de un servicio en una sede para un medio de pago: reemplaza
+// la lista con el ajuste del medio y se cobra tal cual (sin redondeo). Sin fila, rige el ajuste del medio.
+model ServicioSedePrecioMedio {
+  organizacionId String        @db.Uuid
+  servicioId     String        @db.Uuid
+  sedeId         String        @db.Uuid
+  medioPagoId    String        @db.Uuid
+  precio         Decimal       @db.Decimal(12, 2)
+  updatedAt      DateTime      @updatedAt
+  servicioSede   ServicioSede  @relation(fields: [organizacionId, servicioId, sedeId], references: [organizacionId, servicioId, sedeId], onDelete: Cascade)
+  medio          MedioPagoSede @relation(fields: [organizacionId, sedeId, medioPagoId], references: [organizacionId, sedeId, id], onDelete: Restrict)
+
+  @@id([servicioId, sedeId, medioPagoId])
+  @@index([organizacionId, sedeId])
+  @@index([medioPagoId])
 }
 
 // Profesional de la organización; puede trabajar en varias sedes. Usuario opcional (agenda propia, más adelante).
@@ -1532,19 +1551,20 @@ enum SentidoRedondeo {
 // seis medios estándar en 0% (trigger de la migración). Un medio con cobros no se borra: se deshabilita.
 // El tipo no cambia después del alta: los cobros guardan el suyo.
 model MedioPagoSede {
-  id             String       @id @default(uuid()) @db.Uuid
-  organizacionId String       @db.Uuid
-  sedeId         String       @db.Uuid
-  nombre         String
-  tipo           MedioCobro
+  id              String                    @id @default(uuid()) @db.Uuid
+  organizacionId  String                    @db.Uuid
+  sedeId          String                    @db.Uuid
+  nombre          String
+  tipo            MedioCobro
   // Porcentaje con hasta 2 decimales: entre −90 y +100.
-  ajustePct      Decimal      @default(0) @db.Decimal(5, 2)
-  habilitado     Boolean      @default(true)
-  orden          Int
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-  sede           Sede         @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
-  cobros         CobroVenta[]
+  ajustePct       Decimal                   @default(0) @db.Decimal(5, 2)
+  habilitado      Boolean                   @default(true)
+  orden           Int
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+  sede            Sede                      @relation(fields: [organizacionId, sedeId], references: [organizacionId, id], onDelete: Restrict)
+  cobros          CobroVenta[]
+  preciosServicio ServicioSedePrecioMedio[]
 
   @@unique([organizacionId, id])
   @@unique([organizacionId, sedeId, id])

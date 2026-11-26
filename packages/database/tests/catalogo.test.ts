@@ -77,6 +77,32 @@ test("catálogo global y condiciones por sede", async (t) => {
       assert.deepEqual([e.sena, e.reservableOnline], ["0.00", false], "solo recepción");
     });
 
+    await t.test("precio fijo por medio de pago: reemplaza el ajuste para el servicio (doc 32)", async () => {
+      await db.medioPagoSede.updateMany({ where: { sedeId: a.centro.id, tipo: { in: ["EFECTIVO", "TRANSFERENCIA"] } }, data: { ajustePct: "-20" } });
+      const medios = await db.medioPagoSede.findMany({ where: { sedeId: a.centro.id, tipo: { in: ["EFECTIVO", "TRANSFERENCIA"] } }, orderBy: { orden: "asc" } });
+      const otraSede = await db.medioPagoSede.findFirstOrThrow({ where: { sedeId: a.norte.id, tipo: "EFECTIVO" } });
+      const base = { habilitado: true, precio: "15000", duracionMinutos: null, sena: { tipo: "NINGUNA" as const, valor: null }, reservableOnline: false };
+      const grupos = async () => (await catalogoSede(db, a.recepcion.id, a.org.id, a.centro.id)).servicios[0]!.preciosMedio;
+
+      assert.deepEqual(await grupos(), [{ medioIds: medios.map(m => m.id), nombres: "Efectivo · Transferencia", ajuste: "−20 %", calculado: "12000.00", fijo: null }], "los dos medios con −20 % van juntos; los de 0 % no aparecen");
+      const fijar = (precio: string | null) => medios.map(m => ({ medioPagoId: m.id, precio }));
+      await guardarServicioSede(db, a.admin.id, a.org.id, a.centro.id, servicioId, { ...base, preciosMedio: fijar("12600") });
+      assert.equal((await grupos())[0]!.fijo, "12600.00");
+      assert.equal((await db.servicioSedePrecioMedio.count({ where: { servicioId, sedeId: a.centro.id } })), 2);
+
+      await guardarServicioSede(db, a.admin.id, a.org.id, a.centro.id, servicioId, base);
+      assert.equal((await grupos())[0]!.fijo, "12600.00", "sin preciosMedio queda como estaba");
+      await assert.rejects(guardarServicioSede(db, a.admin.id, a.org.id, a.centro.id, servicioId, { ...base, preciosMedio: fijar("0") }), DatosInvalidos);
+      await assert.rejects(guardarServicioSede(db, a.admin.id, a.org.id, a.centro.id, servicioId, { ...base, preciosMedio: fijar("abc") }), DatosInvalidos);
+      await assert.rejects(guardarServicioSede(db, a.admin.id, a.org.id, a.centro.id, servicioId, { ...base, habilitado: false, precio: null, preciosMedio: fijar("12600") }), DatosInvalidos, "sin lista no hay precio fijo");
+      await assert.rejects(guardarServicioSede(db, a.admin.id, a.org.id, a.centro.id, servicioId, { ...base, preciosMedio: [{ medioPagoId: otraSede.id, precio: "12600" }] }), DatosInvalidos, "medio de otra sede");
+      await assert.rejects(guardarServicioSede(db, a.recepcion.id, a.org.id, a.centro.id, servicioId, { ...base, preciosMedio: fijar("1") }), AccesoDenegado);
+
+      await guardarServicioSede(db, a.admin.id, a.org.id, a.centro.id, servicioId, { ...base, preciosMedio: fijar(null) });
+      assert.equal((await grupos())[0]!.fijo, null, "vacío: vuelve a regir el ajuste");
+      await db.medioPagoSede.updateMany({ where: { sedeId: a.centro.id }, data: { ajustePct: "0" } });
+    });
+
     await t.test("edición de categorías, habilidades y tipos de recurso con sus servicios", async () => {
       await guardarCategoria(db, a.master.id, a.org.id, { nombre: "Manos", orden: 2 }, nails.id);
       await assert.rejects(guardarCategoria(db, a.admin.id, a.org.id, { nombre: "X" }, nails.id), AccesoDenegado);

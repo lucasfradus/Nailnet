@@ -52,7 +52,7 @@ export function BuscadorServicio({ id, servicios, valor, placeholder, pista, onE
         {(n === 0 || resultados[n - 1]!.categoria !== s.categoria) && <p className="buscador-grupo">{s.categoria}</p>}
         <div role="option" id={`${id}-op-${n}`} aria-selected={n === activo} className="buscador-opcion"
           onMouseDown={e => e.preventDefault()} onMouseEnter={() => setActivo(n)} onClick={() => elegir(s)}>
-          <span>{s.nombre}</span><small>{s.duracionMinutos} min{pista ? ` · ${pista(s.id)}` : ""}</small>
+          <span>{s.nombre}</span><small>{[`${s.duracionMinutos} min`, pista?.(s.id)].filter(Boolean).join(" · ")}</small>
         </div>
       </li>)}
     </ul>}

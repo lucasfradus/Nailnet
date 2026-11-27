@@ -31,7 +31,7 @@ export type DatosGrilla = {
   fecha: string; hoy: string; esHoy: boolean; ahora: number | null; paso: number;
   apertura: Intervalo[];
   profesionales: { id: string; nombre: string; servicioIds: string[]; disponible: Intervalo[]; ausencias: (Intervalo & { motivo: string | null })[] }[];
-  servicios: { id: string; nombre: string; duracion: number; recursos: Requisito[] }[];
+  servicios: { id: string; nombre: string; duracion: number; recursos: Requisito[]; categoria: string; ordenCategoria: number }[];
   recursos: { id: string; nombre: string; tipoRecursoId: string; tipo: string }[];
   turnos: TurnoGrilla[];
   moviendo: Moviendo | null;

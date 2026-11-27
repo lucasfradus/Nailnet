@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type { EstadoGrilla } from "@nailnet/database/agenda-dia";
+import { BuscadorServicio } from "@/components/buscador-servicio";
 import type { Estado } from "@/components/formulario";
 import { accionAusenteTurno, accionBuscarClientas, accionCancelarTurno, accionCrearClienta, accionEmpezo, accionMoverTurno, accionReservarTurno, accionTerminoSesion } from "./acciones-tratamientos";
 import { crearCuentas, duracion, hora, type DatosGrilla, type TurnoGrilla } from "./tratamientos-modelo";
@@ -337,8 +338,15 @@ export function GrillaTratamientos({ datos: d }: { datos: DatosGrilla }) {
       <Cabecera cerrar={cerrar} titulo={`Nuevo turno · ${hora(n.inicio)}${n.profesionalId ? ` con ${nombreProfesional(n.profesionalId)}` : desdeCabina ? ` en ${desdeCabina.nombre}` : ""}`}
         sub={`${diaLargo(d.fecha)}${s ? ` · ${hora(n.inicio)} a ${hora(n.inicio + s.duracion)}` : ""}`} />
       {!servicios.length ? <p className="ayuda">{n.profesionalId ? "Esta profesional no tiene tratamientos habilitados en la sede." : "Ningún tratamiento usa esta cabina."}</p>
-        : <Opciones etiqueta="Tratamiento" valor={n.servicioId} elegir={id => actualizar({ servicioId: id })}
-          opciones={servicios.map(x => { const ok = puedenHacer(x.id).length > 0; return { id: x.id, texto: `${x.nombre} · ${x.duracion} min${ok ? "" : " · no entra"}`, no: !ok }; })} />}
+        : <div className="trat-campo">
+          <span className="trat-etiqueta">Tratamiento</span>
+          {/* Agrupado por categoría (en el orden del catálogo) y con búsqueda: la sede tiene muchos tratamientos. */}
+          <BuscadorServicio id="nuevo-tratamiento" placeholder="Buscar tratamiento o categoría…" valor={n.servicioId}
+            servicios={[...servicios].sort((a, b) => a.ordenCategoria - b.ordenCategoria || a.categoria.localeCompare(b.categoria) || a.nombre.localeCompare(b.nombre))
+              .map(x => ({ id: x.id, nombre: x.nombre, categoria: x.categoria, duracionMinutos: x.duracion }))}
+            pista={id => (puedenHacer(id).length ? "" : "no entra a esta hora")} onElegir={id => actualizar({ servicioId: id })} />
+        </div>}
+      {s && n.profesionalId && !pros.length && <p className="alerta aviso">{s.nombre} no entra a las {hora(n.inicio)} con {nombreProfesional(n.profesionalId)}.</p>}
       {s && !n.profesionalId && (pros.length ? <Opciones etiqueta="Profesional" valor={profesionalId} elegir={id => actualizar({ elegida: id })} opciones={pros.map(id => ({ id, texto: nombreProfesional(id) }))} />
         : <p className="ayuda">No hay profesionales libres para {s.nombre} a esa hora.</p>)}
       {requisitos.map((q, i) => <div key={q.tipoRecursoId}>

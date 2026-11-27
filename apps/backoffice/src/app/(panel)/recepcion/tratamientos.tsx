@@ -112,7 +112,7 @@ async function GrillaDelDia({ q }: { q: Parametros }) {
       disponible: intervalos(p.jornada).flatMap(j => apertura.map(a => ({ desde: Math.max(j.desde, a.desde), hasta: Math.min(j.hasta, a.hasta) }))).filter(x => x.desde < x.hasta),
       ausencias: p.ausencias.map(a => ({ desde: min(a.desde), hasta: min(a.hasta), motivo: a.motivo })),
     })),
-    servicios: dia.servicios.map(s => ({ id: s.id, nombre: s.nombre, duracion: s.duracionMinutos, recursos: s.recursos })),
+    servicios: dia.servicios.map(s => ({ id: s.id, nombre: s.nombre, duracion: s.duracionMinutos, recursos: s.recursos, categoria: s.categoria, ordenCategoria: s.ordenCategoria })),
     recursos: dia.recursos,
     turnos: dia.turnos.map(t => ({
       reservaId: t.reservaId, itemId: t.itemId, posicion: t.posicion, itemsDeLaReserva: t.itemsDeLaReserva, profesionalId: t.profesionalId, recursoIds: t.recursoIds,

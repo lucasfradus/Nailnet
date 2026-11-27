@@ -49,7 +49,7 @@ small{display:block;color:var(--color-muted-foreground)}
 .contexto{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;margin:0}.contexto strong{font-weight:600}.contexto .separador{color:var(--color-input)}
 .contexto select{height:32px;font-size:13px;min-width:160px}.contexto button{height:32px;padding-top:0;padding-bottom:0}
 .contexto-sede{display:inline-flex!important;align-items:center;gap:8px;font-size:13px;font-weight:500;color:var(--color-muted-foreground)}.contexto-sede strong{color:var(--color-foreground)}.contexto-sede select{color:var(--color-foreground);font-weight:500}
-.contenido{width:100%;max-width:1240px;margin:0;padding:24px 32px 48px}
+.contenido{width:100%;min-width:0;max-width:none;margin:0;padding:24px 32px 48px}
 
 /* Encabezado de página */
 .panel{padding:0}

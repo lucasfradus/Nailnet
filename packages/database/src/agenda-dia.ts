@@ -51,7 +51,7 @@ export async function agendaDia(db: Database, actorId: string, organizacionId: s
 
   const ofrecidos = await db.servicioSede.findMany({
     where: { organizacionId, sedeId, habilitado: true, servicio: { activo: true } },
-    select: { duracionMinutos: true, servicio: { select: { id: true, nombre: true, duracionMinutos: true, skills: { select: { skillId: true } }, recursos: { select: { tipoRecursoId: true, cantidad: true } }, categoria: { select: { universo: true } } } } },
+    select: { duracionMinutos: true, servicio: { select: { id: true, nombre: true, duracionMinutos: true, skills: { select: { skillId: true } }, recursos: { select: { tipoRecursoId: true, cantidad: true } }, categoria: { select: { universo: true, nombre: true, orden: true } } } } },
     orderBy: { servicio: { nombre: "asc" } },
   });
   const universoDe = new Map(ofrecidos.map(s => [s.servicio.id, s.servicio.categoria.universo as Universo]));
@@ -125,7 +125,7 @@ export async function agendaDia(db: Database, actorId: string, organizacionId: s
       ausencias: ausencias.filter(a => a.profesionalId === p.id).map(a => ({ desde: a.inicio, hasta: a.fin, motivo: a.motivo })),
       servicioIds: delUniverso.filter(s => puede(p, s)).map(s => s.servicio.id),
     })),
-    servicios: delUniverso.map(s => ({ id: s.servicio.id, nombre: s.servicio.nombre, duracionMinutos: s.duracionMinutos ?? s.servicio.duracionMinutos, recursos: s.servicio.recursos })),
+    servicios: delUniverso.map(s => ({ id: s.servicio.id, nombre: s.servicio.nombre, duracionMinutos: s.duracionMinutos ?? s.servicio.duracionMinutos, recursos: s.servicio.recursos, categoria: s.servicio.categoria.nombre, ordenCategoria: s.servicio.categoria.orden })),
     recursos: recursos.map(r => ({ id: r.id, nombre: r.nombre, tipoRecursoId: r.tipoRecursoId, tipo: r.tipoRecurso.nombre })),
     turnos,
   };

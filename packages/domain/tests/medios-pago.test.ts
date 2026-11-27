@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { aAjuste, ajusteDecimal, ajusteEditable, nombreRepetido, precioConAjuste, redondeoDe, textoAjuste, textoRedondeo, validarMedio, validarRedondeo, REDONDEO_POR_DEFECTO } from "../src/medios-pago.ts";
+import { aAjuste, ajusteDecimal, ajusteEditable, gruposPrecioFijo, nombreRepetido, precioConAjuste, precioDelMedio, redondeoDe, textoAjuste, textoRedondeo, validarMedio, validarRedondeo, REDONDEO_POR_DEFECTO } from "../src/medios-pago.ts";
 import { validarCobro, validarCobros, type MedioDisponible } from "../src/ventas.ts";
 
 const $ = (pesos: number) => BigInt(pesos) * 100n;
@@ -87,4 +87,27 @@ test("cobro con los medios de la sede: por id, por tipo (compatibilidad) y desha
   assert.deepEqual(validarCobro({ medio: "EFECTIVO", monto: "1" }), { cobro: { medio: "EFECTIVO", medioPagoId: null, medioNombre: null, monto: 100n, referencia: null } }, "sin medios: solo el tipo");
   const v = validarCobros([{ medio: "m-ef", monto: "50" }, { medio: "m-dni", monto: "50" }], 10_000n, medios);
   assert.ok("cobros" in v && v.cobros.map(c => c.medioPagoId).join() === "m-ef,m-dni");
+});
+
+test("precio del medio: el precio fijo del servicio gana y no se redondea", () => {
+  assert.equal(precioDelMedio($(100_000), -2000n, REDONDEO_POR_DEFECTO, $(84_000)), $(84_000), "tratamiento de Sicurella: −16 %, no −20 %");
+  assert.equal(precioDelMedio($(100_000), -2000n, REDONDEO_POR_DEFECTO, 8_400_050n), 8_400_050n, "tal cual, aunque no caiga en el paso");
+  assert.equal(precioDelMedio($(100_000), -2000n, REDONDEO_POR_DEFECTO, null), $(80_000), "sin fijo: lista con el ajuste");
+  assert.equal(precioDelMedio($(100_000), 0n, REDONDEO_POR_DEFECTO), $(100_000));
+});
+
+test("grupos de precio fijo: medios con el mismo ajuste juntos, la lista solo si ya tiene fijo", () => {
+  const medios = [
+    { id: "ef", nombre: "Efectivo", ajuste: -2000n, habilitado: true },
+    { id: "tr", nombre: "Transferencia", ajuste: -2000n, habilitado: true },
+    { id: "db", nombre: "Débito", ajuste: 0n, habilitado: true },
+    { id: "cr", nombre: "Crédito 3 cuotas", ajuste: 1500n, habilitado: true },
+    { id: "mp", nombre: "Mercado Pago", ajuste: -2000n, habilitado: false },
+  ];
+  assert.deepEqual(gruposPrecioFijo(medios, new Map()), [
+    { ajuste: -2000n, medios: [{ id: "ef", nombre: "Efectivo" }, { id: "tr", nombre: "Transferencia" }], fijo: null },
+    { ajuste: 1500n, medios: [{ id: "cr", nombre: "Crédito 3 cuotas" }], fijo: null },
+  ]);
+  const conFijos = gruposPrecioFijo(medios, new Map([["tr", $(84_000)], ["db", $(95_000)]]));
+  assert.deepEqual(conFijos.map(g => [g.medios.map(m => m.id), g.fijo]), [[["ef", "tr"], $(84_000)], [["db"], $(95_000)], [["cr"], null]]);
 });

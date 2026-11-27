@@ -282,11 +282,14 @@ export async function accionImagenServicio(_: Estado, form: FormData) {
   const quitar = texto(form, "quitar") === "1";
   return ejecutar("/catalogo", async (actor, org) => guardarImagenServicio(db(), actor, org, texto(form, "servicioId"), await archivoImagen(form)), quitar ? "Imagen quitada" : "Imagen guardada");
 }
+/** Campos «precioMedio:<id>,<id>»: un precio fijo para cada medio del grupo (vacío = sin fijo). */
+const preciosMedioForm = (f: FormData) => [...f.keys()].filter(k => k.startsWith("precioMedio:"))
+  .flatMap(k => k.slice("precioMedio:".length).split(",").map(medioPagoId => ({ medioPagoId, precio: texto(f, k) || null })));
 export async function accionServicioSede(_: Estado, form: FormData) {
   const duracion = entero(form, "duracionMinutos");
   return ejecutar("/catalogo", (actor, org) => guardarServicioSede(db(), actor, org, texto(form, "sedeId"), texto(form, "servicioId"), {
     habilitado: marcado(form, "habilitado"), precio: texto(form, "precio") || null, duracionMinutos: Number.isNaN(duracion) ? null : duracion,
-    sena: senaForm(form), reservableOnline: marcado(form, "reservableOnline"),
+    sena: senaForm(form), reservableOnline: marcado(form, "reservableOnline"), preciosMedio: preciosMedioForm(form),
   }), "Condiciones de la sede guardadas");
 }
 

@@ -1,6 +1,6 @@
 # Precios por medio de pago · propuesta · 2026-11-16
 
-Propuesta (D22). Sale de una charla con el usuario el 2026-11-16. Extiende ventas y caja (27-ventas-caja.md) y el catálogo (13-catalogo.md). **La etapa 1 (medios de pago de la sede) quedó implementada el 2026-11-16.** Ver «Etapa 1: cómo quedó».
+Propuesta (D22). Sale de una charla con el usuario el 2026-11-16. Extiende ventas y caja (27-ventas-caja.md) y el catálogo (13-catalogo.md). **La etapa 1 (medios de pago de la sede) quedó implementada el 2026-11-16.** Ver «Etapa 1: cómo quedó». **El 2026-11-26 se sumó el precio fijo por servicio** (ver «Precio fijo por servicio»).
 
 ## El problema
 
@@ -18,7 +18,7 @@ Hoy el sistema tiene **un solo precio** por servicio y sede (`ServicioSede.preci
 | Débito y crédito | Pueden tener precios distintos |
 | Transferencia | Paga como efectivo |
 | Quién define la regla | Cada sede |
-| Excepciones por servicio o producto | No hay. Las excepciones se resuelven al cobrar (precio editable y descuento manual) |
+| Excepciones por servicio o producto | No hay. Las excepciones se resuelven al cobrar (precio editable y descuento manual). **Cambió el 2026-11-26:** un servicio puede tener precio fijo por medio (ver «Precio fijo por servicio») |
 | Medios configurables | Sí: cada sede activa los suyos y puede sumar otros |
 | Pago mixto (parte efectivo y parte tarjeta) | Lo decide el mostrador en cada caso |
 | Descuento de efectivo y descuento manual | Primero el del medio y después el manual |
@@ -31,7 +31,7 @@ Hoy el sistema tiene **un solo precio** por servicio y sede (`ServicioSede.preci
 
 ### El precio de lista no cambia
 
-`ServicioSede.precio` y `ProductoSede.precio` siguen siendo el **precio de lista** (el de tarjeta). No se carga un precio por cada medio: el precio de cada medio sale de la lista y de la regla de ese medio. Así, cambiar la lista o el porcentaje actualiza todo junto.
+`ServicioSede.precio` y `ProductoSede.precio` siguen siendo el **precio de lista** (el de tarjeta). En general no se carga un precio por cada medio: el precio de cada medio sale de la lista y de la regla de ese medio. Así, cambiar la lista o el porcentaje actualiza todo junto. La excepción es el precio fijo por servicio (abajo).
 
 ### Medio de pago de la sede
 
@@ -50,6 +50,17 @@ Cada sede tiene sus medios de pago, cada uno en una fila de una tabla nueva, `Me
 - **Un medio no se borra:** se deshabilita. Así sus cobros conservan la referencia.
 - **Los recargos quedan admitidos** con un porcentaje positivo. Las cuotas (un recargo distinto según la cantidad de cuotas) no entran ahora. Si hacen falta, serán varios medios («Crédito 3 cuotas», «Crédito 6 cuotas»), cada uno con su recargo.
 
+### Precio fijo por servicio
+
+Agregado el 2026-11-26. La lista de tratamientos de Sicurella (septiembre 2026) no tiene un descuento parejo: el efectivo va de −10 % a −20 % según el tratamiento (por ejemplo $100.000 → $84.000, $75.000 → $60.000 y $50.000 → $45.000). Con un único ajuste por medio, el sistema cobraría de menos. El usuario eligió que **cada servicio pueda tener su precio fijo por medio**, en lugar de un porcentaje único o de editar el precio en cada cobro.
+
+- **Dónde:** tabla `ServicioSedePrecioMedio` (servicio, sede, medio y precio). Es por sede, como el precio de lista, y por medio, porque los medios son de la sede.
+- **Cómo se usa:** si el servicio tiene precio fijo para el medio, se cobra ese precio **tal cual, sin redondeo** (como la lista). Si no, rige la lista con el ajuste del medio. Función `precioDelMedio` del dominio.
+- **Pantalla:** Catálogo › Precios en la sede › (servicio) › «Precio por medio de pago». Los medios con el mismo ajuste comparten un campo («Efectivo · Transferencia (−20 %)»), que muestra como ayuda el precio que sale del ajuste. Vacío: rige el ajuste. Los medios que pagan la lista (0 %) no aparecen salvo que ya tengan un precio fijo.
+- **Reglas:** el precio es mayor a cero, hace falta precio de lista para fijarlo, y el medio tiene que ser de la misma sede. Lo edita quien edita los precios de la sede (`catalogo:precios`). Queda auditado con las condiciones de la sede.
+- **Lo que no cambia:** la seña se sigue calculando sobre la lista. Un precio fijo no se actualiza si después cambia la lista o el ajuste: hay que revisarlo a mano.
+- **Productos:** todavía no. Se suma si una lista de productos lo necesita.
+
 ### Redondeo
 
 Es una configuración de la sede: el múltiplo (sin redondeo, $10, $50, $100, $500 o $1.000) y el sentido. **Por defecto, a $100 hacia abajo** (confirmado por el usuario el 2026-11-16): favorece a la clienta y nunca cobra más que el porcentaje anunciado.
@@ -63,7 +74,7 @@ Ejemplo con lista $15.500, efectivo −10% y redondeo a $100 hacia abajo: $15.50
 ### Cálculo de una venta
 
 1. Cada ítem tiene su **precio de lista** (el pactado en el turno, o el de la sede).
-2. Se elige el **precio que se aplica** (ver «Pantalla de cobro»): el de un medio. A cada ítem se le aplica su `ajustePct` y el redondeo.
+2. Se elige el **precio que se aplica** (ver «Pantalla de cobro»): el de un medio. Cada ítem toma su precio fijo para ese medio, si lo tiene, o la lista con el `ajustePct` y el redondeo.
 3. Recepción puede **editar el precio** de un ítem (la excepción, como hoy).
 4. Subtotal = suma de los ítems.
 5. **Descuento manual** en pesos, sobre ese subtotal.
@@ -103,7 +114,7 @@ La pantalla de hoy (Ventas › Cobrar turno) es un formulario: no muestra el tot
 
 El portal de reservas muestra los dos precios de cada servicio, por ejemplo «$15.500 · $13.900 en efectivo o transferencia».
 
-- Se muestra la lista y, debajo, cada precio distinto de la lista con los nombres de sus medios.
+- Se muestra la lista y, debajo, cada precio distinto de la lista con los nombres de sus medios (con el precio fijo del servicio, si lo tiene).
 - Si un medio tiene recargo, el portal no lo muestra, para no confundir.
 - La seña se sigue calculando sobre la lista.
 

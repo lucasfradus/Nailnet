@@ -131,3 +131,34 @@ export function nombreRepetido(nombres: readonly string[]): string | null {
   }
   return null;
 }
+
+// ─── Precio fijo por servicio ─────────────────────────────────────────────────
+
+/**
+ * Precio de un ítem con un medio: el precio fijo que el servicio tiene para ese medio en la sede, tal cual
+ * (sin redondear), o la lista con el ajuste del medio. El precio fijo es para las listas cuyo precio en
+ * efectivo no sale de un porcentaje parejo (doc 32, «Precio fijo por servicio»).
+ */
+export function precioDelMedio(lista: bigint, ajuste: bigint, redondeo: Redondeo, fijo?: bigint | null): bigint {
+  return fijo ?? precioConAjuste(lista, ajuste, redondeo);
+}
+
+export type MedioParaPrecio = { id: string; nombre: string; ajuste: bigint; habilitado: boolean };
+export type GrupoPrecioFijo = { ajuste: bigint; medios: { id: string; nombre: string }[]; fijo: bigint | null };
+
+/**
+ * Medios que comparten un precio fijo en la pantalla del servicio: los habilitados con el mismo ajuste van
+ * juntos («Efectivo · Transferencia −20 %»), como en los botones de cobro. Los que pagan la lista (ajuste 0)
+ * no aparecen salvo que ya tengan un precio fijo. El fijo del grupo es el del primero que lo tenga.
+ */
+export function gruposPrecioFijo(medios: readonly MedioParaPrecio[], fijos: ReadonlyMap<string, bigint>): GrupoPrecioFijo[] {
+  const grupos: GrupoPrecioFijo[] = [];
+  for (const m of medios) {
+    if (!m.habilitado || (m.ajuste === 0n && !fijos.has(m.id))) continue;
+    let g = grupos.find(x => x.ajuste === m.ajuste);
+    if (!g) grupos.push(g = { ajuste: m.ajuste, medios: [], fijo: null });
+    g.medios.push({ id: m.id, nombre: m.nombre });
+    g.fijo ??= fijos.get(m.id) ?? null;
+  }
+  return grupos;
+}

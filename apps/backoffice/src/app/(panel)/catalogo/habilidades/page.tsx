@@ -6,10 +6,10 @@ import { cargarCatalogo } from "@/lib/catalogo";
 export const metadata: Metadata = { title: "Habilidades · Sicurella" };
 
 export default async function Habilidades() {
-  const { cat, sede } = await cargarCatalogo();
+  const { cat } = await cargarCatalogo();
   const nombres = new Map(cat.categorias.flatMap(c => c.servicios).map(s => [s.id, s.nombre]));
   return <section className="panel">
-    <CabeceraCatalogo sede={sede?.nombre} accion={{ href: "/catalogo/habilidades/nueva", texto: "Nueva habilidad" }} />
+    <CabeceraCatalogo accion={{ href: "/catalogo/habilidades/nueva", texto: "Nueva habilidad" }} />
     <p className="ayuda pie-tabla">Un profesional atiende un servicio solo si tiene todas las habilidades que requiere.</p>
     <div className="tabla">
       {cat.skills.map(s => <article key={s.id} className="fila">

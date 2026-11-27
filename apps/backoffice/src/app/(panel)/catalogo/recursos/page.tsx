@@ -9,7 +9,7 @@ export default async function TiposRecurso() {
   const { cat, sede } = await cargarCatalogo();
   const nombres = new Map(cat.categorias.flatMap(c => c.servicios).map(s => [s.id, s.nombre]));
   return <section className="panel">
-    <CabeceraCatalogo sede={sede?.nombre} accion={{ href: "/catalogo/recursos/nuevo", texto: "Nuevo tipo de recurso" }} />
+    <CabeceraCatalogo accion={{ href: "/catalogo/recursos/nuevo", texto: "Nuevo tipo de recurso" }} />
     <p className="ayuda pie-tabla">Cabinas, camillas o equipos que un servicio ocupa durante el turno. Las unidades se cargan en cada sede{sede ? <> (<Link href={`/sedes/${sede.id}?seccion=recursos`}>recursos de {sede.nombre}</Link>)</> : ""}.</p>
     <div className="tabla">
       {cat.tiposRecurso.map(t => <article key={t.id} className="fila">

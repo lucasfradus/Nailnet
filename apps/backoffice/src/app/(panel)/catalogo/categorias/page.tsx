@@ -7,9 +7,9 @@ import { UNIVERSO } from "@/lib/etiquetas";
 export const metadata: Metadata = { title: "Categorías · Sicurella" };
 
 export default async function Categorias() {
-  const { cat, sede } = await cargarCatalogo();
+  const { cat } = await cargarCatalogo();
   return <section className="panel">
-    <CabeceraCatalogo sede={sede?.nombre} accion={{ href: "/catalogo/categorias/nueva", texto: "Nueva categoría" }} />
+    <CabeceraCatalogo accion={{ href: "/catalogo/categorias/nueva", texto: "Nueva categoría" }} />
     <p className="ayuda pie-tabla">Agrupan los servicios. Se listan de menor a mayor orden. El universo de cada una define en qué tablero de Recepción aparecen.</p>
     <div className="tabla">
       {cat.categorias.map(c => <article key={c.id} className="fila">

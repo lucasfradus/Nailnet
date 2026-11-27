@@ -14,8 +14,8 @@ export default async function EditarServicio({ params, searchParams }: { params:
   const servicio = cat.categorias.flatMap(c => c.servicios).find(s => s.id === servicioId);
   if (!servicio) notFound();
   return <section className="panel">
-    <CabeceraFicha volver="/catalogo" seccion="Servicios" titulo={servicio.nombre} />
-    {creado && <p className="alerta ok" role="status">Servicio creado. Sumale una imagen y {sede ? <Link href="/catalogo/precios">definí su precio en {sede.nombre}</Link> : "definí su precio en cada sede"} para ofrecerlo.</p>}
+    <CabeceraFicha volver="/catalogo" seccion="Servicios y precios" titulo={servicio.nombre} />
+    {creado && <p className="alerta ok" role="status">Servicio creado. Sumale una imagen y {sede ? <Link href={`/catalogo?editar=${servicio.id}#s-${servicio.id}`}>definí su precio en {sede.nombre}</Link> : "definí su precio en cada sede"} para ofrecerlo.</p>}
     <section className="form-seccion ficha-form"><h2>Imagen</h2>
       <EditorImagen accion={accionImagenServicio} ocultos={{ servicioId: servicio.id }} imagenId={servicio.imagenId} titulo={`Imagen de ${servicio.nombre}`} />
     </section>
